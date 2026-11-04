@@ -311,85 +311,86 @@ export function initApplicationBridge(): void {
         }
 
         if (workspace !== undefined) {
-        const ws = workspace.trim();
-        db.run('UPDATE teams SET workspace = ?, updated_at = ? WHERE id = ?', ws, now, id);
+          const ws = workspace.trim();
+          db.run('UPDATE teams SET workspace = ?, updated_at = ? WHERE id = ?', ws, now, id);
 
-        if (teamRow.folder_id) {
-          const normalizedPath = ws.replace(/\\/g, '/');
-          const uri = normalizedPath.startsWith('/')
-            ? `file://${encodeURI(normalizedPath)}`
-            : `file:///${encodeURI(normalizedPath)}`;
-          const canonical = uri.toLowerCase();
+          if (teamRow.folder_id) {
+            const normalizedPath = ws.replace(/\\/g, '/');
+            const uri = normalizedPath.startsWith('/')
+              ? `file://${encodeURI(normalizedPath)}`
+              : `file:///${encodeURI(normalizedPath)}`;
+            const canonical = uri.toLowerCase();
+            db.run(
+              'UPDATE folders SET resource_uri = ?, resource_canonical = ?, updated_at = ? WHERE folder_id = ?',
+              uri,
+              canonical,
+              now,
+              teamRow.folder_id
+            );
+          }
+
           db.run(
-            'UPDATE folders SET resource_uri = ?, resource_canonical = ?, updated_at = ? WHERE folder_id = ?',
-            uri,
-            canonical,
+            `UPDATE conversations
+           SET extra = json_set(extra, '$.workspace', ?), updated_at = ?
+           WHERE COALESCE(NULLIF(json_extract(extra, '$.team_id'), ''), NULLIF(json_extract(extra, '$.teamId'), '')) = ?`,
+            ws,
             now,
-            teamRow.folder_id
+            id
           );
         }
 
-        db.run(
-          `UPDATE conversations
-           SET extra = json_set(extra, '$.workspace', ?), updated_at = ?
-           WHERE COALESCE(NULLIF(json_extract(extra, '$.team_id'), ''), NULLIF(json_extract(extra, '$.teamId'), '')) = ?`,
-          ws,
-          now,
-          id
-        );
-      }
-
-      if (name !== undefined) {
-        const trimmedName = name.trim();
-        db.run('UPDATE teams SET name = ?, updated_at = ? WHERE id = ?', trimmedName, now, id);
-        db.run(
-          `UPDATE conversations
+        if (name !== undefined) {
+          const trimmedName = name.trim();
+          db.run('UPDATE teams SET name = ?, updated_at = ? WHERE id = ?', trimmedName, now, id);
+          db.run(
+            `UPDATE conversations
            SET extra = json_set(extra, '$.team_name', ?), updated_at = ?
            WHERE COALESCE(NULLIF(json_extract(extra, '$.team_id'), ''), NULLIF(json_extract(extra, '$.teamId'), '')) = ?`,
-          trimmedName,
-          now,
-          id
-        );
-      }
-
-      if (leader_assistant_id !== undefined) {
-        try {
-          const agentsList = JSON.parse(teamRow.agents || '[]');
-          if (Array.isArray(agentsList)) {
-            for (const a of agentsList) {
-              a.role = a.slot_id === leader_assistant_id ? 'leader' : 'teammate';
-            }
-            db.run(
-              'UPDATE teams SET lead_agent_id = ?, agents = ?, updated_at = ? WHERE id = ?',
-              leader_assistant_id,
-              JSON.stringify(agentsList),
-              now,
-              id
-            );
-          } else {
-            db.run('UPDATE teams SET lead_agent_id = ?, updated_at = ? WHERE id = ?', leader_assistant_id, now, id);
-          }
-        } catch {
-          db.run('UPDATE teams SET lead_agent_id = ?, updated_at = ? WHERE id = ?', leader_assistant_id, now, id);
+            trimmedName,
+            now,
+            id
+          );
         }
 
-        db.run(
-          `UPDATE conversations
+        if (leader_assistant_id !== undefined) {
+          try {
+            const agentsList = JSON.parse(teamRow.agents || '[]');
+            if (Array.isArray(agentsList)) {
+              for (const a of agentsList) {
+                a.role = a.slot_id === leader_assistant_id ? 'leader' : 'teammate';
+              }
+              db.run(
+                'UPDATE teams SET lead_agent_id = ?, agents = ?, updated_at = ? WHERE id = ?',
+                leader_assistant_id,
+                JSON.stringify(agentsList),
+                now,
+                id
+              );
+            } else {
+              db.run('UPDATE teams SET lead_agent_id = ?, updated_at = ? WHERE id = ?', leader_assistant_id, now, id);
+            }
+          } catch {
+            db.run('UPDATE teams SET lead_agent_id = ?, updated_at = ? WHERE id = ?', leader_assistant_id, now, id);
+          }
+
+          db.run(
+            `UPDATE conversations
            SET extra = json_set(extra, '$.role',
              CASE WHEN json_extract(extra, '$.slot_id') = ? THEN 'leader' ELSE 'teammate' END
            ), updated_at = ?
            WHERE COALESCE(NULLIF(json_extract(extra, '$.team_id'), ''), NULLIF(json_extract(extra, '$.teamId'), '')) = ?`,
-          leader_assistant_id,
-          now,
-          id
-        );
+            leader_assistant_id,
+            now,
+            id
+          );
+        }
+      } catch (err) {
+        console.error('[TeamBridge] Failed to update team in database:', err);
+      } finally {
+        db.close();
       }
-    } catch (err) {
-      console.error('[TeamBridge] Failed to update team in database:', err);
-    } finally {
-      db.close();
     }
-  });
+  );
 }
 
 async function openBackendDb() {

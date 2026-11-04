@@ -100,7 +100,9 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
         };
       default:
         return {
-          glow: selected ? 'ring-2 ring-primary border-primary shadow-lg' : 'border-[var(--color-border-2)] hover:border-primary/60',
+          glow: selected
+            ? 'ring-2 ring-primary border-primary shadow-lg'
+            : 'border-[var(--color-border-2)] hover:border-primary/60',
           dot: 'bg-slate-400',
           icon: null,
           text: 'Idle',
@@ -140,9 +142,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
                 {depthLabel}
               </Tag>
             </div>
-            {team.departmentRole && (
-              <span className='text-11px text-t-tertiary truncate'>{team.departmentRole}</span>
-            )}
+            {team.departmentRole && <span className='text-11px text-t-tertiary truncate'>{team.departmentRole}</span>}
           </div>
         </div>
 
@@ -199,7 +199,9 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
           </span>
         </div>
         <span className='text-t-tertiary shrink-0 text-9px'>
-          {activity?.timestamp ? new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'idle'}
+          {activity?.timestamp
+            ? new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'idle'}
         </span>
       </div>
 

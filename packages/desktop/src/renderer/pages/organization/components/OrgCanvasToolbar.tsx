@@ -6,15 +6,7 @@
 
 import React from 'react';
 import { Button, Tooltip, Dropdown, Menu } from '@arco-design/web-react';
-import {
-  Down,
-  Right,
-  Plus,
-  NetworkTree,
-  Expand,
-  Upload,
-  MoreOne,
-} from '@icon-park/react';
+import { Down, Right, Plus, NetworkTree, FullScreen, Upload, MoreOne } from '@icon-park/react';
 
 type OrgCanvasToolbarProps = {
   direction: 'TB' | 'LR';
@@ -45,18 +37,13 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
       </div>
 
       <Tooltip content={direction === 'TB' ? 'Switch to Horizontal (LR)' : 'Switch to Vertical (TB)'} position='bottom'>
-        <Button
-          size='small'
-          type='secondary'
-          onClick={onToggleDirection}
-          className='text-12px'
-        >
+        <Button size='small' type='secondary' onClick={onToggleDirection} className='text-12px'>
           {direction === 'TB' ? 'Vertical (TB)' : 'Horizontal (LR)'}
         </Button>
       </Tooltip>
 
       <Tooltip content='Fit All Departments to Viewport' position='bottom'>
-        <Button size='small' type='secondary' icon={<Expand size={14} />} onClick={onFitView}>
+        <Button size='small' type='secondary' icon={<FullScreen size={14} />} onClick={onFitView}>
           Fit View
         </Button>
       </Tooltip>
@@ -68,12 +55,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
       </Tooltip>
 
       <Tooltip content='Create New Root Department / HQ' position='bottom'>
-        <Button
-          size='small'
-          type='primary'
-          icon={<Plus size={14} />}
-          onClick={onNewRootDepartment}
-        >
+        <Button size='small' type='primary' icon={<Plus size={14} />} onClick={onNewRootDepartment}>
           New Root HQ
         </Button>
       </Tooltip>

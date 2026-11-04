@@ -154,16 +154,13 @@ export function fromBackendTeam(raw: unknown): TTeam {
     undefined;
 
   const description =
-    (r.description as string | undefined) ??
-    (customMeta.description as string | undefined) ??
-    undefined;
+    (r.description as string | undefined) ?? (customMeta.description as string | undefined) ?? undefined;
 
-  const subTeamIds =
-    Array.isArray(r.subTeamIds)
-      ? (r.subTeamIds as string[])
-      : Array.isArray(customMeta.subTeamIds)
-        ? (customMeta.subTeamIds as string[])
-        : [];
+  const subTeamIds = Array.isArray(r.subTeamIds)
+    ? (r.subTeamIds as string[])
+    : Array.isArray(customMeta.subTeamIds)
+      ? (customMeta.subTeamIds as string[])
+      : [];
 
   return {
     id: (r.id as string | undefined) ?? '',

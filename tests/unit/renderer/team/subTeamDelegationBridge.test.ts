@@ -8,13 +8,7 @@ import {
 } from '@/renderer/pages/team/utils/subTeamDelegationBridge';
 import type { TTeam } from '@/common/types/team/teamTypes';
 
-function makeMockTeam(
-  id: string,
-  name: string,
-  parentId: string | null = null,
-  role?: string,
-  desc?: string
-): TTeam {
+function makeMockTeam(id: string, name: string, parentId: string | null = null, role?: string, desc?: string): TTeam {
   return {
     id,
     user_id: 'user_1',

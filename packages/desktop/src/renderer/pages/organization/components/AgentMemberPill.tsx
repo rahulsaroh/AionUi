@@ -38,9 +38,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({ assistant, isA
           )}
         </Avatar>
         <span className='max-w-70px truncate font-medium'>{name}</span>
-        {isActive && (
-          <span className='size-6px rounded-full bg-cyan-400 animate-ping absolute -top-1 -right-1' />
-        )}
+        {isActive && <span className='size-6px rounded-full bg-cyan-400 animate-ping absolute -top-1 -right-1' />}
       </div>
     </Tooltip>
   );

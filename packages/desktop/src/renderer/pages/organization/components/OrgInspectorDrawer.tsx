@@ -6,17 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Drawer, Button, Tag, Tabs, Typography, Spin, Tooltip, Message } from '@arco-design/web-react';
-import {
-  FolderClose,
-  Peoples,
-  Play,
-  AlarmClock,
-  MessageOne,
-  Copy,
-  Workbench,
-  Robot,
-  Right,
-} from '@icon-park/react';
+import { FolderClose, Peoples, Play, AlarmClock, MessageOne, Copy, Workbench, Robot, Right } from '@icon-park/react';
 import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
 import type { TTeam, TeamAssistant } from '@/common/types/team/teamTypes';
@@ -29,52 +19,11 @@ type OrgInspectorDrawerProps = {
   onRunTask: (team: TTeam) => void;
 };
 
-export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
-  team,
-  visible,
-  onClose,
-  onRunTask,
-}) => {
+export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({ team, visible, onClose, onRunTask }) => {
   const navigate = useNavigate();
   const { getNodeStatus, getActivity } = useOrgTelemetryStore();
-  const [messages, setMessages] = useState<Array<{ id: string; role: string; content: string; time?: number }>>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-
   const status = team ? getNodeStatus(team.id) : 'idle';
   const activity = team ? getActivity(team.id) : undefined;
-
-  useEffect(() => {
-    if (!team || !visible) {
-      setMessages([]);
-      return;
-    }
-
-    const leader = team.assistants?.find((a) => a.role === 'leader') || team.assistants?.[0];
-    const targetConversationId = leader?.conversation_id;
-
-    if (targetConversationId) {
-      setLoadingMessages(true);
-      ipcBridge.conversation.getMessages
-        .invoke({ id: targetConversationId })
-        .then((res) => {
-          if (res?.list) {
-            const formatted = res.list.slice(-15).map((m: any) => ({
-              id: m.id || String(Math.random()),
-              role: m.role || 'assistant',
-              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-              time: m.created_at,
-            }));
-            setMessages(formatted);
-          }
-        })
-        .catch((err) => {
-          console.warn('[OrgInspectorDrawer] Failed to fetch recent messages:', err);
-        })
-        .finally(() => {
-          setLoadingMessages(false);
-        });
-    }
-  }, [team, visible]);
 
   if (!team) return null;
 
@@ -87,8 +36,8 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
 
   const handleOpenFolder = () => {
     if (team.workspace) {
-      ipcBridge.shell.openPath.invoke({ path: team.workspace }).catch((err) => {
-        Message.error(`Could not open path: ${err instanceof Error ? err.message : String(err)}`);
+      ipcBridge.shell.showItemInFolder.invoke(team.workspace).catch((err: unknown) => {
+        Message.error(`Could not open folder: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
   };
@@ -131,11 +80,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       width={460}
       footer={
         <div className='flex items-center justify-between gap-12px w-full'>
-          <Button
-            type='outline'
-            icon={<Play theme='outline' size={14} />}
-            onClick={() => onRunTask(team)}
-          >
+          <Button type='outline' icon={<Play theme='outline' size={14} />} onClick={() => onRunTask(team)}>
             Dispatch Task
           </Button>
           <Button
@@ -227,29 +172,18 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           {/* Live Recent Chat Logs */}
           <Tabs.TabPane key='logs' title='Live Stream Logs'>
             <div className='flex flex-col gap-8px pt-8px'>
-              {loadingMessages ? (
-                <div className='flex justify-center py-24px'>
-                  <Spin size={20} />
-                </div>
-              ) : messages.length === 0 ? (
-                <div className='text-center py-24px text-12px text-t-tertiary italic'>
-                  No recent execution logs found for this department.
+              {activity ? (
+                <div className='p-10px rounded-6px bg-fill-2 border border-[var(--color-border-2)] text-12px flex flex-col gap-4px'>
+                  <div className='flex justify-between text-10px font-semibold text-t-tertiary'>
+                    <span className='uppercase text-cyan-400'>STATUS UPDATE</span>
+                    <span>{new Date(activity.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                  <div className='whitespace-pre-wrap font-mono text-11px text-t-primary'>&gt; {activity.message}</div>
                 </div>
               ) : (
-                messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`p-8px rounded-6px text-12px leading-relaxed ${
-                      m.role === 'user' ? 'bg-primary/10 border border-primary/20' : 'bg-fill-2 border border-[var(--color-border-2)]'
-                    }`}
-                  >
-                    <div className='flex justify-between text-10px font-semibold text-t-tertiary mb-2px'>
-                      <span className='uppercase'>{m.role}</span>
-                      {m.time && <span>{new Date(m.time).toLocaleTimeString()}</span>}
-                    </div>
-                    <div className='whitespace-pre-wrap font-mono text-11px line-clamp-6'>{m.content}</div>
-                  </div>
-                ))
+                <div className='text-center py-24px text-12px text-t-tertiary italic'>
+                  No recent execution events recorded for this department. Dispatched directives will stream live here.
+                </div>
               )}
             </div>
           </Tabs.TabPane>
@@ -267,7 +201,8 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                 </span>
               </div>
               <div className='text-11px text-t-tertiary'>
-                Tasks dispatched through parent delegation bridges write directives to the `.pipeline/inbox/` directory of this department's workspace.
+                Tasks dispatched through parent delegation bridges write directives to the `.pipeline/inbox/` directory
+                of this department's workspace.
               </div>
             </div>
           </Tabs.TabPane>

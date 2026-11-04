@@ -115,7 +115,7 @@ describe('team hierarchy utilities', () => {
     const teams = [tA, tB, tC, tD];
 
     const descendantsA = getDescendantTeamIds(teams, 'A');
-    expect(descendantsA.sort()).toEqual(['B', 'C', 'D'].sort());
+    expect(descendantsA.toSorted()).toEqual(['B', 'C', 'D'].toSorted());
 
     const descendantsB = getDescendantTeamIds(teams, 'B');
     expect(descendantsB).toEqual(['C']);
@@ -142,8 +142,8 @@ describe('team hierarchy utilities', () => {
     };
 
     const res = await deleteTeamCascade(teams, 'A', deleteFn);
-    expect(res.sort()).toEqual(['A', 'B', 'C'].sort());
-    expect(deleted.sort()).toEqual(['A', 'B', 'C'].sort());
+    expect(res.toSorted()).toEqual(['A', 'B', 'C'].toSorted());
+    expect(deleted.toSorted()).toEqual(['A', 'B', 'C'].toSorted());
   });
 
   it('buildTeamTree produces nested tree with correct levels', () => {

@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Modal, Input, Button, Message } from '@arco-design/web-react';
 import { Upload } from '@icon-park/react';
 import { ipcBridge } from '@/common';
+import type { ICreateTeamParams, TeamAssistantInput } from '@/common/adapter/teamMapper';
 import { useSWRConfig } from 'swr';
 
 type OrgSeedModalProps = {
@@ -99,33 +100,30 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
       for (const item of parsed) {
         const parentId = item.parentName ? nameToIdMap.get(item.parentName) : item.parentId || null;
 
-        const assistants = (item.assistants || [
-          {
-            assistant_name: `${item.name} Lead`,
-            assistant_backend: 'claude',
-            role: 'leader',
-          },
-        ]).map((a: any, idx: number) => ({
-          slot_id: `slot-${Date.now()}-${idx}`,
-          conversation_id: '',
-          role: a.role || (idx === 0 ? 'leader' : 'teammate'),
-          assistant_backend: a.assistant_backend || 'claude',
+        const agents: TeamAssistantInput[] = (
+          item.assistants || [
+            {
+              assistant_name: `${item.name} Lead`,
+              role: 'leader' as const,
+            },
+          ]
+        ).map((a: { assistant_name?: string; role?: 'leader' | 'teammate' }, idx: number) => ({
+          role: a.role || (idx === 0 ? ('leader' as const) : ('teammate' as const)),
           assistant_name: a.assistant_name || `Agent ${idx + 1}`,
-          status: 'idle',
-          whenToUseHint: a.whenToUseHint || 'Department task execution',
-          context_reset: { supported: true, availability: 'ready' },
         }));
 
-        const newTeam = await ipcBridge.team.create.invoke({
+        const createPayload: ICreateTeamParams = {
+          user_id: 'system_default_user',
           name: item.name,
           workspace: item.workspace || '',
           workspace_mode: 'shared',
-          leader_assistant_id: '',
-          assistants,
+          agents,
           parentId,
           departmentRole: item.departmentRole || 'General Department',
           description: item.description || '',
-        });
+        };
+
+        const newTeam = await ipcBridge.team.create.invoke(createPayload);
 
         if (newTeam?.id) {
           nameToIdMap.set(item.name, newTeam.id);
@@ -160,14 +158,10 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
     >
       <div className='flex flex-col gap-10px'>
         <div className='text-12px text-t-secondary'>
-          Paste or edit an enterprise hierarchical JSON tree. Departments referencing a parent will be nested automatically.
+          Paste or edit an enterprise hierarchical JSON tree. Departments referencing a parent will be nested
+          automatically.
         </div>
-        <Input.TextArea
-          rows={12}
-          value={jsonContent}
-          onChange={setJsonContent}
-          className='font-mono text-11px'
-        />
+        <Input.TextArea rows={12} value={jsonContent} onChange={setJsonContent} className='font-mono text-11px' />
         <div className='flex justify-between items-center text-11px text-t-tertiary'>
           <Button size='mini' type='text' onClick={() => setJsonContent(DEFAULT_SAMPLE_SEED)}>
             Reset to Sample Corporate Hierarchy

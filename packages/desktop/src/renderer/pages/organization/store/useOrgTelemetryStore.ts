@@ -96,11 +96,7 @@ export function recordDelegationStart(params: {
   notify();
 }
 
-export function recordDelegationComplete(params: {
-  sourceTeamId: string;
-  targetSubTeamId: string;
-  success: boolean;
-}) {
+export function recordDelegationComplete(params: { sourceTeamId: string; targetSubTeamId: string; success: boolean }) {
   const { sourceTeamId, targetSubTeamId, success } = params;
   const handoffId = `${sourceTeamId}->${targetSubTeamId}`;
 

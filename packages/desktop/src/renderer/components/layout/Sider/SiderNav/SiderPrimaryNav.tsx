@@ -39,9 +39,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
   const isOrgActive = location.pathname.startsWith('/organization');
   const isTeamActive = location.pathname.startsWith('/team/');
   const isChatActive =
-    location.pathname.startsWith('/conversation/') ||
-    location.pathname === '/guid' ||
-    location.pathname === '/';
+    location.pathname.startsWith('/conversation/') || location.pathname === '/guid' || location.pathname === '/';
 
   const inFlightHandoffsCount = Object.keys(activeHandoffs).length;
 
@@ -111,12 +109,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
         {tabs.map((tab) => {
           const IconComp = tab.icon;
           return (
-            <Tooltip
-              key={tab.id}
-              {...siderTooltipProps}
-              content={`${tab.label} (${tab.shortcut})`}
-              position='right'
-            >
+            <Tooltip key={tab.id} {...siderTooltipProps} content={`${tab.label} (${tab.shortcut})`} position='right'>
               <div
                 data-testid={`sider-tab-${tab.id}`}
                 className={classNames(
@@ -132,9 +125,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
                   className='block leading-none shrink-0'
                   style={{ lineHeight: 0 }}
                 />
-                {tab.badge && (
-                  <span className='size-5px rounded-full bg-cyan-400 absolute top-1 right-2' />
-                )}
+                {tab.badge && <span className='size-5px rounded-full bg-cyan-400 absolute top-1 right-2' />}
               </div>
             </Tooltip>
           );
@@ -148,12 +139,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
       {tabs.map((tab) => {
         const IconComp = tab.icon;
         return (
-          <Tooltip
-            key={tab.id}
-            {...siderTooltipProps}
-            content={`${tab.label} (${tab.shortcut})`}
-            position='top'
-          >
+          <Tooltip key={tab.id} {...siderTooltipProps} content={`${tab.label} (${tab.shortcut})`} position='top'>
             <button
               type='button'
               data-testid={`sider-tab-${tab.id}`}
@@ -167,9 +153,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
             >
               <IconComp theme='outline' size={14} fill='currentColor' className='shrink-0' />
               <span className='truncate text-11px'>{tab.label}</span>
-              {tab.badge && (
-                <span className='size-5px rounded-full bg-cyan-400 shrink-0' />
-              )}
+              {tab.badge && <span className='size-5px rounded-full bg-cyan-400 shrink-0' />}
             </button>
           </Tooltip>
         );

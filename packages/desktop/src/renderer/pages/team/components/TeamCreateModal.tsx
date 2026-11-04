@@ -37,14 +37,7 @@ type Props = {
   defaultParentId?: string | null;
 };
 
-const TeamCreateModal: React.FC<Props> = ({
-  visible,
-  onClose,
-  onCreated,
-  team,
-  onUpdated,
-  defaultParentId,
-}) => {
+const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, onUpdated, defaultParentId }) => {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const layout = useLayoutContext();

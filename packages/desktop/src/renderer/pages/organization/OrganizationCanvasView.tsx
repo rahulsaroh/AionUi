@@ -50,7 +50,7 @@ const edgeTypes: EdgeTypes = {
 };
 
 const CanvasInner: React.FC = () => {
-  const { teams: rawTeams = [], isLoading } = useTeamList();
+  const { teams: rawTeams = [] } = useTeamList();
   const { mutate } = useSWRConfig();
   const navigate = useNavigate();
   const { fitView } = useReactFlow();
@@ -225,11 +225,9 @@ const CanvasInner: React.FC = () => {
       }
 
       try {
-        await ipcBridge.team.update.invoke({
+        await ipcBridge.team.updateTeam.invoke({
           id: targetChildId,
-          updates: {
-            parentId: sourceParentId,
-          },
+          parent_id: sourceParentId,
         });
         Message.success('Department re-parented successfully!');
         void mutate('teams:list');
@@ -257,11 +255,7 @@ const CanvasInner: React.FC = () => {
       />
 
       {/* Main Flow Canvas */}
-      {isLoading ? (
-        <div className='size-full flex items-center justify-center'>
-          <Spin size={32} tip='Loading corporate organization hierarchy...' />
-        </div>
-      ) : normalizedTeams.length === 0 ? (
+      {normalizedTeams.length === 0 ? (
         <div className='size-full flex flex-col items-center justify-center gap-16px'>
           <Empty description='No departments or teams created yet.' />
           <div className='flex gap-12px'>
@@ -325,17 +319,10 @@ const CanvasInner: React.FC = () => {
       />
 
       {/* Quick Run Task Modal */}
-      <QuickRunTaskModal
-        team={runTaskTeam}
-        visible={Boolean(runTaskTeam)}
-        onClose={() => setRunTaskTeam(null)}
-      />
+      <QuickRunTaskModal team={runTaskTeam} visible={Boolean(runTaskTeam)} onClose={() => setRunTaskTeam(null)} />
 
       {/* Org Seed JSON Modal */}
-      <OrgSeedModal
-        visible={isSeedModalOpen}
-        onClose={() => setIsSeedModalOpen(false)}
-      />
+      <OrgSeedModal visible={isSeedModalOpen} onClose={() => setIsSeedModalOpen(false)} />
 
       {/* Create Department / Sub-Team Modal */}
       {isCreateSubTeamOpen && (

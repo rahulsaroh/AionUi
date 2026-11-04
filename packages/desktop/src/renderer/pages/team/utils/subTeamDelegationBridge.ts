@@ -37,11 +37,7 @@ export function getDirectChildTeams(parentTeamId: string, allTeams: TTeam[]): TT
  * Constructs the scoped visibility and delegation tool directive prompt
  * for a parent team leader agent.
  */
-export function buildSubTeamDelegationDirective(
-  parentTeam: TTeam,
-  allTeams: TTeam[],
-  currentDepth = 0
-): string {
+export function buildSubTeamDelegationDirective(parentTeam: TTeam, allTeams: TTeam[], currentDepth = 0): string {
   if (currentDepth >= MAX_DELEGATION_DEPTH) {
     return '';
   }
@@ -133,9 +129,7 @@ export async function executeSubTeamDelegation(params: {
   }
 
   // Validate scoped visibility: must be an immediate child of parentTeam
-  const childTeam = allTeams.find(
-    (t) => t.id === request.subTeamId && t.parentId === parentTeam.id
-  );
+  const childTeam = allTeams.find((t) => t.id === request.subTeamId && t.parentId === parentTeam.id);
 
   if (!childTeam) {
     return {

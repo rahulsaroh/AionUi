@@ -82,14 +82,10 @@ export const SiderOrganizationEntry: React.FC<SiderOrganizationEntryProps> = ({
               style={{ lineHeight: 0 }}
             />
           </span>
-          <span className='collapsed-hidden text-14px font-[500] leading-24px truncate'>
-            {label}
-          </span>
+          <span className='collapsed-hidden text-14px font-[500] leading-24px truncate'>{label}</span>
         </div>
         <div className='flex items-center gap-4px shrink-0 collapsed-hidden'>
-          {badgeCount > 0 && (
-            <Badge count={badgeCount} maxCount={99} />
-          )}
+          {badgeCount > 0 && <Badge count={badgeCount} maxCount={99} />}
           <span className='text-10px font-mono text-t-tertiary px-4px py-1px rounded bg-fill-2 border border-[var(--color-border-2)]'>
             {shortcutHint}
           </span>

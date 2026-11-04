@@ -5,7 +5,7 @@
  */
 
 import dagre from 'dagre';
-import type { Node, Edge } from '@xyflow/react';
+import { type Node, type Edge, Position } from '@xyflow/react';
 
 const NODE_WIDTH = 320;
 const NODE_HEIGHT = 220;
@@ -35,12 +35,12 @@ export function layoutOrgChart(
 
   dagre.layout(dagreGraph);
 
-  const layoutedNodes = nodes.map((node) => {
+  const layoutedNodes: Node[] = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
     return {
       ...node,
-      targetPosition: direction === 'LR' ? ('left' as const) : ('top' as const),
-      sourcePosition: direction === 'LR' ? ('right' as const) : ('bottom' as const),
+      targetPosition: direction === 'LR' ? Position.Left : Position.Top,
+      sourcePosition: direction === 'LR' ? Position.Right : Position.Bottom,
       position: {
         x: nodeWithPosition.x - NODE_WIDTH / 2,
         y: nodeWithPosition.y - NODE_HEIGHT / 2,

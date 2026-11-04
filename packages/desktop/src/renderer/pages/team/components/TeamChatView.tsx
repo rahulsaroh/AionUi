@@ -21,10 +21,7 @@ import { usePresetAssistantInfo } from '@/renderer/hooks/agent/usePresetAssistan
 import { resolveConversationBackend } from '@/renderer/pages/conversation/utils/conversationAssistantIdentity';
 import { injectRetainedSkillsIntoPrompt } from '../utils/teamMemoryManager';
 import { useTeamList } from '../hooks/useTeamList';
-import {
-  parseSubTeamDelegationRequests,
-  executeSubTeamDelegation,
-} from '../utils/subTeamDelegationBridge';
+import { parseSubTeamDelegationRequests, executeSubTeamDelegation } from '../utils/subTeamDelegationBridge';
 
 import AcpChat from '@/renderer/pages/conversation/platforms/acp/AcpChat';
 import AionrsChat from '@/renderer/pages/conversation/platforms/aionrs/AionrsChat';
