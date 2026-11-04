@@ -12,6 +12,7 @@ import {
   isAntigravitySlashCommand,
   isTeamworkSlashCommand,
   extractTeamworkTask,
+  enforceTaskBreakdownPrompt,
 } from '@/common/chat/slash/antigravityCommands';
 
 describe('antigravityCommands', () => {
@@ -160,6 +161,30 @@ describe('antigravityCommands', () => {
       expect(extractTeamworkTask('/teamwork-preview   Analyze AST   ')).toBe('Analyze AST');
       expect(extractTeamworkTask('/teamwork')).toBe('');
       expect(extractTeamworkTask('No slash command')).toBe('No slash command');
+    });
+  });
+
+  describe('enforceTaskBreakdownPrompt', () => {
+    it('appends structured task breakdown instructions to plain prompt', () => {
+      const result = enforceTaskBreakdownPrompt('Implement user login system');
+      expect(result).toContain('Implement user login system');
+      expect(result).toContain('Instructions:');
+      expect(result).toContain('- [ ] task description');
+    });
+
+    it('does not duplicate instructions if Antigravity mode format already present', () => {
+      const planPrompt = '[Antigravity /plan Mode]\nTask: Refactor auth';
+      expect(enforceTaskBreakdownPrompt(planPrompt)).toBe(planPrompt);
+    });
+
+    it('does not duplicate instructions if markdown checkboxes already present', () => {
+      const checkboxPrompt = 'Please do the following:\n- [ ] Step 1\n- [ ] Step 2';
+      expect(enforceTaskBreakdownPrompt(checkboxPrompt)).toBe(checkboxPrompt);
+    });
+
+    it('returns empty/whitespace input unchanged', () => {
+      expect(enforceTaskBreakdownPrompt('')).toBe('');
+      expect(enforceTaskBreakdownPrompt('   ')).toBe('   ');
     });
   });
 });

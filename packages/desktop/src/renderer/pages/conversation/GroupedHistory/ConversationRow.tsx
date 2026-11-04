@@ -19,6 +19,7 @@ import {
   EditOne,
   Export,
   FolderClose,
+  FolderOpen,
   Inbox,
   MessageOne,
   MoreOne,
@@ -65,6 +66,7 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
     onArchive,
     onDelete,
     onExport,
+    onMoveToProject,
     onTogglePin,
     onToggleManualUnread,
     isManualUnread,
@@ -325,6 +327,10 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
                       onExport?.(conversation);
                       return;
                     }
+                    if (key === 'moveToProject') {
+                      onMoveToProject?.(conversation);
+                      return;
+                    }
                     if (key === 'archive') {
                       onArchive(conversation);
                       return;
@@ -365,6 +371,14 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
                       <div className='flex items-center gap-8px'>
                         <Export theme='outline' size='14' />
                         <span>{t('conversation.history.export')}</span>
+                      </div>
+                    </Menu.Item>
+                  )}
+                  {onMoveToProject && (
+                    <Menu.Item key='moveToProject'>
+                      <div className='flex items-center gap-8px'>
+                        <FolderOpen theme='outline' size='14' />
+                        <span>{t('conversation.history.moveToProject')}</span>
                       </div>
                     </Menu.Item>
                   )}

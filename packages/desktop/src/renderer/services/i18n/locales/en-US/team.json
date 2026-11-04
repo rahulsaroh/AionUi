@@ -20,7 +20,15 @@
     "archiveSuccess": "Team archived",
     "archiveFailed": "Failed to archive team",
     "editTeam": "Edit Team",
-    "deleteFailed": "Failed to delete team"
+    "deleteFailed": "Failed to delete team",
+    "teamsTab": "Teams"
+  },
+  "organization": {
+    "tab": "Organization",
+    "canvas": "Organization Canvas",
+    "rootHq": "Root HQ",
+    "division": "Division",
+    "subTeam": "Sub-Team"
   },
   "activeMembers": {
     "title": "Active Members",

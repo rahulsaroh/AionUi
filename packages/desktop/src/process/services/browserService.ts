@@ -1,4 +1,6 @@
 import { ipcMain, webContents } from 'electron';
+import { ensureInAppBrowserOpen, flushBrowserSessionData } from './browser/browserLauncherHelper';
+import { getBrowserHistoryService } from './browser/BrowserHistoryService';
 
 /**
  * Finds the active in-app browser webview webContents.
@@ -16,10 +18,6 @@ export function getBrowserWebContents() {
 export function registerBrowserService(): void {
   ipcMain.handle('browser:navigate', async (_event, url: string) => {
     try {
-      const wc = getBrowserWebContents();
-      if (!wc) {
-        return { success: false, error: 'Browser webview not found' };
-      }
       let targetUrl = (url || '').trim();
       if (!targetUrl) {
         return { success: false, error: 'URL is required' };
@@ -27,7 +25,21 @@ export function registerBrowserService(): void {
       if (!/^https?:\/\//i.test(targetUrl) && !/^about:/i.test(targetUrl) && !/^file:\/\//i.test(targetUrl)) {
         targetUrl = 'https://' + targetUrl;
       }
+      let wc = getBrowserWebContents();
+      if (!wc) {
+        try {
+          wc = await ensureInAppBrowserOpen(targetUrl);
+        } catch {
+          return { success: false, error: 'Browser webview not found' };
+        }
+      }
       await wc.loadURL(targetUrl);
+      await flushBrowserSessionData().catch(() => {});
+      try {
+        getBrowserHistoryService().addEntry({ url: targetUrl, title: wc.getTitle?.() || targetUrl });
+      } catch {
+        // ignore
+      }
       return { success: true, url: wc.getURL() };
     } catch (error) {
       console.error('[browserService] navigate error:', error);
@@ -40,9 +52,13 @@ export function registerBrowserService(): void {
 
   ipcMain.handle('browser:click', async (_event, selector: string) => {
     try {
-      const wc = getBrowserWebContents();
+      let wc = getBrowserWebContents();
       if (!wc) {
-        return { success: false, error: 'Browser webview not found' };
+        try {
+          wc = await ensureInAppBrowserOpen();
+        } catch {
+          return { success: false, error: 'Browser webview not found' };
+        }
       }
       const script = `
         (() => {
@@ -72,9 +88,13 @@ export function registerBrowserService(): void {
 
   ipcMain.handle('browser:type', async (_event, selector: string, text: string) => {
     try {
-      const wc = getBrowserWebContents();
+      let wc = getBrowserWebContents();
       if (!wc) {
-        return { success: false, error: 'Browser webview not found' };
+        try {
+          wc = await ensureInAppBrowserOpen();
+        } catch {
+          return { success: false, error: 'Browser webview not found' };
+        }
       }
       const script = `
         (() => {
@@ -107,9 +127,13 @@ export function registerBrowserService(): void {
 
   ipcMain.handle('browser:scroll', async (_event, x: number = 0, y: number = 0) => {
     try {
-      const wc = getBrowserWebContents();
+      let wc = getBrowserWebContents();
       if (!wc) {
-        return { success: false, error: 'Browser webview not found' };
+        try {
+          wc = await ensureInAppBrowserOpen();
+        } catch {
+          return { success: false, error: 'Browser webview not found' };
+        }
       }
       const script = `
         (() => {
@@ -130,9 +154,13 @@ export function registerBrowserService(): void {
 
   ipcMain.handle('browser:screenshot', async () => {
     try {
-      const wc = getBrowserWebContents();
+      let wc = getBrowserWebContents();
       if (!wc) {
-        return { success: false, error: 'Browser webview not found' };
+        try {
+          wc = await ensureInAppBrowserOpen();
+        } catch {
+          return { success: false, error: 'Browser webview not found' };
+        }
       }
       const image = await wc.capturePage();
       const data = image.toDataURL();

@@ -175,9 +175,11 @@ export const formatAntigravityPrompt = (command: AntigravityCommandName, payload
         '',
         'Instructions:',
         'The user has requested web browsing, documentation lookup, and online research.',
-        '1. Search for official documentation, recent release notes, and authoritative sources.',
-        '2. Verify API specs, version compatibility, and known issues.',
-        '3. Synthesize findings clearly with direct references and citations.',
+        '1. ALWAYS use the built-in in-app browser tools (such as `aionui-browser` MCP or `browser_*` actions) to perform web tasks and browser automation.',
+        '2. NEVER open external browsers, never spawn external Chrome/Edge processes, and never run shell commands (e.g. `start`, `open`, `python webbrowser`, `playwright launch`) that open external browser windows.',
+        '3. Search for official documentation, recent release notes, and authoritative sources directly in the built-in browser.',
+        '4. Verify API specs, version compatibility, and known issues.',
+        '5. Synthesize findings clearly with direct references and citations.',
       ].join('\n');
 
     case 'schedule':
@@ -245,4 +247,28 @@ export const extractTeamworkTask = (input: string): string => {
   const match = trimmed.match(ANTIGRAVITY_PARSE_RE);
   if (!match) return trimmed;
   return (match[2] ?? '').trim();
+};
+
+/**
+ * Ensures the prompt requests structured task planning (markdown checkboxes / plan protocol)
+ * when Antigravity mode or multi-step execution is active.
+ */
+export const enforceTaskBreakdownPrompt = (input: string): string => {
+  const trimmed = input.trim();
+  if (!trimmed) return input;
+  // If already wrapped with Antigravity mode prompt or contains task breakdown instructions
+  if (
+    trimmed.includes('[Antigravity') ||
+    trimmed.includes('- [ ]') ||
+    trimmed.toLowerCase().includes('task breakdown')
+  ) {
+    return input;
+  }
+
+  return [
+    input,
+    '',
+    'Instructions:',
+    'Before executing, break down your plan into discrete tasks using markdown checkboxes (`- [ ] task description`), so progress can be tracked. Update tasks as completed (`- [x]`) as you finish each one.',
+  ].join('\n');
 };

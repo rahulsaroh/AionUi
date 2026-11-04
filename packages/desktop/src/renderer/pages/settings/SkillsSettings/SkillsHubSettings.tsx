@@ -683,6 +683,17 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
               {skill.description}
             </p>
           )}
+          <div className='flex items-center gap-8px mt-2px text-11px text-t-tertiary'>
+            <span className='flex items-center gap-4px'>
+              <span className='inline-block w-4px h-4px rounded-full bg-[var(--color-success-6)]' />
+              Used in {getAssistantsUsingSkill(skill.name, assistantCatalog ?? []).length} assistants
+            </span>
+            {(skill as any).last_used_at && (
+              <span className='flex items-center gap-4px'>
+                Last used {new Date((skill as any).last_used_at).toLocaleDateString()}
+              </span>
+            )}
+          </div>
         </div>
         <div className='shrink-0 sm:self-center flex items-center justify-end ps-4px'>
           <SkillUsedByStack assistants={getAssistantsUsingSkill(skill.name, assistantCatalog ?? [])} />

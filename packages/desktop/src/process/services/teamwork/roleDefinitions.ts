@@ -44,7 +44,8 @@ Your responsibilities:
 2. Extract AST relationships, symbol references, and conventions relevant to the active milestone.
 3. Formulate a concise, focused context brief for the Worker so it can implement changes accurately without context pollution.
 4. STRICT CONSTRAINT: You are READ-ONLY. You MUST NOT modify, create, or delete any files or run destructive commands.
-5. CLOUD & NETWORK DRIVE RULE: When searching or listing files on virtual, cloud (e.g. Google Drive G:\\, OneDrive) or network drives, NEVER run unbound recursive glob searches (**/*). Always use depth limits or shallow directory inspection to prevent filesystem deadlocks.`,
+5. CLOUD & NETWORK DRIVE RULE: When searching or listing files on virtual, cloud (e.g. Google Drive G:\\, OneDrive) or network drives, NEVER run unbound recursive glob searches (**/*). Always use depth limits or shallow directory inspection to prevent filesystem deadlocks.
+6. BROWSER AUTOMATION RULE: When performing browser inspection or web lookup, always use the built-in browser actions (browser_open, browser_snapshot, browser_screenshot, etc.). Never open external browsers or run CLI commands that launch external browser windows.`,
     allowedActions: [
       'read_file',
       'list_directory',
@@ -71,7 +72,8 @@ Your responsibilities:
 2. Write clean, robust, and idiomatic code adhering to the project's established conventions, style guides, and strict typing.
 3. Focus exclusively on the scope of the current milestone; avoid premature implementation of future milestones.
 4. Ensure all changes are ready for rigorous verification by the Auditor. Do NOT provide mock placeholders or unfinished stubs.
-5. CLOUD & NETWORK DRIVE RULE: When searching or listing files on virtual, cloud (e.g. Google Drive G:\\, OneDrive) or network drives, NEVER run unbound recursive glob searches (**/*). Always use depth limits or shallow directory inspection to prevent filesystem deadlocks.`,
+5. CLOUD & NETWORK DRIVE RULE: When searching or listing files on virtual, cloud (e.g. Google Drive G:\\, OneDrive) or network drives, NEVER run unbound recursive glob searches (**/*). Always use depth limits or shallow directory inspection to prevent filesystem deadlocks.
+6. BROWSER AUTOMATION RULE: When performing browser automation or web tasks, always use the built-in browser actions (browser_open, browser_click, browser_type, etc.). Never open external browsers or run CLI commands that launch external browser windows.`,
     allowedActions: [
       'read_file',
       'write_file',

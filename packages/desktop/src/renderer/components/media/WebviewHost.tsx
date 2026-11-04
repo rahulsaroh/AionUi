@@ -292,6 +292,12 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
         internalNavRef.current.record(newUrl);
         setCurrentUrl(newUrl);
         setInputUrl(newUrl);
+        if (window.electronAPI?.browserRecordHistory) {
+          void window.electronAPI.browserRecordHistory({
+            url: newUrl,
+            title: webviewEl.getTitle?.() || newUrl,
+          });
+        }
       }
       syncNavState();
     };
@@ -428,7 +434,15 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
     };
 
     const handlePageTitleUpdated = (event: Event & { title?: string }) => {
-      if (event.title) onTitleChangeRef.current?.(event.title);
+      if (event.title) {
+        onTitleChangeRef.current?.(event.title);
+        if (window.electronAPI?.browserRecordHistory && currentUrl) {
+          void window.electronAPI.browserRecordHistory({
+            url: currentUrl,
+            title: event.title,
+          });
+        }
+      }
     };
 
     const handlePageFaviconUpdated = (event: Event & { favicons?: string[] }) => {

@@ -1,6 +1,7 @@
 import { Button, Dropdown, Menu, Message, Modal, Spin, Tooltip } from '@arco-design/web-react';
-import { FullScreen, Left, MoreOne, OffScreen, Peoples, Right } from '@icon-park/react';
+import { FullScreen, Left, MoreOne, OffScreen, Peoples, Plus, Right } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import useSWR, { useSWRConfig } from 'swr';
@@ -42,6 +43,8 @@ import TeamNewTaskButton from './components/TeamNewTaskButton';
 import TeamActivityView from './activity/TeamActivityView';
 import TeamWarmupOverlay from './components/TeamWarmupOverlay';
 import { useTeamViewMode } from './hooks/useTeamViewMode';
+import { useTeamList } from './hooks/useTeamList';
+import TeamCreateModal from './components/TeamCreateModal';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import { TeamWatchdogToggle, useTeamWatchdog } from './watchdog';
 import { useTeamWarmup, type TeamWarmupMemberState, type TeamWarmupPhase } from './hooks/useTeamWarmup';
@@ -626,6 +629,13 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
   onRetryWarmup,
 }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { teams: allTeams } = useTeamList();
+  const [isCreateSubTeamVisible, setIsCreateSubTeamVisible] = useState(false);
+  const parentTeam = useMemo(
+    () => (team.parentId ? allTeams?.find((t) => t.id === team.parentId) : undefined),
+    [allTeams, team.parentId]
+  );
   useActiveLease({ type: 'team', id: team.id });
   const { assistants, activeSlotId, switchTab, colorOf, colorOfConversation, statusMap } = useTeamTabs();
   const [, messageContext] = Message.useMessage({ maxCount: 1 });
@@ -993,6 +1003,16 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
                   onClick={() => setIsBrowserOpen((prev) => !prev)}
                 />
               </Tooltip>
+              <Tooltip content={t('team.subTeam.add', { defaultValue: 'Add Sub-Team / Department' })} position='bottom'>
+                <Button
+                  size='small'
+                  icon={<Plus theme='outline' size='14' />}
+                  onClick={() => setIsCreateSubTeamVisible(true)}
+                  data-testid='team-header-add-subteam-btn'
+                >
+                  {t('team.subTeam.btn', { defaultValue: 'Sub-Team' })}
+                </Button>
+              </Tooltip>
               <TeamNewTaskButton
                 team={team}
                 teamRunView={teamRun.state}
@@ -1004,9 +1024,21 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
             </div>
           }
           headerLeading={
-            <span className='inline-flex w-24px h-24px rounded-6px bg-fill-2 items-center justify-center shrink-0 leading-none text-t-primary border border-solid border-[color:var(--border-base)]'>
-              <Peoples theme='outline' size='14' fill='currentColor' style={{ lineHeight: 0 }} />
-            </span>
+            <div className='flex items-center gap-6px'>
+              <span className='inline-flex w-24px h-24px rounded-6px bg-fill-2 items-center justify-center shrink-0 leading-none text-t-primary border border-solid border-[color:var(--border-base)]'>
+                <Peoples theme='outline' size='14' fill='currentColor' style={{ lineHeight: 0 }} />
+              </span>
+              {parentTeam && (
+                <span
+                  role='button'
+                  onClick={() => navigate(`/team/${parentTeam.id}`)}
+                  className='text-12px text-t-tertiary hover:text-primary-6 cursor-pointer max-w-120px truncate'
+                  title={parentTeam.name}
+                >
+                  {parentTeam.name} /
+                </span>
+              )}
+            </div>
           }
         >
           <div className='relative flex flex-row flex-1 h-full w-full overflow-hidden'>
@@ -1236,6 +1268,18 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
             </div>
           </div>
         </ChatLayout>
+        {isCreateSubTeamVisible && (
+          <TeamCreateModal
+            visible={isCreateSubTeamVisible}
+            defaultParentId={team.id}
+            onClose={() => setIsCreateSubTeamVisible(false)}
+            onCreated={(newSubTeam) => {
+              setIsCreateSubTeamVisible(false);
+              Message.success(t('team.subTeam.created', { defaultValue: 'Sub-team created successfully' }));
+              navigate(`/team/${newSubTeam.id}`);
+            }}
+          />
+        )}
       </TeamIdentityProvider>
     </TeamPermissionProvider>
   );

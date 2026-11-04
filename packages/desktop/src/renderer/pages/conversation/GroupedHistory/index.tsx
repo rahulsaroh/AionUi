@@ -11,14 +11,15 @@ import { useCronJobsMap } from '@/renderer/pages/cron';
 import { restrictToVerticalAxis } from '@/renderer/utils/ui/dndModifiers';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Button, Dropdown, Empty, Input, Menu, Modal, Tooltip } from '@arco-design/web-react';
+import { Button, Dropdown, Empty, Input, Menu, Modal, Tag, Tooltip } from '@arco-design/web-react';
 import { Delete, FolderClose, MoreOne, Plus, Right } from '@icon-park/react';
 import classNames from 'classnames';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import WorkspaceCollapse from '../components/WorkspaceCollapse';
+import { MoveToProjectModal } from '../components/MoveToProjectModal';
 import ConversationRow from './ConversationRow';
 import SortableConversationRow from './SortableConversationRow';
 import { useBatchSelection } from './hooks/useBatchSelection';
@@ -42,6 +43,8 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
   const isMobile = layout?.isMobile ?? false;
   const { getJobStatus, markAsRead, setActiveConversation } = useCronJobsMap();
 
+  const [activeTagFilter, setActiveTagFilter] = useState<'all' | 'work' | 'personal' | 'dev' | 'archive'>('all');
+
   const {
     conversations,
     isConversationGenerating,
@@ -57,6 +60,22 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     collapsedSections,
     toggleSection,
   } = useConversations();
+
+  const filteredConversations = useMemo(() => {
+    if (activeTagFilter === 'all') return conversations;
+    return conversations.filter((c) => {
+      const tags: string[] = ((c as any).tags || []).map((tag: string) => tag.toLowerCase());
+      return tags.includes(activeTagFilter);
+    });
+  }, [conversations, activeTagFilter]);
+
+  const filteredPinned = useMemo(() => {
+    if (activeTagFilter === 'all') return pinnedConversations;
+    return pinnedConversations.filter((c) => {
+      const tags: string[] = ((c as any).tags || []).map((tag: string) => tag.toLowerCase());
+      return tags.includes(activeTagFilter);
+    });
+  }, [pinnedConversations, activeTagFilter]);
 
   const SectionLabel = useCallback(
     ({ sectionKey, label, trailing }: { sectionKey: string; label: string; trailing?: React.ReactNode }) => {
@@ -133,6 +152,11 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
     deleteProjectLoading,
     handleDeleteProjectCancel,
     handleDeleteProjectConfirm,
+    handleMoveToProject,
+    handleBatchMove,
+    moveToProjectTarget,
+    handleMoveToProjectCancel,
+    handleMoveToProjectSuccess,
   } = useConversationActions({
     batchMode,
     onSessionClick,
@@ -188,6 +212,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
       onCreateCronTask: handleCreateCronTask,
       onArchive: handleArchive,
       onDelete: handleDelete,
+      onMoveToProject: handleMoveToProject,
       onTogglePin: handleTogglePin,
       onToggleManualUnread: handleToggleManualUnread,
       getJobStatus,
@@ -212,6 +237,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
       handleCreateCronTask,
       handleArchive,
       handleDelete,
+      handleMoveToProject,
       handleTogglePin,
       handleToggleManualUnread,
       getJobStatus,
@@ -272,6 +298,21 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
 
   return (
     <>
+      {/* Tag / Folder Filter Pills */}
+      <div className='px-12px pb-8px pt-2px flex items-center gap-8px flex-wrap text-12px text-t-secondary'>
+        <span className='shrink-0'>Filter:</span>
+        {(['all', 'work', 'personal', 'dev', 'archive'] as const).map((tag) => (
+          <Tag
+            key={tag}
+            size='small'
+            color={activeTagFilter === tag ? 'arcoblue' : undefined}
+            className='cursor-pointer capitalize'
+            onClick={() => setActiveTagFilter(tag)}
+          >
+            {tag}
+          </Tag>
+        ))}
+      </div>
       <Modal
         title={t('conversation.history.renameTitle')}
         visible={renameModalVisible}
@@ -301,7 +342,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
             <div className='text-12px leading-18px text-t-secondary'>
               {t('conversation.history.selectedCount', { count: selectedCount })}
             </div>
-            <div className='grid grid-cols-3 gap-6px'>
+            <div className='grid grid-cols-4 gap-6px'>
               <Button
                 className='!w-full !justify-center !min-w-0 !h-30px !px-4px !text-12px whitespace-nowrap'
                 size='mini'
@@ -317,6 +358,14 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
                 onClick={handleBatchArchive}
               >
                 {t('conversation.history.batchArchive')}
+              </Button>
+              <Button
+                className='!w-full !justify-center !min-w-0 !h-30px !px-4px !text-12px whitespace-nowrap'
+                size='mini'
+                type='secondary'
+                onClick={() => handleBatchMove(conversations)}
+              >
+                {t('conversation.history.batchMove')}
               </Button>
               <Button
                 className='!w-full !justify-center !min-w-0 !h-30px !px-4px !text-12px whitespace-nowrap'
@@ -432,6 +481,19 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
           })}
         </div>
       </AionModal>
+
+      {/* 移动到项目弹窗 */}
+      <MoveToProjectModal
+        visible={moveToProjectTarget !== null}
+        conversations={moveToProjectTarget ?? []}
+        projectGroups={projectGroups.map((g) => ({
+          workspace: g.workspace,
+          display_name: g.displayName,
+          conversations: g.conversations,
+        }))}
+        onCancel={handleMoveToProjectCancel}
+        onSuccess={handleMoveToProjectSuccess}
+      />
 
       <div>
         {/* L1: Pinned section */}

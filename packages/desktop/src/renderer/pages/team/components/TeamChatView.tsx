@@ -20,6 +20,11 @@ import { useTeamTabs } from '@/renderer/pages/team/hooks/TeamTabsContext';
 import { usePresetAssistantInfo } from '@/renderer/hooks/agent/usePresetAssistantInfo';
 import { resolveConversationBackend } from '@/renderer/pages/conversation/utils/conversationAssistantIdentity';
 import { injectRetainedSkillsIntoPrompt } from '../utils/teamMemoryManager';
+import { useTeamList } from '../hooks/useTeamList';
+import {
+  parseSubTeamDelegationRequests,
+  executeSubTeamDelegation,
+} from '../utils/subTeamDelegationBridge';
 
 import AcpChat from '@/renderer/pages/conversation/platforms/acp/AcpChat';
 import AionrsChat from '@/renderer/pages/conversation/platforms/aionrs/AionrsChat';
@@ -139,6 +144,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
   const { t } = useTranslation();
   const { activeSlotId, switchTab, assistants = [] } = useTeamTabs();
   const { info: presetAssistantInfo } = usePresetAssistantInfo(conversation);
+  const { teams: allTeams } = useTeamList();
   const capabilitySnapshot = conversation.extra as TeamConversationCapabilitySnapshot | undefined;
   // Single source of truth for the team greeting. Each *Chat simply forwards
   // `emptySlot` to MessageList. The empty state can derive preset assistant
@@ -159,7 +165,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
     async ({ input, files }) => {
       if (!team_id) throw new Error('Missing team id for team send');
 
-      const enrichedInput = injectRetainedSkillsIntoPrompt(team_id, input);
+      const enrichedInput = injectRetainedSkillsIntoPrompt(team_id, input, false, allTeams);
       onPromptSent?.({ input: enrichedInput, files, slot_id: isLeader ? undefined : slot_id });
       if (isLeader) {
         const ack = await ipcBridge.team.sendMessage.invoke({ team_id, input: enrichedInput, files });
@@ -175,7 +181,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
       });
       onTeamRunAck?.(ack);
     },
-    [conversation.extra?.workspace, isLeader, onPromptSent, onTeamRunAck, slot_id, team_id]
+    [allTeams, conversation.extra?.workspace, isLeader, onPromptSent, onTeamRunAck, slot_id, team_id]
   );
   const teamSendMessageOverride = team_id ? teamSendMessage : undefined;
   const resolvedAssistantBackend =

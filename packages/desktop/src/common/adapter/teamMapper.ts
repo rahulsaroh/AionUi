@@ -30,6 +30,9 @@ export type ICreateTeamParams = {
   workspace: string;
   workspace_mode: WorkspaceMode;
   agents: TeamAssistantInput[];
+  parentId?: string | null;
+  departmentRole?: string;
+  description?: string;
 };
 
 export type IAddTeamAssistantParams = {
@@ -129,6 +132,39 @@ export function fromBackendTeam(raw: unknown): TTeam {
   const assistants = rawAssistants.map(fromBackendAssistant);
   const leaderAssistantId =
     (r.leader_assistant_id as string | undefined) ?? (r.leader_agent_id as string | undefined) ?? '';
+  let customMeta: Record<string, unknown> = {};
+  if (typeof r.custom_metadata === 'string') {
+    try {
+      customMeta = JSON.parse(r.custom_metadata) as Record<string, unknown>;
+    } catch {
+      // ignore
+    }
+  }
+
+  const parentId =
+    (r.parent_id as string | undefined) ??
+    (r.parentId as string | undefined) ??
+    (customMeta.parentId as string | undefined) ??
+    null;
+
+  const departmentRole =
+    (r.department_role as string | undefined) ??
+    (r.departmentRole as string | undefined) ??
+    (customMeta.departmentRole as string | undefined) ??
+    undefined;
+
+  const description =
+    (r.description as string | undefined) ??
+    (customMeta.description as string | undefined) ??
+    undefined;
+
+  const subTeamIds =
+    Array.isArray(r.subTeamIds)
+      ? (r.subTeamIds as string[])
+      : Array.isArray(customMeta.subTeamIds)
+        ? (customMeta.subTeamIds as string[])
+        : [];
+
   return {
     id: (r.id as string | undefined) ?? '',
     user_id: (r.user_id as string | undefined) ?? '',
@@ -142,6 +178,10 @@ export function fromBackendTeam(raw: unknown): TTeam {
     session_mode: r.session_mode as string | undefined,
     created_at: (r.created_at as number | undefined) ?? 0,
     updated_at: (r.updated_at as number | undefined) ?? 0,
+    parentId,
+    subTeamIds,
+    departmentRole,
+    description,
   };
 }
 

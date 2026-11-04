@@ -35,9 +35,11 @@ import { useBrowserNotification } from '@renderer/hooks/system/notification/useB
 import { useDesktopTurnNotification } from '@renderer/hooks/system/notification/useDesktopTurnNotification';
 import { cleanupSiderTooltips } from '@renderer/utils/ui/siderTooltip';
 import { useConversationShortcuts } from '@renderer/hooks/ui/useConversationShortcuts';
+import { useOptionalThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { isElectronDesktop } from '@renderer/utils/platform';
 import { IS_DISCONTINUED_BUILD } from '@/renderer/utils/discontinuedBuild';
 import UpdateMigrationDialog from '@/renderer/components/settings/UpdateMigrationDialog';
+import { KeyboardShortcutMapModal } from '@renderer/components/layout/KeyboardShortcutMapModal';
 import '@renderer/styles/layout.css';
 
 const SidebarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 18, strokeWidth = 4 }) => (
@@ -136,7 +138,13 @@ const Layout: React.FC<{
   const toggleSider = useCallback(() => {
     setCollapsed((previous) => !previous);
   }, []);
-  useConversationShortcuts({ navigate, toggleSider });
+  const themeContext = useOptionalThemeContext();
+  const toggleTheme = useCallback(() => {
+    if (themeContext) {
+      themeContext.setTheme(themeContext.theme === 'dark' ? 'light' : 'dark');
+    }
+  }, [themeContext]);
+  useConversationShortcuts({ navigate, toggleSider, toggleTheme });
   // Expose navigate to code running outside the Router tree (e.g. the globally
   // mounted FeedbackReportModal's "via chat" action).
   useEffect(() => {
@@ -576,6 +584,7 @@ const Layout: React.FC<{
             )}
           </ArcoLayout>
         </div>
+        <KeyboardShortcutMapModal />
       </NavigationHistoryProvider>
     </LayoutContext.Provider>
   );

@@ -15,7 +15,7 @@ import ThemedLogo from '@/renderer/components/agent/ThemedLogo';
 import { resolveConversationLeadingMark } from '@/renderer/pages/conversation/utils/conversationAssistantIdentity';
 import { blockMobileInputFocus, blurActiveElement } from '@/renderer/utils/ui/focus';
 import { isPrimaryApplicationShortcut } from '@/renderer/utils/ui/keyboardShortcuts';
-import { Empty, Spin, Typography } from '@arco-design/web-react';
+import { Empty, Spin, Tag, Typography } from '@arco-design/web-react';
 import { Close, MessageOne, Robot, Search } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -150,6 +150,24 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [recentKeywords, setRecentKeywords] = useState<string[]>([]);
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'aionrs' | 'acp' | 'codex'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | '1d' | '7d' | '30d'>('all');
+
+  const handleOpen = useCallback(() => {
+    if (!disabled) {
+      setVisible(true);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    const handleOpenEvent = () => {
+      handleOpen();
+    };
+    window.addEventListener('open-history-search', handleOpenEvent);
+    return () => {
+      window.removeEventListener('open-history-search', handleOpenEvent);
+    };
+  }, [handleOpen]);
 
   useEffect(() => {
     try {
@@ -297,18 +315,16 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
     setLoadingMore(false);
   }, []);
 
-  const handleOpen = useCallback(() => {
-    if (!disabled) {
-      setVisible(true);
-    }
-  }, [disabled]);
-
   useEffect(() => {
     const handleGlobalSearchShortcut = (event: KeyboardEvent) => {
       if (
         !isPrimaryApplicationShortcut(event, {
           key: 'f',
           shiftKey: true,
+          targetGuard: 'embedded-editor',
+        }) &&
+        !isPrimaryApplicationShortcut(event, {
+          key: 'k',
           targetGuard: 'embedded-editor',
         })
       ) {
@@ -328,6 +344,26 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
   }, [disabled, handleOpen]);
 
   const triggerAriaLabel = t('conversation.historySearch.tooltip');
+
+  const displayedItems = useMemo(() => {
+    return items.filter((item) => {
+      if (platformFilter !== 'all') {
+        const pType = (item.conversation.type || '').toLowerCase();
+        if (!pType.includes(platformFilter)) {
+          return false;
+        }
+      }
+      if (dateFilter !== 'all') {
+        const now = Date.now();
+        const msgTime = item.message_created_at;
+        const diff = now - msgTime;
+        if (dateFilter === '1d' && diff > 86400000) return false;
+        if (dateFilter === '7d' && diff > 604800000) return false;
+        if (dateFilter === '30d' && diff > 2592000000) return false;
+      }
+      return true;
+    });
+  }, [items, platformFilter, dateFilter]);
 
   const resultContent = useMemo(() => {
     if (!debouncedKeyword) {
@@ -362,7 +398,7 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
       );
     }
 
-    if (items.length === 0) {
+    if (displayedItems.length === 0) {
       return (
         <div className='conversation-search-modal__state'>
           <Empty className='py-2px' description={t('conversation.historySearch.empty')} />
@@ -381,7 +417,7 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
         }}
       >
         <div className='conversation-search-modal__results flex flex-col'>
-          {items.map((item) => {
+          {displayedItems.map((item) => {
             const snippet = buildSnippet(item.preview_text, debouncedKeyword);
             return (
               <button
@@ -537,6 +573,44 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
               onChange={setKeyword}
               onClear={handleClearKeyword}
             />
+          </div>
+
+          <div className='flex items-center gap-12px mb-12px flex-wrap text-12px'>
+            <div className='flex items-center gap-6px'>
+              <span className='text-t-secondary'>Platform:</span>
+              {(['all', 'aionrs', 'acp', 'codex'] as const).map((p) => (
+                <Tag
+                  key={p}
+                  size='small'
+                  color={platformFilter === p ? 'arcoblue' : undefined}
+                  className='cursor-pointer uppercase'
+                  onClick={() => setPlatformFilter(p)}
+                >
+                  {p}
+                </Tag>
+              ))}
+            </div>
+            <div className='flex items-center gap-6px'>
+              <span className='text-t-secondary'>Date:</span>
+              {(
+                [
+                  { label: 'All', value: 'all' },
+                  { label: '24h', value: '1d' },
+                  { label: '7d', value: '7d' },
+                  { label: '30d', value: '30d' },
+                ] as const
+              ).map((d) => (
+                <Tag
+                  key={d.value}
+                  size='small'
+                  color={dateFilter === d.value ? 'arcoblue' : undefined}
+                  className='cursor-pointer'
+                  onClick={() => setDateFilter(d.value)}
+                >
+                  {d.label}
+                </Tag>
+              ))}
+            </div>
           </div>
 
           <div className='flex-1 min-h-0'>{resultContent}</div>

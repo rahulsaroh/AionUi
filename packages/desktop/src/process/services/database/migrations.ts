@@ -1219,6 +1219,34 @@ const migration_v26: IMigration = {
 };
 
 /**
+ * Migration v26 -> v27: Add parent_id, department_role, and description columns to teams table
+ * for infinite hierarchical nested teams/departments.
+ */
+const migration_v27: IMigration = {
+  version: 27,
+  name: 'Add parent_id, department_role, description to teams table',
+  up: (db) => {
+    const columns = new Set((db.pragma('table_info(teams)') as Array<{ name: string }>).map((c) => c.name));
+    if (!columns.has('parent_id')) {
+      db.exec('ALTER TABLE teams ADD COLUMN parent_id TEXT NULL');
+      console.log('[Migration v27] Added parent_id column to teams table');
+    }
+    if (!columns.has('department_role')) {
+      db.exec('ALTER TABLE teams ADD COLUMN department_role TEXT NULL');
+      console.log('[Migration v27] Added department_role column to teams table');
+    }
+    if (!columns.has('description')) {
+      db.exec('ALTER TABLE teams ADD COLUMN description TEXT NULL');
+      console.log('[Migration v27] Added description column to teams table');
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_teams_parent_id ON teams(parent_id)');
+  },
+  down: (_db) => {
+    console.warn('[Migration v27] Rollback skipped: SQLite cannot drop columns without table rebuild.');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1227,7 +1255,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v7, migration_v8, migration_v9, migration_v10, migration_v11, migration_v12,
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
-  migration_v25, migration_v26,
+  migration_v25, migration_v26, migration_v27,
 ];
 
 /**

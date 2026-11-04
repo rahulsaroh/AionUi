@@ -1341,6 +1341,11 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const unsubscribe = stream.on((message) => {
       if (isBrowserMcpActivity(message.type, message.data)) {
+        if (!tabsRef.current.some((tab) => tab.content_type === 'browser')) {
+          openBrowserTab();
+        } else {
+          setIsOpen(true);
+        }
         markBrowserTabs(true);
         maybeNotifyFirstAgentBrowserUse();
         return;

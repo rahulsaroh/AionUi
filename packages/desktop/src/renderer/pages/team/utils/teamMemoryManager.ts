@@ -10,6 +10,7 @@ import type { IMessageText, TMessage } from '@/common/chat/chatLib';
 import type { TeamMemory, TeamMemorySkill, TTeam } from '@/common/types/team/teamTypes';
 import { loadAllConversationMessagesPaged } from '@/renderer/utils/chat/messagePagination';
 import { emitter } from '@/renderer/utils/emitter';
+import { buildSubTeamDelegationDirective } from './subTeamDelegationBridge';
 
 function isTextMessage(message: TMessage): message is IMessageText {
   return message.type === 'text' && typeof (message as IMessageText).content?.content === 'string';
@@ -266,24 +267,40 @@ export function formatMemoryForPrompt(memory: TeamMemory): string {
 }
 
 /**
- * Inject retained skills into the prompt if not yet injected in the current task.
+ * Inject retained skills into the prompt if not yet injected in the current task,
+ * plus dynamically inject sub-team delegation directives if this team has child sub-teams.
  */
-export function injectRetainedSkillsIntoPrompt(teamId: string, input: string, force = false): string {
+export function injectRetainedSkillsIntoPrompt(
+  teamId: string,
+  input: string,
+  force = false,
+  allTeams?: TTeam[]
+): string {
   if (!teamId) return input;
   const memory = getTeamMemory(teamId);
-  if (memory.skills.length === 0 && memory.systemDirectives.length === 0) {
-    return input;
-  }
 
-  if (!force && isTaskMemoryInjected(teamId)) {
-    return input;
+  let delegationDirective = '';
+  if (allTeams && allTeams.length > 0) {
+    const currentTeam = allTeams.find((t) => t.id === teamId);
+    if (currentTeam) {
+      delegationDirective = buildSubTeamDelegationDirective(currentTeam, allTeams);
+    }
   }
 
   const memoryBlock = formatMemoryForPrompt(memory);
-  if (!memoryBlock) return input;
 
-  markTaskMemoryInjected(teamId);
-  return `${memoryBlock}\n\n---\n${input}`;
+  const prefixSections: string[] = [];
+  if (delegationDirective) {
+    prefixSections.push(delegationDirective);
+  }
+
+  if (memoryBlock && (force || !isTaskMemoryInjected(teamId))) {
+    prefixSections.push(memoryBlock);
+    markTaskMemoryInjected(teamId);
+  }
+
+  if (prefixSections.length === 0) return input;
+  return `${prefixSections.join('\n\n---\n\n')}\n\n---\n${input}`;
 }
 
 const DISTILLATION_PROMPT = `

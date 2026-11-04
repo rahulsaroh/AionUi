@@ -6,36 +6,43 @@ import { useCallback, useEffect } from 'react';
 import useSWR from 'swr';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { removeTeamWithCronCleanup } from '../utils/removeTeamAssistantWithCronCleanup';
-import { pruneOrphanTeamStorage } from '../utils/teamStorage';
+import { pruneOrphanTeamStorage, normalizeTeamsHierarchy, deleteTeamCascade } from '../utils/teamStorage';
 
 export function useTeamList() {
-  const { user } = useAuth();
+  let user: { id?: string } | undefined;
+  try {
+    const auth = useAuth();
+    user = auth.user;
+  } catch {
+    // In standalone/isolated test environments without AuthProvider
+    user = undefined;
+  }
   const user_id = user?.id ?? 'system_default_user';
 
   const { data, mutate } = useSWR<TTeam[]>(`teams/${user_id}`, () => ipcBridge.team.list.invoke({ user_id }), {
     revalidateOnFocus: false,
   });
-  const teams = data ?? [];
+  const teams = normalizeTeamsHierarchy(data ?? []);
 
   // Refresh list when backend creates/removes a team (e.g. via MCP)
   useEffect(() => {
-    const unsubListChanged = ipcBridge.team.listChanged.on(() => {
+    const unsubListChanged = ipcBridge.team.listChanged?.on?.(() => {
       void mutate();
     });
-    const unsubCreated = ipcBridge.team.created.on(() => {
+    const unsubCreated = ipcBridge.team.created?.on?.(() => {
       void mutate();
     });
-    const unsubRemoved = ipcBridge.team.removed.on(() => {
+    const unsubRemoved = ipcBridge.team.removed?.on?.(() => {
       void mutate();
     });
-    const unsubRenamed = ipcBridge.team.renamed.on(() => {
+    const unsubRenamed = ipcBridge.team.renamed?.on?.(() => {
       void mutate();
     });
     return () => {
-      unsubListChanged();
-      unsubCreated();
-      unsubRemoved();
-      unsubRenamed();
+      unsubListChanged?.();
+      unsubCreated?.();
+      unsubRemoved?.();
+      unsubRenamed?.();
     };
   }, [mutate]);
 
@@ -68,5 +75,28 @@ export function useTeamList() {
     [teams, mutate]
   );
 
-  return { teams, mutate, removeTeam };
+  const removeTeamCascade = useCallback(
+    async (id: string) => {
+      const deleteSingle = async (teamId: string) => {
+        const team = teams.find((item) => item.id === teamId);
+        if (team) {
+          await removeTeamWithCronCleanup({
+            team,
+            getConversation: getConversationOrNull,
+            removeCronJob: (job_id) => ipcBridge.cron.removeJob.invoke({ job_id }),
+            removeTeam: (params) => ipcBridge.team.remove.invoke(params),
+          });
+        } else {
+          await ipcBridge.team.remove.invoke({ id: teamId });
+        }
+        localStorage.removeItem(`team-active-slot-${teamId}`);
+      };
+
+      await deleteTeamCascade(teams, id, deleteSingle);
+      await mutate();
+    },
+    [teams, mutate]
+  );
+
+  return { teams, mutate, removeTeam, removeTeamCascade };
 }

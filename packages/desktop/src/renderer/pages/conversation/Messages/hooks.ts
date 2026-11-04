@@ -943,6 +943,10 @@ export const clearMessageListMemoryCacheForTest = (): void => {
   messageListMemoryCache.clear();
 };
 
+export const getMemoryCachedMessages = (key: string): TMessage[] | undefined => {
+  return messageListMemoryCache.get(key)?.items;
+};
+
 function setMemoryCachedMessages(key: string, data: CachedMessages) {
   if (messageListMemoryCache.has(key)) {
     messageListMemoryCache.delete(key);
@@ -1000,6 +1004,7 @@ export const useMessageLstCache = (key: string) => {
       if (existing) {
         existing.items = list;
       }
+      emitter.emit('conversation.messages.updated', { conversationId: key, messages: list });
     }
   }, [key, list]);
   const loadMessages = useCallback(async (): Promise<TMessage[]> => {

@@ -29,6 +29,8 @@ import type {
   DownloadRecord,
 } from '@/common/browser/types';
 import { getBrowserDownloadManager } from './BrowserDownloadManager';
+import { ensureInAppBrowserOpen, flushBrowserSessionData } from './browserLauncherHelper';
+import { getBrowserHistoryService } from './BrowserHistoryService';
 
 export function resolveLocatorString(target: LocatorTarget): string {
   if (typeof target === 'string') {
@@ -124,6 +126,23 @@ export class BrowserAutomationEngine {
     return all.find((wc) => !wc.isDestroyed() && wc.getType() === 'webview');
   }
 
+  public async ensureWebContents(targetUrl?: string): Promise<WebContents> {
+    if (this.customWebContentsResolver) {
+      const res = this.customWebContentsResolver();
+      if (res) return res;
+    }
+    const current = this.getWebContents();
+    if (current) return current;
+
+    try {
+      return await ensureInAppBrowserOpen(targetUrl);
+    } catch {
+      const fallback = this.getWebContents();
+      if (fallback) return fallback;
+      throw new Error('No browser webview available');
+    }
+  }
+
   private async captureScreenshotBase64(wc?: WebContents): Promise<string | undefined> {
     const target = wc || this.getWebContents();
     if (!target || target.isDestroyed()) return undefined;
@@ -155,9 +174,6 @@ export class BrowserAutomationEngine {
   }
 
   public async navigate(options: NavigateOptions): Promise<{ url: string }> {
-    const wc = this.getWebContents();
-    if (!wc) throw new Error('No browser webview available');
-
     let targetUrl = (options.url || '').trim();
     if (!targetUrl) throw new Error('URL is required');
 
@@ -165,12 +181,21 @@ export class BrowserAutomationEngine {
       targetUrl = `https://${targetUrl}`;
     }
 
+    const wc = await this.ensureWebContents(targetUrl);
+    if (!wc) throw new Error('No browser webview available');
+
     await wc.loadURL(targetUrl);
+    try {
+      await flushBrowserSessionData();
+      getBrowserHistoryService().addEntry({ url: targetUrl, title: wc.getTitle?.() || targetUrl });
+    } catch {
+      // Best-effort in headless/test
+    }
     return { url: wc.getURL() };
   }
 
   public async click(options: ClickOptions): Promise<{ clicked: boolean }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const selector = resolveLocatorString(options.locator);
@@ -200,7 +225,7 @@ export class BrowserAutomationEngine {
   }
 
   public async type(options: TypeOptions): Promise<{ typed: boolean; textLength: number }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const selector = resolveLocatorString(options.locator);
@@ -238,7 +263,7 @@ export class BrowserAutomationEngine {
   }
 
   public async pressKey(options: PressKeyOptions): Promise<{ pressed: boolean; key: string }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const key = options.key;
@@ -258,7 +283,7 @@ export class BrowserAutomationEngine {
   }
 
   public async select(options: SelectOptions): Promise<{ selected: string[] }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const selector = resolveLocatorString(options.locator);
@@ -291,7 +316,7 @@ export class BrowserAutomationEngine {
   }
 
   public async uploadFile(options: UploadFileOptions): Promise<{ uploaded: number; paths: string[] }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const selector = resolveLocatorString(options.locator);
@@ -314,7 +339,7 @@ export class BrowserAutomationEngine {
   }
 
   public async scroll(options: ScrollOptions): Promise<{ scrollX: number; scrollY: number }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const x = options.x || 0;
@@ -337,7 +362,7 @@ export class BrowserAutomationEngine {
   }
 
   public async waitFor(options: WaitForOptions): Promise<{ ready: boolean; state: string }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const timeoutMs = options.timeoutMs || 10000;
@@ -383,7 +408,7 @@ export class BrowserAutomationEngine {
   }
 
   public async getText(options: GetTextOptions): Promise<{ text: string }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const selector = resolveLocatorString(options.locator);
@@ -407,7 +432,7 @@ export class BrowserAutomationEngine {
     title: string;
     tree: AccessibilitySnapshotNode[];
   }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
 
     const script = `
@@ -451,14 +476,14 @@ export class BrowserAutomationEngine {
   }
 
   public async screenshot(_options?: ScreenshotOptions): Promise<{ data: string }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
     const image = await wc.capturePage();
     return { data: image.toDataURL() };
   }
 
   public async evaluate(options: EvaluateOptions): Promise<{ result: unknown }> {
-    const wc = this.getWebContents();
+    const wc = await this.ensureWebContents();
     if (!wc) throw new Error('No browser webview available');
     const res = await wc.executeJavaScript(options.script);
     return { result: res };

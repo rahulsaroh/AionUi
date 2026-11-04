@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Delete, Edit, EditOne, FolderClose, Peoples, Plus, Pushpin, Right } from '@icon-park/react';
+import { Delete, Down, Edit, EditOne, FolderClose, Peoples, Plus, Pushpin, Right } from '@icon-park/react';
 import { Dropdown, Input, Menu, Message, Modal, Spin, Tooltip } from '@arco-design/web-react';
 import classNames from 'classnames';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -17,6 +17,7 @@ import { blurActiveElement } from '@renderer/utils/ui/focus';
 import { useTeamList } from '@renderer/pages/team/hooks/useTeamList';
 import { useSiderTeamBadges } from '@renderer/pages/team/hooks/useSiderTeamBadges';
 import TeamCreateModal from '@renderer/pages/team/components/TeamCreateModal';
+import { buildTeamTree, getDescendantTeamIds, type TeamTreeNode } from '@renderer/pages/team/utils/teamStorage';
 import { ipcBridge } from '@/common';
 import type { TTeam } from '@/common/types/team/teamTypes';
 import SiderItem from './SiderItem';
@@ -34,6 +35,11 @@ type TeamSiderRowProps = {
   isRunning: boolean;
   menuItems: SiderMenuItem[];
   teamBadge: number;
+  level?: number;
+  hasChildren?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: (team_id: string) => void;
+  onAddSubTeam?: (team_id: string) => void;
   onMenuAction: (key: string, team: TTeam) => void;
   onTeamClick: (team_id: string) => void;
   onTeamHover: (team_id: string) => void;
@@ -48,36 +54,74 @@ const TeamSiderRow: React.FC<TeamSiderRowProps> = React.memo(
     isRunning,
     menuItems,
     teamBadge,
+    level = 0,
+    hasChildren = false,
+    isCollapsed = false,
+    onToggleCollapse,
+    onAddSubTeam,
     onMenuAction,
     onTeamClick,
     onTeamHover,
     onTeamHoverLeave,
   }) => {
+    const { t } = useTranslation();
     const handleAction = useCallback((key: string) => onMenuAction(key, team), [onMenuAction, team]);
     const handleClick = useCallback(() => onTeamClick(team.id), [onTeamClick, team.id]);
     const handleHover = useCallback(() => onTeamHover(team.id), [onTeamHover, team.id]);
     const handleHoverLeave = useCallback(() => onTeamHoverLeave(team.id), [onTeamHoverLeave, team.id]);
 
-    const icon = useMemo(
-      () =>
-        isRunning ? (
-          <span data-testid={`team-spinner-${team.id}`} className='flex items-center justify-center'>
-            <Spin size={16} />
-          </span>
-        ) : (
-          <Peoples
-            data-testid={`team-icon-${team.id}`}
-            theme='outline'
-            size='16'
-            fill='currentColor'
-            style={{ lineHeight: 0 }}
-          />
-        ),
-      [isRunning, team.id]
-    );
+    const icon = useMemo(() => {
+      const baseIcon = isRunning ? (
+        <span data-testid={`team-spinner-${team.id}`} className='flex items-center justify-center'>
+          <Spin size={16} />
+        </span>
+      ) : (
+        <Peoples
+          data-testid={`team-icon-${team.id}`}
+          theme='outline'
+          size='16'
+          fill='currentColor'
+          style={{ lineHeight: 0 }}
+        />
+      );
+
+      if (hasChildren) {
+        return (
+          <div className='flex items-center gap-2px'>
+            <span
+              role='button'
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleCollapse?.(team.id);
+              }}
+              className='cursor-pointer text-t-tertiary hover:text-t-primary p-1px transition-colors flex items-center justify-center'
+              data-testid={`team-toggle-collapse-${team.id}`}
+            >
+              {isCollapsed ? (
+                <Right theme='outline' size={11} fill='currentColor' />
+              ) : (
+                <Down theme='outline' size={11} fill='currentColor' />
+              )}
+            </span>
+            {baseIcon}
+          </div>
+        );
+      }
+
+      if (level > 0) {
+        return (
+          <div className='flex items-center gap-2px'>
+            <span className='w-13px shrink-0 inline-block' />
+            {baseIcon}
+          </div>
+        );
+      }
+
+      return baseIcon;
+    }, [hasChildren, isCollapsed, isRunning, level, onToggleCollapse, team.id]);
 
     return (
-      <div className='relative group'>
+      <div className='relative group' style={{ paddingLeft: `${level * 12}px` }}>
         <SiderItem
           icon={icon}
           name={team.name}
@@ -89,6 +133,19 @@ const TeamSiderRow: React.FC<TeamSiderRowProps> = React.memo(
           onMouseEnter={handleHover}
           onMouseLeave={handleHoverLeave}
         />
+        <Tooltip content={t('team.sider.addSubTeam', { defaultValue: 'Add Sub-Team' })} position='top'>
+          <div
+            role='button'
+            data-testid={`team-add-subteam-btn-${team.id}`}
+            className='absolute end-32px top-1/2 -translate-y-1/2 size-18px rounded hover:bg-fill-3 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-t-secondary hover:text-t-primary z-2'
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddSubTeam?.(team.id);
+            }}
+          >
+            <Plus theme='outline' size={12} fill='currentColor' />
+          </div>
+        </Tooltip>
         {teamBadge > 0 && (
           <span
             className='absolute end-11px top-1/2 -translate-y-1/2 w-18px h-18px rounded-full text-10px font-bold flex items-center justify-center pointer-events-none z-10 group-hover:hidden bg-danger-6 text-white'
@@ -117,13 +174,15 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { teams, mutate: refreshTeams, removeTeam } = useTeamList();
+  const { teams, mutate: refreshTeams, removeTeam, removeTeamCascade } = useTeamList();
   const teamBadgeCounts = useSiderTeamBadges(teams);
   const isTeamRunning = useSiderTeamRunning(teams);
   const { mutate: globalMutate } = useSWRConfig();
 
   const [createTeamVisible, setCreateTeamVisible] = useState(false);
+  const [createSubTeamParentId, setCreateSubTeamParentId] = useState<string | null>(null);
   const [editTeamTarget, setEditTeamTarget] = useState<TTeam | null>(null);
+  const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<boolean>(() => localStorage.getItem('team-section-expanded') === 'true');
   useEffect(() => {
     localStorage.setItem('team-section-expanded', String(expanded));
@@ -143,6 +202,15 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
       localStorage.setItem(TEAM_PINNED_KEY, JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const handleToggleCollapse = useCallback((id: string) => {
+    setCollapsedMap((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const handleAddSubTeam = useCallback((parentId: string) => {
+    setCreateSubTeamParentId(parentId);
+    setCreateTeamVisible(true);
   }, []);
 
   const [renameVisible, setRenameVisible] = useState(false);
@@ -239,15 +307,28 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
 
   const handleDeleteTeam = useCallback(
     (team: TTeam) => {
+      const descendants = getDescendantTeamIds(teams, team.id);
+      const hasSubTeams = descendants.length > 0;
+
       Modal.confirm({
-        title: t('team.sider.deleteConfirm'),
-        content: t('team.sider.deleteConfirmContent'),
+        title: hasSubTeams
+          ? t('team.sider.deleteCascadeConfirm', { defaultValue: 'Delete Department and All Sub-Teams?' })
+          : t('team.sider.deleteConfirm'),
+        content: hasSubTeams
+          ? t('team.sider.deleteCascadeContent', {
+              defaultValue: `This department contains ${descendants.length} sub-team(s). Deleting it will cascade and delete all nested sub-teams.`,
+            })
+          : t('team.sider.deleteConfirmContent'),
         okText: t('team.sider.deleteOk'),
         cancelText: t('team.sider.deleteCancel'),
         okButtonProps: { status: 'danger' },
         onOk: async () => {
           try {
-            await removeTeam(team.id);
+            if (hasSubTeams) {
+              await removeTeamCascade(team.id);
+            } else {
+              await removeTeam(team.id);
+            }
             Message.success(t('team.sider.deleteSuccess'));
             if (window.location.hash.includes(`/team/${team.id}`)) {
               window.location.hash = '#/';
@@ -262,13 +343,18 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
         getPopupContainer: () => document.body,
       });
     },
-    [removeTeam, t]
+    [getDescendantTeamIds, removeTeam, removeTeamCascade, t, teams]
   );
 
   const getMenuItems = useCallback(
     (team: TTeam): SiderMenuItem[] => {
       const isPinned = pinnedIds.includes(team.id);
       return [
+        {
+          key: 'addSubTeam',
+          icon: <Plus theme='outline' size='14' />,
+          label: t('team.sider.addSubTeam', { defaultValue: 'Add Sub-Team' }),
+        },
         {
           key: 'edit',
           icon: <Edit theme='outline' size='14' />,
@@ -301,7 +387,9 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
 
   const handleMenuAction = useCallback(
     (key: string, team: TTeam) => {
-      if (key === 'edit') {
+      if (key === 'addSubTeam') {
+        handleAddSubTeam(team.id);
+      } else if (key === 'edit') {
         setEditTeamTarget(team);
       } else if (key === 'pin') {
         togglePin(team.id);
@@ -315,8 +403,41 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
         handleDeleteTeam(team);
       }
     },
-    [handleArchiveTeam, handleDeleteTeam, togglePin]
+    [handleArchiveTeam, handleDeleteTeam, handleAddSubTeam, togglePin]
   );
+
+  const teamTree = useMemo(() => {
+    return buildTeamTree(sortedTeams);
+  }, [sortedTeams]);
+
+  const renderTreeNodes = (nodes: TeamTreeNode[]): React.ReactNode => {
+    return nodes.map((node) => {
+      const isCollapsed = Boolean(collapsedMap[node.team.id]);
+      const hasChildren = node.children.length > 0;
+      return (
+        <React.Fragment key={node.team.id}>
+          <TeamSiderRow
+            team={node.team}
+            level={node.level}
+            hasChildren={hasChildren}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={handleToggleCollapse}
+            onAddSubTeam={handleAddSubTeam}
+            isPinned={pinnedIds.includes(node.team.id)}
+            selected={pathname.startsWith(`/team/${node.team.id}`)}
+            isRunning={isTeamRunning(node.team.id)}
+            menuItems={getMenuItems(node.team)}
+            teamBadge={teamBadgeCounts.get(node.team.id) ?? 0}
+            onMenuAction={handleMenuAction}
+            onTeamClick={handleTeamClick}
+            onTeamHover={handleTeamHover}
+            onTeamHoverLeave={handleTeamHoverLeave}
+          />
+          {!isCollapsed && hasChildren && renderTreeNodes(node.children)}
+        </React.Fragment>
+      );
+    });
+  };
 
   return (
     <>
@@ -427,30 +548,16 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
               </div>
             </Tooltip>
           </div>
-          {expanded &&
-            sortedTeams.length > 0 &&
-            sortedTeams.map((team) => (
-              <TeamSiderRow
-                key={team.id}
-                team={team}
-                isPinned={pinnedIds.includes(team.id)}
-                selected={pathname.startsWith(`/team/${team.id}`)}
-                isRunning={isTeamRunning(team.id)}
-                menuItems={getMenuItems(team)}
-                teamBadge={teamBadgeCounts.get(team.id) ?? 0}
-                onMenuAction={handleMenuAction}
-                onTeamClick={handleTeamClick}
-                onTeamHover={handleTeamHover}
-                onTeamHoverLeave={handleTeamHoverLeave}
-              />
-            ))}
+          {expanded && teamTree.length > 0 && renderTreeNodes(teamTree)}
         </div>
       )}
       <TeamCreateModal
         visible={createTeamVisible || Boolean(editTeamTarget)}
         team={editTeamTarget}
+        defaultParentId={createSubTeamParentId}
         onClose={() => {
           setCreateTeamVisible(false);
+          setCreateSubTeamParentId(null);
           setEditTeamTarget(null);
         }}
         onCreated={(team) => {

@@ -437,6 +437,35 @@ export const useConversationActions = ({
     }
   }, [deleteProjectTarget, id, navigate, t]);
 
+  const [moveToProjectTarget, setMoveToProjectTarget] = useState<TChatConversation[] | null>(null);
+
+  const handleMoveToProject = useCallback((conversation: TChatConversation) => {
+    setDropdownVisibleId(null);
+    setMoveToProjectTarget([conversation]);
+  }, []);
+
+  const handleBatchMove = useCallback(
+    (conversations: TChatConversation[]) => {
+      if (selectedConversationIds.size === 0) return;
+      const targetConvs = conversations.filter((c) => selectedConversationIds.has(c.id));
+      if (targetConvs.length === 0) return;
+      setMoveToProjectTarget(targetConvs);
+    },
+    [selectedConversationIds]
+  );
+
+  const handleMoveToProjectCancel = useCallback(() => {
+    setMoveToProjectTarget(null);
+  }, []);
+
+  const handleMoveToProjectSuccess = useCallback(() => {
+    setMoveToProjectTarget(null);
+    if (batchMode) {
+      setSelectedConversationIds(new Set());
+      onBatchModeChange?.(false);
+    }
+  }, [batchMode, onBatchModeChange, setSelectedConversationIds]);
+
   return {
     renameModalVisible,
     renameModalName,
@@ -446,6 +475,7 @@ export const useConversationActions = ({
     handleConversationClick,
     handleBatchArchive,
     handleBatchDelete,
+    handleBatchMove,
     handleArchive,
     handleDelete,
     handleEditStart,
@@ -456,6 +486,10 @@ export const useConversationActions = ({
     handleOpenMenu,
     handleToggleManualUnread,
     handleCreateCronTask,
+    handleMoveToProject,
+    moveToProjectTarget,
+    handleMoveToProjectCancel,
+    handleMoveToProjectSuccess,
     handleArchiveProject,
     archiveProjectTarget,
     archiveProjectLoading,

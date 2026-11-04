@@ -9,6 +9,7 @@ import { dispatchWorkspaceToggleEvent } from '@/renderer/utils/workspace/workspa
 type UseConversationShortcutsParams = {
   navigate: NavigateFunction;
   toggleSider: () => void;
+  toggleTheme?: () => void;
 };
 
 const getCycledConversationId = (
@@ -34,10 +35,15 @@ const isConversationTabShortcut = (event: KeyboardEvent): boolean => {
 };
 
 const isNewConversationShortcut = (event: KeyboardEvent): boolean => {
-  return isPlatformPrimaryModifier(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 't';
+  const key = event.key.toLowerCase();
+  return isPlatformPrimaryModifier(event) && !event.altKey && !event.shiftKey && (key === 't' || key === 'n');
 };
 
-export const useConversationShortcuts = ({ navigate, toggleSider }: UseConversationShortcutsParams): void => {
+export const useConversationShortcuts = ({
+  navigate,
+  toggleSider,
+  toggleTheme,
+}: UseConversationShortcutsParams): void => {
   const location = useLocation();
   const visibleConversationIds = useVisibleConversationIds();
 
@@ -85,11 +91,39 @@ export const useConversationShortcuts = ({ navigate, toggleSider }: UseConversat
         }
         return;
       }
+
+      if (
+        isPrimaryApplicationShortcut(event, { key: '4', targetGuard: 'embedded-editor' }) ||
+        isPrimaryApplicationShortcut(event, { key: 'o', shiftKey: true, targetGuard: 'embedded-editor' })
+      ) {
+        event.preventDefault();
+        void navigate('/organization');
+        return;
+      }
+
+      if (
+        isPrimaryApplicationShortcut(event, { key: 'd', shiftKey: true, targetGuard: 'embedded-editor' }) ||
+        isPrimaryApplicationShortcut(event, { key: 't', shiftKey: true, targetGuard: 'embedded-editor' })
+      ) {
+        event.preventDefault();
+        toggleTheme?.();
+        return;
+      }
+
+      if (
+        isPrimaryApplicationShortcut(event, { key: '/', targetGuard: 'embedded-editor' }) ||
+        isPrimaryApplicationShortcut(event, { key: '?', targetGuard: 'embedded-editor' }) ||
+        (isPlatformPrimaryModifier(event) && (event.key === '?' || event.key === '/'))
+      ) {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent('aionui:toggle-shortcut-map'));
+        return;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [location.pathname, navigate, toggleSider, visibleConversationIds]);
+  }, [location.pathname, navigate, toggleSider, toggleTheme, visibleConversationIds]);
 };

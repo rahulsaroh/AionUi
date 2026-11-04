@@ -20,7 +20,15 @@
     "archiveSuccess": "已归档团队",
     "archiveFailed": "归档团队失败",
     "editTeam": "编辑团队",
-    "deleteFailed": "删除团队失败"
+    "deleteFailed": "删除团队失败",
+    "teamsTab": "团队"
+  },
+  "organization": {
+    "tab": "组织架构",
+    "canvas": "组织架构画布",
+    "rootHq": "总部",
+    "division": "事业部",
+    "subTeam": "子团队"
   },
   "activeMembers": {
     "title": "工作中成员",

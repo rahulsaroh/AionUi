@@ -26,6 +26,7 @@ const ComponentsShowcase = React.lazy(() => import('@renderer/pages/TestShowcase
 const ScheduledTasksPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage'));
 const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage/TaskDetailPage'));
 const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
+const OrganizationCanvasView = React.lazy(() => import('@renderer/pages/organization'));
 
 import { Button } from '@arco-design/web-react';
 
@@ -124,6 +125,10 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           <Route
             path='/team/:id'
             element={TEAM_MODE_ENABLED ? withRouteFallback(TeamIndex) : <Navigate to='/guid' replace />}
+          />
+          <Route
+            path='/organization'
+            element={TEAM_MODE_ENABLED ? withRouteFallback(OrganizationCanvasView) : <Navigate to='/guid' replace />}
           />
           <Route path='/settings/model' element={withRouteFallback(ModeSettings)} />
           <Route path='/settings/gateway' element={withRouteFallback(GatewaySettings)} />

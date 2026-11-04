@@ -32,6 +32,7 @@ import {
   tokensMatch,
   type CdpRequest,
 } from './cdpTargetProtocol';
+import { ensureInAppBrowserOpen } from '../../services/browser/browserLauncherHelper';
 
 const HOST = '127.0.0.1';
 const WS_PATH = '/aionui-cdp';
@@ -260,16 +261,15 @@ const handleSocketMessage = async (ws: WebSocket, raw: string, announcedSessions
 
   // forward
   if (!attached || attached.contents.isDestroyed()) {
-    /**
-     * 说清楚「怎么办」，因为 Agent 侧无法自己修复：attach 只由渲染进程在 webview
-     * dom-ready 时上报触发（WebviewHost.tsx），Target.createTarget 又是明确拒绝的。
-     * 所以这条消息必须告诉用户去开浏览器面板，否则 Agent 只能反复撞同一面墙。
-     *
-     * Say what to do about it: the agent cannot fix this itself. Attachment is only
-     * triggered by the renderer reporting its webContents id on dom-ready
-     * (WebviewHost.tsx), and Target.createTarget is explicitly refused — so this message
-     * has to point at opening the browser panel, or the agent just retries into the same wall.
-     */
+    try {
+      const wc = await ensureInAppBrowserOpen();
+      attachInternal(wc.id);
+    } catch {
+      // Ignored: fallback to sendError below
+    }
+  }
+
+  if (!attached || attached.contents.isDestroyed()) {
     sendError(
       ws,
       id,

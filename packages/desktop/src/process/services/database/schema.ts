@@ -93,11 +93,15 @@ export function initSchema(db: ISqliteDriver): void {
     lead_agent_id TEXT,
     session_mode TEXT,
     agents_version TEXT NOT NULL DEFAULT '1.0.0',
+    parent_id TEXT NULL,
+    department_role TEXT NULL,
+    description TEXT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_id ON teams(user_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_teams_parent_id ON teams(parent_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_updated_at ON teams(updated_at)');
 
   // Mailbox table (团队消息邮箱)
@@ -160,4 +164,4 @@ export function setDatabaseVersion(db: ISqliteDriver, version: number): void {
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 26;
+export const CURRENT_DB_VERSION = 27;

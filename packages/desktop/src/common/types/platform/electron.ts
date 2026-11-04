@@ -119,6 +119,18 @@ export interface ElectronBridgeAPI {
   browserSetSocialDailyCap?: (cap: number) => Promise<{ error?: string; success: boolean }>;
   browserGetSocialDailyCap?: () => Promise<{ error?: string; success: boolean; data?: number }>;
   browserGetSocialDailyCount?: (platform: string) => Promise<{ error?: string; success: boolean; data?: number }>;
+  browserRecordHistory?: (entry: { url: string; title?: string; favicon?: string }) => Promise<{
+    error?: string;
+    success: boolean;
+    data?: unknown;
+  }>;
+  browserGetHistory?: (limit?: number) => Promise<{
+    error?: string;
+    success: boolean;
+    data?: Array<{ id: string; url: string; title: string; favicon?: string; timestamp: number }>;
+  }>;
+  browserClearHistory?: () => Promise<{ error?: string; success: boolean }>;
+  browserDeleteHistoryEntry?: (id: string) => Promise<{ error?: string; success: boolean; data?: boolean }>;
   onBrowserToolProgress?: (callback: (event: unknown) => void) => () => void;
   onBrowserSafetyApprovalRequest?: (
     callback: (request: import('../../browser/safetyTypes').SafetyGateRequest) => void

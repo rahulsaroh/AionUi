@@ -210,10 +210,27 @@ const CssThemeModal: React.FC<CssThemeModalProps> = ({ visible, theme, onClose, 
             onChange={setCss}
             placeholder={`/* ${t('settings.customCssDesc') || 'Enter custom CSS styles here'} */`}
             basicSetup={CODE_MIRROR_BASIC_SETUP}
-            style={{ ...CODE_MIRROR_STYLE, minHeight: '200px' }}
+            style={{ ...CODE_MIRROR_STYLE, minHeight: '160px' }}
             className='[&_.cm-editor]:rounded-[6px]'
-            height='200px'
+            height='160px'
           />
+        </div>
+
+        {/* 实时主题预览 / Live Theme Preview */}
+        <div>
+          <div className='text-13px text-t-secondary mb-8px'>Live Theme Preview</div>
+          <div className='p-16px rounded-8px border border-border-2 bg-[var(--color-bg-1)] flex flex-col gap-10px'>
+            <div className='flex justify-end'>
+              <div className='px-12px py-6px rounded-12px bg-[var(--color-primary-light-1)] text-[var(--color-primary-6)] max-w-[80%] text-13px'>
+                How does this theme look in chat?
+              </div>
+            </div>
+            <div className='flex justify-start'>
+              <div className='px-12px py-6px rounded-12px bg-[var(--fill-2)] text-[var(--color-text-1)] max-w-[80%] text-13px border border-[var(--color-border-2)]'>
+                This is a live preview of bubble styles, typography, and contrast for this theme.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </AionModal>

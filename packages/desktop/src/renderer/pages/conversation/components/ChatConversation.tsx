@@ -25,6 +25,7 @@ import { emitter } from '../../../utils/emitter';
 import AcpChat from '../platforms/acp/AcpChat';
 import ChatLayout from './ChatLayout';
 import ChatSlider from './ChatSlider.tsx';
+import { ChatHeaderActions } from './ChatHeaderActions';
 import AcpModelSelector from '@/renderer/components/agent/AcpModelSelector';
 import GoogleModelSelector from '../platforms/gemini/GoogleModelSelector';
 import AionrsModelSelector from '../platforms/aionrs/AionrsModelSelector';
@@ -176,7 +177,9 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
   // Project conversations get the Layout-level Explorer column (stage3 FULL);
   // ChatLayout's own right sider is only for no-project (legacy tree), so it does
   // not double up or reserve an empty column.
-  const workspaceEnabled = Boolean(conversation.extra?.workspace) && !conversation.project_id;
+  const isAntigravityMode =
+    conversation.extra?.session_mode === 'antigravity' || conversation.extra?.session_mode === 'plan';
+  const workspaceEnabled = (Boolean(conversation.extra?.workspace) || isAntigravityMode) && !conversation.project_id;
   const cronJobId = resolveCronJobId(conversation.extra);
   const { info: presetAssistantInfo } = usePresetAssistantInfo(conversation);
   const aionrsAssistantId = presetAssistantInfo?.assistantId;
@@ -228,17 +231,11 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
             onSetThoughtLevel={handleThoughtLevelSetOption}
           />
         )}
-        <div className='shrink-0'>
-          <Tooltip content={t('conversation.browser.title')}>
-            <Button
-              icon={<Browser theme='outline' size='16' />}
-              onClick={() => setIsBrowserOpen((prev) => !prev)}
-              shape='circle'
-              size='small'
-              type={isBrowserOpen ? 'primary' : 'secondary'}
-            />
-          </Tooltip>
-        </div>
+        <ChatHeaderActions
+          conversation={conversation}
+          isBrowserOpen={isBrowserOpen}
+          onToggleBrowser={() => setIsBrowserOpen((prev) => !prev)}
+        />
       </div>
     ),
     workspaceEnabled,
@@ -333,7 +330,8 @@ const ChatConversation: React.FC<{
     [conversation?.id]
   );
   useActiveLease({ type: 'conversation', id: conversation?.id });
-  const workspaceEnabled = Boolean(conversation?.extra?.workspace) && !conversation?.project_id;
+  const isAntigravityOrAcp = conversation?.type === 'antigravity' || conversation?.type === 'acp';
+  const workspaceEnabled = (Boolean(conversation?.extra?.workspace) || isAntigravityOrAcp) && !conversation?.project_id;
   const cronJobId = resolveCronJobId(conversation?.extra);
   const layout = useLayoutContext();
   const isMobile = Boolean(layout?.isMobile);
@@ -483,17 +481,11 @@ const ChatConversation: React.FC<{
           />
         </div>
       )}
-      <div className='shrink-0'>
-        <Tooltip content={t('conversation.browser.title')}>
-          <Button
-            icon={<Browser theme='outline' size='16' />}
-            onClick={() => setIsBrowserOpen((prev) => !prev)}
-            shape='circle'
-            size='small'
-            type={isBrowserOpen ? 'primary' : 'secondary'}
-          />
-        </Tooltip>
-      </div>
+      <ChatHeaderActions
+        conversation={conversation}
+        isBrowserOpen={isBrowserOpen}
+        onToggleBrowser={() => setIsBrowserOpen((prev) => !prev)}
+      />
     </div>
   );
 

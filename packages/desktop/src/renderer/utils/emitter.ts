@@ -9,6 +9,7 @@ import type { DependencyList } from 'react';
 import { useEffect } from 'react';
 import type { FileOrFolderItem } from '@/renderer/utils/file/fileTypes';
 import type { PreviewContentType } from '@/common/types/office/preview';
+import type { TMessage } from '@/common/chat/chatLib';
 
 export type ReplyQuote = {
   messageId: string;
@@ -36,6 +37,7 @@ interface EventTypes {
   'chat.history.refresh': void;
   // 会话清空/新任务消息重置事件 / Conversation messages cleared event
   'conversation.messages.clear': [string]; // conversation_id
+  'conversation.messages.updated': [{ conversationId: string; messages: TMessage[] }];
   'team.task.reset': [string]; // team_id
   // 会话删除事件 / Conversation deletion event
   'conversation.deleted': [string]; // conversation_id

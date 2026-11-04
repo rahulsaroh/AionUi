@@ -90,7 +90,18 @@ export type TTeam = {
   updated_at: number;
   learnedSkills?: TeamMemorySkill[];
   persistentMemory?: TeamMemory;
+  /** Hierarchy: Parent team ID (null for root departments/teams) */
+  parentId?: string | null;
+  /** Hierarchy: Direct child sub-team IDs */
+  subTeamIds?: string[];
+  /** Specialization role for corporate department or division (e.g. "Mobile Dev", "QA") */
+  departmentRole?: string;
+  /** Department / Sub-team description for leader orchestration */
+  description?: string;
 };
+
+/** Alias for TTeam configuration across tree structures */
+export type TeamConfig = TTeam;
 
 export type ISendTeamMessageParams = {
   team_id: string;

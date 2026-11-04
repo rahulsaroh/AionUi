@@ -12,20 +12,35 @@ import { uuid } from '@/common/utils';
  * Navigation tools that should be intercepted for preview
  * 需要拦截到预览面板的导航工具
  */
-export const NAVIGATION_TOOLS = ['navigate_page', 'new_page'] as const;
+export const NAVIGATION_TOOLS = ['navigate_page', 'new_page', 'browser_open', 'navigate', 'open'] as const;
 export type NavigationToolName = (typeof NAVIGATION_TOOLS)[number];
 
 /**
- * Chrome DevTools MCP server identifiers
- * Chrome DevTools MCP 服务器标识符
+ * Chrome DevTools and In-App Browser MCP server identifiers
+ * Chrome DevTools 与应用内浏览器 MCP 服务器标识符
  */
-export const CHROME_DEVTOOLS_IDENTIFIERS = ['chrome-devtools', 'chrome_devtools', 'chromedevtools'] as const;
+export const CHROME_DEVTOOLS_IDENTIFIERS = [
+  'chrome-devtools',
+  'chrome_devtools',
+  'chromedevtools',
+  'aionui-browser',
+  'aionui_browser',
+  'aionui',
+  'builtin-mcp-browser',
+] as const;
 
 /**
  * Common MCP prefixes to strip when normalizing tool names
  * 需要去除的常见 MCP 前缀
  */
-export const MCP_PREFIXES = ['mcp__chrome-devtools__', 'chrome-devtools__', 'chrome-devtools.'] as const;
+export const MCP_PREFIXES = [
+  'mcp__chrome-devtools__',
+  'chrome-devtools__',
+  'chrome-devtools.',
+  'mcp__aionui-browser__',
+  'aionui-browser__',
+  'aionui-browser.',
+] as const;
 
 /**
  * Preview open event data structure

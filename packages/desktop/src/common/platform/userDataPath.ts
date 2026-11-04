@@ -206,6 +206,18 @@ export function isPortableMode(appRoot?: string): boolean {
     return true;
   }
 
+  // 5. If a local 'data' directory already exists in app root, use it as portable storage
+  const localDataDir = path.join(root, 'data');
+  if (fs.existsSync(localDataDir)) {
+    try {
+      if (fs.statSync(localDataDir).isDirectory()) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return false;
 }
 
@@ -345,7 +357,6 @@ export function copyDirectoryContentsSync(src: string, dest: string): void {
     'blob_storage',
     'Session Storage',
     'Shared Dictionary',
-    'Network',
   ]);
 
   if (!fs.existsSync(dest)) {
@@ -463,8 +474,18 @@ export function migrateLegacyUserDataIfNeeded(
 
   console.log(`[AionUi:Portable] Migrating existing user data from ${sourceDir} to ${targetDataDir}...`);
   try {
-    // Only copy relevant AionUi data: the database directory, config, and auth/settings files
-    const ESSENTIAL_ITEMS = ['aionui', 'config', 'auth.enc', 'analytics.json', 'gpu.config.json'];
+    // Only copy relevant AionUi data: the database directory, config, and auth/settings/browser files
+    const ESSENTIAL_ITEMS = [
+      'aionui',
+      'config',
+      'auth.enc',
+      'analytics.json',
+      'gpu.config.json',
+      'Partitions',
+      'browser_profiles.json',
+      'chrome-profiles',
+      'browser_history.json',
+    ];
     for (const item of ESSENTIAL_ITEMS) {
       const srcItem = path.join(sourceDir, item);
       const destItem = path.join(targetDataDir, item);
@@ -608,12 +629,16 @@ export function scanAndPrepareDataDir(targetDataDir: string): void {
   const configDir = path.join(targetDataDir, 'config');
   const logsDir = path.join(targetDataDir, 'logs');
   const crashDir = path.join(targetDataDir, 'crashDumps');
+  const partitionsDir = path.join(targetDataDir, 'Partitions');
+  const browserPartitionDir = path.join(partitionsDir, 'aionui-browser');
 
   try {
     if (!fs.existsSync(aionuiDir)) fs.mkdirSync(aionuiDir, { recursive: true });
     if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     if (!fs.existsSync(crashDir)) fs.mkdirSync(crashDir, { recursive: true });
+    if (!fs.existsSync(partitionsDir)) fs.mkdirSync(partitionsDir, { recursive: true });
+    if (!fs.existsSync(browserPartitionDir)) fs.mkdirSync(browserPartitionDir, { recursive: true });
   } catch (err) {
     console.warn(`[AionUi] Failed to ensure subdirectories in ${targetDataDir}:`, err);
   }

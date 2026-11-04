@@ -5,7 +5,7 @@
  */
 
 import { Message } from '@arco-design/web-react';
-import { Copy, Down, Up } from '@icon-park/react';
+import { Code, Copy, Down, Up } from '@icon-park/react';
 import katex from 'katex';
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -132,6 +132,25 @@ function CodeBlock(props: CodeBlockProps) {
       });
   };
 
+  const handleCopyMarkdown = () => {
+    const md = `\`\`\`${language}\n${formattedContent}\n\`\`\``;
+    void copyText(md)
+      .then(() => {
+        try {
+          Message.success(t('common.copySuccess'));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {
+        try {
+          Message.error(t('common.copyFailed'));
+        } catch {
+          /* ignore */
+        }
+      });
+  };
+
   const iconFill = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
   const footerTextColor = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.35)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
@@ -191,6 +210,15 @@ function CodeBlock(props: CodeBlockProps) {
                 style={{ cursor: 'pointer', display: 'block' }}
                 fill={iconFill}
                 onClick={handleCopy}
+              />
+            </span>
+            <span title='Copy as Markdown' style={{ display: 'flex' }}>
+              <Code
+                theme='outline'
+                size='14'
+                style={{ cursor: 'pointer', display: 'block' }}
+                fill={iconFill}
+                onClick={handleCopyMarkdown}
               />
             </span>
           </div>

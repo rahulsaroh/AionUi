@@ -434,4 +434,44 @@ export function registerBrowserBridge(): void {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
+
+  ipcMain.handle('browser:recordHistory', async (_event, entry: { url: string; title?: string; favicon?: string }) => {
+    try {
+      const { getBrowserHistoryService } = await import('../services/browser');
+      const res = getBrowserHistoryService().addEntry(entry);
+      return { success: true, data: res };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:getHistory', async (_event, limit?: number) => {
+    try {
+      const { getBrowserHistoryService } = await import('../services/browser');
+      const res = getBrowserHistoryService().getHistory(limit);
+      return { success: true, data: res };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:clearHistory', async () => {
+    try {
+      const { getBrowserHistoryService } = await import('../services/browser');
+      getBrowserHistoryService().clearHistory();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:deleteHistoryEntry', async (_event, id: string) => {
+    try {
+      const { getBrowserHistoryService } = await import('../services/browser');
+      const deleted = getBrowserHistoryService().deleteEntry(id);
+      return { success: true, data: deleted };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
 }

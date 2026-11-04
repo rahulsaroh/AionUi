@@ -13,7 +13,7 @@ import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import { useLocalFilePreview } from '@/renderer/pages/conversation/Preview/hooks/useLocalFilePreview';
 import { iconColors } from '@/renderer/styles/colors';
 import { Alert, Message, Tooltip } from '@arco-design/web-react';
-import { Copy } from '@icon-park/react';
+import { BookmarkOne, Copy, Refresh } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -223,6 +223,75 @@ const MessageText: React.FC<{
     isLastMessage,
     hasTurnAnchor: hasForkAnchor,
   });
+  const messageId = (message.msg_id ?? message.id) || '';
+  const [isPinned, setIsPinned] = useState<boolean>(() => {
+    try {
+      return Boolean(messageId && localStorage.getItem(`pinned_msg_${messageId}`) === 'true');
+    } catch {
+      return false;
+    }
+  });
+
+  const handleTogglePin = () => {
+    if (!messageId) return;
+    const next = !isPinned;
+    setIsPinned(next);
+    try {
+      if (next) {
+        localStorage.setItem(`pinned_msg_${messageId}`, 'true');
+        Message.success('Message pinned');
+      } else {
+        localStorage.removeItem(`pinned_msg_${messageId}`);
+        Message.info('Message unpinned');
+      }
+    } catch {
+      /* ignore storage failure */
+    }
+  };
+
+  const handleRetry = () => {
+    Message.info('Regenerating response...');
+    window.dispatchEvent(
+      new CustomEvent('aionui:regenerate-message', {
+        detail: { msg_id: messageId },
+      })
+    );
+  };
+
+  const pinButton = messageId ? (
+    <Tooltip content={isPinned ? 'Unpin message' : 'Pin message'}>
+      <div
+        className={classNames(
+          'p-4px rd-4px cursor-pointer hover:bg-3 transition-colors',
+          isPinned
+            ? 'opacity-100 pointer-events-auto'
+            : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto'
+        )}
+        onClick={handleTogglePin}
+        style={{ lineHeight: 0 }}
+      >
+        <BookmarkOne
+          theme={isPinned ? 'filled' : 'outline'}
+          size={16}
+          fill={isPinned ? 'var(--color-primary-6)' : iconColors.secondary}
+        />
+      </div>
+    </Tooltip>
+  ) : null;
+
+  const retryButton =
+    !isUserMessage && messageId ? (
+      <Tooltip content='Regenerate response'>
+        <div
+          className='p-4px rd-4px cursor-pointer hover:bg-3 transition-colors opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto'
+          onClick={handleRetry}
+          style={{ lineHeight: 0 }}
+        >
+          <Refresh theme='outline' size={16} fill={iconColors.secondary} />
+        </div>
+      </Tooltip>
+    ) : null;
+
   const forkButton = showForkButton ? (
     <Tooltip content={t('messages.fork.action')}>
       <div
@@ -370,6 +439,8 @@ const MessageText: React.FC<{
             })}
           >
             {copyButton}
+            {pinButton}
+            {retryButton}
             {forkButton}
             {message.created_at && (
               <span className='text-12px text-t-secondary opacity-0 group-hover:opacity-100 transition-opacity select-none'>

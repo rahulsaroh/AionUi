@@ -826,6 +826,10 @@ const nativeListSkillFiles = bridge.buildProvider<SkillFileNode[], { skill_locat
 const nativeReadSkillFile = bridge.buildProvider<string, { skill_location: string; relative_path: string }>(
   'skills.files.read'
 );
+const nativeTransferWorkspaceFiles = bridge.buildProvider<
+  { success: boolean; movedCount: number; error?: string },
+  { sourcePath: string; targetPath: string; operation?: 'move' | 'copy' }
+>('fs.transferWorkspaceFiles');
 
 /** Raw metadata as the backend serializes it (snake_case). */
 type RawFileMetadata = {
@@ -1024,6 +1028,13 @@ export const fs = {
       const content = await webReadSkillFile.invoke(resolveWebSkillFile(skill_location, relative_path));
       if (content === null) throw new Error('Skill file could not be read');
       return content;
+    },
+  },
+  transferWorkspaceFiles: {
+    provider: nativeTransferWorkspaceFiles.provider,
+    invoke: async (params: { sourcePath: string; targetPath: string; operation?: 'move' | 'copy' }) => {
+      if (isElectronRenderer()) return nativeTransferWorkspaceFiles.invoke(params);
+      return { success: true, movedCount: 0 };
     },
   },
 };
@@ -1417,7 +1428,7 @@ export const database = {
 
 // Preview panel
 export const preview = {
-  open: wsEmitter<{
+  open: bridge.buildEmitter<{
     content: string;
     content_type: import('../types/office/preview').PreviewContentType;
     metadata?: {
@@ -2265,6 +2276,9 @@ export const team = {
       name: p.name,
       agents: p.agents.map(toBackendAssistant),
       ...(p.workspace ? { workspace: p.workspace } : {}),
+      ...(p.parentId ? { parent_id: p.parentId } : {}),
+      ...(p.departmentRole ? { department_role: p.departmentRole } : {}),
+      ...(p.description ? { description: p.description } : {}),
     })),
     fromBackendTeam
   ),
@@ -2318,7 +2332,16 @@ export const team = {
   ),
   updateTeam: bridge.buildProvider<
     void,
-    { id: string; name?: string; workspace?: string; leader_assistant_id?: string }
+    {
+      id: string;
+      name?: string;
+      workspace?: string;
+      leader_assistant_id?: string;
+      parent_id?: string | null;
+      department_role?: string;
+      description?: string;
+      sub_team_ids?: string[];
+    }
   >('team.update-team'),
   setSessionMode: httpPost<void, { team_id: string; session_mode: string }>(
     (p) => `/api/teams/${p.team_id}/session-mode`,

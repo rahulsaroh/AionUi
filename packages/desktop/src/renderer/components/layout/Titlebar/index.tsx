@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { ArrowCircleLeft, ArrowLeft, ArrowRight, ExpandLeft, ExpandRight, Peoples, Search } from '@icon-park/react';
+import { Tooltip } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -208,6 +209,11 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   useEffect(() => {
     if (!layout?.isMobile) {
       setMobileCenterTitle(appTitle);
+      return;
+    }
+
+    if (location.pathname.startsWith('/organization')) {
+      setMobileCenterTitle('Organization');
       return;
     }
 
@@ -433,6 +439,12 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             )}
           </button>
         )}
+        <Tooltip content='Gateway Sync Status: Synced'>
+          <div className='app-titlebar__sync-indicator flex items-center gap-6px px-8px'>
+            <span className='inline-block w-8px h-8px rounded-full bg-[var(--color-success-6)]' aria-hidden='true' />
+            <span className='text-12px text-t-secondary hidden sm:inline'>Synced</span>
+          </div>
+        </Tooltip>
         {showWindowControls && <WindowControls />}
       </div>
     </div>

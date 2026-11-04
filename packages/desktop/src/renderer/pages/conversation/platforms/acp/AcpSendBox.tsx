@@ -53,6 +53,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { classifyConversationBusyError } from '../conversationBusyError';
 import { buildSendFailureError } from './buildSendFailureError';
+import { enforceTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
 import { useAcpInitialMessage } from './useAcpInitialMessage';
 import type { UseAcpMessageReturn } from './useAcpMessage';
 
@@ -290,8 +291,15 @@ const AcpSendBox: React.FC<{
       try {
         if (teamPermission) await teamPermission.warmupSession();
         void checkAndUpdateTitle(conversation_id, input);
+        const isAntigravityOrMultiStep =
+          backend === 'antigravity' ||
+          session_mode === 'antigravity' ||
+          session_mode === 'plan' ||
+          currentMode === 'plan';
+        const finalInput = isAntigravityOrMultiStep ? enforceTaskBreakdownPrompt(input) : input;
+
         if (teamSendMessage) {
-          await teamSendMessage({ input, files });
+          await teamSendMessage({ input: finalInput, files });
           emitter.emit('chat.history.refresh');
           if (files.length > 0) {
             emitter.emit('acp.workspace.refresh');
@@ -302,7 +310,7 @@ const AcpSendBox: React.FC<{
         markSendStarted();
         setAiProcessing(true);
         const result = await ipcBridge.acpConversation.sendMessage.invoke({
-          input,
+          input: finalInput,
           conversation_id,
           files,
           // `@@` references. Dropping this here is a silent failure: the agent

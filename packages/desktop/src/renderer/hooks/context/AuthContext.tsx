@@ -45,7 +45,7 @@ interface AuthContextValue {
   clearAuthCache: () => void;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const AUTH_USER_ENDPOINT = '/api/auth/user';
 

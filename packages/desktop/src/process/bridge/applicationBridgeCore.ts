@@ -25,6 +25,63 @@ export function initApplicationBridgeCore(): void {
     skillFiles.read(skill_location, relative_path)
   );
 
+  ipcBridge.fs.transferWorkspaceFiles.provider(async ({ sourcePath, targetPath, operation = 'move' }) => {
+    if (!sourcePath || !targetPath || sourcePath === targetPath) {
+      return { success: true, movedCount: 0 };
+    }
+
+    const safeSource = path.resolve(sourcePath);
+    const safeTarget = path.resolve(targetPath);
+
+    if (safeSource === safeTarget) {
+      return { success: true, movedCount: 0 };
+    }
+
+    if (!fs.existsSync(safeSource)) {
+      return { success: true, movedCount: 0 };
+    }
+
+    if (!fs.existsSync(safeTarget)) {
+      await fs.promises.mkdir(safeTarget, { recursive: true });
+    }
+
+    const entries = await fs.promises.readdir(safeSource, { withFileTypes: true });
+    let movedCount = 0;
+
+    for (const entry of entries) {
+      const srcItem = path.join(safeSource, entry.name);
+      const destItem = path.join(safeTarget, entry.name);
+
+      if (entry.isDirectory()) {
+        await copyDirectoryRecursively(srcItem, destItem, { overwrite: true });
+      } else {
+        await fs.promises.copyFile(srcItem, destItem);
+      }
+      movedCount++;
+
+      if (operation === 'move') {
+        try {
+          await fs.promises.rm(srcItem, { recursive: true, force: true });
+        } catch (err) {
+          console.warn(`Failed to remove source item ${srcItem}:`, err);
+        }
+      }
+    }
+
+    if (operation === 'move') {
+      try {
+        const remaining = await fs.promises.readdir(safeSource);
+        if (remaining.length === 0) {
+          await fs.promises.rmdir(safeSource);
+        }
+      } catch {
+        // Safe to ignore if directory cannot be removed
+      }
+    }
+
+    return { success: true, movedCount };
+  });
+
   // application.systemInfo is served by the backend via HTTP; updateSystemInfo
   // and getPath below remain buildProvider (true IPC) because they need
   // main-process-only APIs (copyDirectoryRecursively, os.homedir()).
@@ -58,6 +115,25 @@ export function initApplicationBridgeCore(): void {
         }
         if (fs.existsSync(currentConfig) && path.resolve(currentConfig) !== path.resolve(safeConf)) {
           await copyDirectoryRecursively(currentConfig, safeConf);
+        }
+
+        // Also copy browser profiles, partitions, and history
+        const userDataDir = path.dirname(currentData);
+        const browserItems = ['Partitions', 'browser_profiles.json', 'chrome-profiles', 'browser_history.json'];
+        for (const item of browserItems) {
+          const srcPath = path.join(userDataDir, item);
+          const destPath = path.join(safeDataDir, item);
+          if (fs.existsSync(srcPath) && path.resolve(srcPath) !== path.resolve(destPath)) {
+            try {
+              if (fs.statSync(srcPath).isDirectory()) {
+                await copyDirectoryRecursively(srcPath, destPath);
+              } else {
+                await fs.promises.copyFile(srcPath, destPath);
+              }
+            } catch (err) {
+              console.warn(`[applicationBridgeCore] Could not copy browser item ${item}:`, err);
+            }
+          }
         }
       }
 

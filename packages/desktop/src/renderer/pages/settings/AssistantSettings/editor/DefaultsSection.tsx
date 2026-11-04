@@ -1,7 +1,7 @@
 import type { BuiltinAutoSkill, SkillInfo } from '../types';
 import type { IMcpServer } from '@/common/config/storage';
 import { DROPDOWN_SEARCH_THRESHOLD } from '@/renderer/components/agent/runtimeSelectorOptions';
-import { Button, Select, Tooltip } from '@arco-design/web-react';
+import { Button, Select, Switch, Tooltip } from '@arco-design/web-react';
 import { Brain, Lightning, LinkCloud, Shield, Toolkit } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -132,43 +132,63 @@ const DefaultsSection: React.FC<DefaultsSectionProps> = ({
               'Remember last used only takes effect after this assistant has recorded a previous selection.',
           })}
         >
-          <Select
-            key={`assistant-default-model-${localeKey}`}
-            getPopupContainer={getEditorSelectPopupContainer}
-            value={defaultModelMode === 'fixed' && defaultModelValue ? defaultModelValue : AUTO_SELECT_VALUE}
-            onChange={(value) => {
-              const nextValue = value as string;
-              if (nextValue === AUTO_SELECT_VALUE) {
-                setDefaultModelMode('auto');
-                setDefaultModelValue('');
-                return;
-              }
-              setDefaultModelMode('fixed');
-              setDefaultModelValue(nextValue);
-            }}
-            disabled={!canEditDefaultModelAndPermission}
-            allowClear={false}
-            showSearch={modelOptions.length > DROPDOWN_SEARCH_THRESHOLD}
-            filterOption={filterSelectOption}
-            placeholder={t('settings.assistantSelectDefaultModel', { defaultValue: 'Select a model' })}
-            notFoundContent={t('settings.assistantNoAvailableModels', {
-              defaultValue: 'No available models configured',
-            })}
-            data-testid='select-assistant-default-model'
-          >
-            <Select.Option value={AUTO_SELECT_VALUE}>{autoDefaultOptionLabel}</Select.Option>
-            {modelOptions.map((option) => (
-              <Select.Option key={`${localeKey}-${option.key}`} value={option.value} data-label={option.label}>
-                {option.description ? (
-                  <Tooltip content={option.description} position='right'>
+          <div className='flex flex-col gap-8px'>
+            <div className='flex items-center gap-8px'>
+              <Switch
+                size='small'
+                checked={defaultModelMode === 'fixed'}
+                onChange={(checked) => {
+                  if (checked) {
+                    setDefaultModelMode('fixed');
+                  } else {
+                    setDefaultModelMode('auto');
+                    setDefaultModelValue('');
+                  }
+                }}
+                disabled={!canEditDefaultModelAndPermission}
+              />
+              <span className='text-12px text-t-secondary'>
+                {t('settings.assistantPinModel', { defaultValue: 'Pin a specific model for this assistant' })}
+              </span>
+            </div>
+            <Select
+              key={`assistant-default-model-${localeKey}`}
+              getPopupContainer={getEditorSelectPopupContainer}
+              value={defaultModelMode === 'fixed' && defaultModelValue ? defaultModelValue : AUTO_SELECT_VALUE}
+              onChange={(value) => {
+                const nextValue = value as string;
+                if (nextValue === AUTO_SELECT_VALUE) {
+                  setDefaultModelMode('auto');
+                  setDefaultModelValue('');
+                  return;
+                }
+                setDefaultModelMode('fixed');
+                setDefaultModelValue(nextValue);
+              }}
+              disabled={!canEditDefaultModelAndPermission || defaultModelMode !== 'fixed'}
+              allowClear={false}
+              showSearch={modelOptions.length > DROPDOWN_SEARCH_THRESHOLD}
+              filterOption={filterSelectOption}
+              placeholder={t('settings.assistantSelectDefaultModel', { defaultValue: 'Select a model' })}
+              notFoundContent={t('settings.assistantNoAvailableModels', {
+                defaultValue: 'No available models configured',
+              })}
+              data-testid='select-assistant-default-model'
+            >
+              <Select.Option value={AUTO_SELECT_VALUE}>{autoDefaultOptionLabel}</Select.Option>
+              {modelOptions.map((option) => (
+                <Select.Option key={`${localeKey}-${option.key}`} value={option.value} data-label={option.label}>
+                  {option.description ? (
+                    <Tooltip content={option.description} position='right'>
+                      <span className='block min-w-0 truncate'>{option.label}</span>
+                    </Tooltip>
+                  ) : (
                     <span className='block min-w-0 truncate'>{option.label}</span>
-                  </Tooltip>
-                ) : (
-                  <span className='block min-w-0 truncate'>{option.label}</span>
-                )}
-              </Select.Option>
-            ))}
-          </Select>
+                  )}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
         </ConfigRow>
 
         <ConfigRow

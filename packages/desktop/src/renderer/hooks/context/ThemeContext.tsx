@@ -79,6 +79,10 @@ export const ThemeProvider: React.FC<PropsWithChildren> = ({ children }) => {
   );
 };
 
+export const useOptionalThemeContext = () => {
+  return useContext(ThemeContext);
+};
+
 export const useThemeContext = () => {
   const context = useContext(ThemeContext);
   if (!context) {

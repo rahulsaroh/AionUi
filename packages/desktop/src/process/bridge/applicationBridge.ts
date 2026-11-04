@@ -286,18 +286,31 @@ export function initApplicationBridge(): void {
     }
   });
 
-  ipcBridge.team.updateTeam.provider(async ({ id, name, workspace, leader_assistant_id }) => {
-    const db = await openBackendDb();
-    if (!db) return;
-    try {
-      const now = Date.now();
-      const teamRow = db.get<{ folder_id?: string; agents?: string; lead_agent_id?: string }>(
-        'SELECT folder_id, agents, lead_agent_id FROM teams WHERE id = ?',
-        id
-      );
-      if (!teamRow) return;
+  ipcBridge.team.updateTeam.provider(
+    async ({ id, name, workspace, leader_assistant_id, parent_id, department_role, description }) => {
+      const db = await openBackendDb();
+      if (!db) return;
+      try {
+        const now = Date.now();
+        const teamRow = db.get<{ folder_id?: string; agents?: string; lead_agent_id?: string }>(
+          'SELECT folder_id, agents, lead_agent_id FROM teams WHERE id = ?',
+          id
+        );
+        if (!teamRow) return;
 
-      if (workspace !== undefined) {
+        if (parent_id !== undefined) {
+          db.run('UPDATE teams SET parent_id = ?, updated_at = ? WHERE id = ?', parent_id, now, id);
+        }
+
+        if (department_role !== undefined) {
+          db.run('UPDATE teams SET department_role = ?, updated_at = ? WHERE id = ?', department_role.trim(), now, id);
+        }
+
+        if (description !== undefined) {
+          db.run('UPDATE teams SET description = ?, updated_at = ? WHERE id = ?', description.trim(), now, id);
+        }
+
+        if (workspace !== undefined) {
         const ws = workspace.trim();
         db.run('UPDATE teams SET workspace = ?, updated_at = ? WHERE id = ?', ws, now, id);
 

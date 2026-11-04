@@ -87,6 +87,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserSetSocialDailyCap: (cap: number) => ipcRenderer.invoke('browser:setSocialDailyCap', cap),
   browserGetSocialDailyCap: () => ipcRenderer.invoke('browser:getSocialDailyCap'),
   browserGetSocialDailyCount: (platform: string) => ipcRenderer.invoke('browser:getSocialDailyCount', platform),
+  browserRecordHistory: (entry: { url: string; title?: string; favicon?: string }) =>
+    ipcRenderer.invoke('browser:recordHistory', entry),
+  browserGetHistory: (limit?: number) => ipcRenderer.invoke('browser:getHistory', limit),
+  browserClearHistory: () => ipcRenderer.invoke('browser:clearHistory'),
+  browserDeleteHistoryEntry: (id: string) => ipcRenderer.invoke('browser:deleteHistoryEntry', id),
   onBrowserToolProgress: (callback: (event: unknown) => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
     ipcRenderer.on('browser:toolProgress', handler);

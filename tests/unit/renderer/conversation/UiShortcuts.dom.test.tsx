@@ -229,6 +229,22 @@ describe('common desktop UI shortcuts', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('toggles theme when primary+shift+D is pressed', () => {
+    const toggleTheme = vi.fn();
+    renderHook(() =>
+      useConversationShortcuts({
+        navigate: vi.fn() as unknown as NavigateFunction,
+        toggleSider: vi.fn(),
+        toggleTheme,
+      })
+    );
+
+    const event = dispatchShortcut(window, { key: 'd', shiftKey: true, metaKey: true });
+
+    expect(toggleTheme).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('leaves workspace shortcuts to embedded code editors', () => {
     const editor = document.createElement('div');
     editor.className = 'cm-editor';

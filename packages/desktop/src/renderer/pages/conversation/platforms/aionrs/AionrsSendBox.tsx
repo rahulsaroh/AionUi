@@ -54,6 +54,7 @@ import { Brain, Lightning, MagicHat, Shield } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { classifyConversationBusyError } from '../conversationBusyError';
+import { enforceTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
 import { useAionrsMessage, type UseAionrsMessageReturn } from './useAionrsMessage';
 import type { AionrsModelSelection } from './useAionrsModelSelection';
 import AionrsModelSelector from './AionrsModelSelector';
@@ -293,8 +294,12 @@ const AionrsSendBoxInner: React.FC<AionrsSendBoxProps & { messageState: UseAionr
       // the send edge — the front-end no longer builds paths nor the marker.
       try {
         void checkAndUpdateTitle(conversation_id, input);
+        const isAntigravityOrMultiStep =
+          session_mode === 'antigravity' || session_mode === 'plan' || currentMode === 'plan';
+        const finalInput = isAntigravityOrMultiStep ? enforceTaskBreakdownPrompt(input) : input;
+
         if (teamSendMessage) {
-          await teamSendMessage({ input, files });
+          await teamSendMessage({ input: finalInput, files });
           emitter.emit('chat.history.refresh');
           if (files.length > 0) {
             emitter.emit('aionrs.workspace.refresh');
@@ -305,7 +310,7 @@ const AionrsSendBoxInner: React.FC<AionrsSendBoxProps & { messageState: UseAionr
         markSendStarted();
         setWaitingResponse(true);
         const res = await ipcBridge.conversation.sendMessage.invoke({
-          input,
+          input: finalInput,
           conversation_id,
           files,
           // `@@` references. Omitting this makes the whole feature silently

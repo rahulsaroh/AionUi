@@ -60,7 +60,12 @@ const isBrowserMcpEntry = (entry: ToolGroupEntry): boolean => {
    * beats over-detecting, but these two checks cover every known shape today.
    */
   const name = entry.name;
-  if (typeof name === 'string' && name.startsWith(`${BUILTIN_BROWSER_MCP_NAME}__`)) return true;
+  if (
+    typeof name === 'string' &&
+    (name.startsWith(`${BUILTIN_BROWSER_MCP_NAME}__`) || name.startsWith('aionui_browser__'))
+  ) {
+    return true;
+  }
 
   return false;
 };

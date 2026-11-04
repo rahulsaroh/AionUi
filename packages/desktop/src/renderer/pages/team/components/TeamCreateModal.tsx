@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Message } from '@arco-design/web-react';
+import { Button, Input, Message, Select } from '@arco-design/web-react';
 import type { RefInputType } from '@arco-design/web-react/es/Input/interface';
 import { Plus } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { ipcBridge } from '@/common';
 import type { TTeam } from '@/common/types/team/teamTypes';
-import type { TeamAssistantInput } from '@/common/adapter/teamMapper';
+import type { TeamAssistantInput, ICreateTeamParams } from '@/common/adapter/teamMapper';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
 import AionModal from '@renderer/components/base/AionModal';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { getConversationCreateErrorMessage } from '@renderer/pages/conversation/utils/conversationCreateError';
+import { useTeamList } from '../hooks/useTeamList';
+import { wouldCreateCycle, resolveChildWorkspace } from '../utils/teamStorage';
 import { useTeamAssistantOptions } from '../hooks/useTeamAssistantOptions';
 import type { TeamAssistantOption } from './assistantSelectUtils';
 import { resolveDefaultTeamAgentModel } from './teamCreateModelResolver';
@@ -32,18 +34,30 @@ type Props = {
   onCreated?: (team: TTeam) => void;
   team?: TTeam | null;
   onUpdated?: (team: TTeam) => void;
+  defaultParentId?: string | null;
 };
 
-const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, onUpdated }) => {
+const TeamCreateModal: React.FC<Props> = ({
+  visible,
+  onClose,
+  onCreated,
+  team,
+  onUpdated,
+  defaultParentId,
+}) => {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const layout = useLayoutContext();
   const isMobile = layout?.isMobile ?? false;
   const { assistants: allAssistants } = useTeamAssistantOptions(i18n?.language ?? 'en-US');
+  const { teams: allTeams } = useTeamList();
   const [name, setName] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<TeamMemberDraft[]>([]);
   const [leaderSelectionId, setLeaderSelectionId] = useState<string | undefined>(undefined);
   const [workspace, setWorkspace] = useState('');
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [departmentRole, setDepartmentRole] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
   const [loading, setLoading] = useState(false);
   // 窄屏专用：助手选择器以下拉列表形式，锚在“添加成员”按钮上按需唤出。
   const [assistantDropdownOpen, setAssistantDropdownOpen] = useState(false);
@@ -57,6 +71,9 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
       if (team) {
         setName(team.name || '');
         setWorkspace(team.workspace || '');
+        setParentId(team.parentId ?? null);
+        setDepartmentRole(team.departmentRole ?? '');
+        setDescription(team.description ?? '');
         if (team.assistants && team.assistants.length > 0) {
           const drafts: TeamMemberDraft[] = team.assistants.map((ast) => {
             const matching = allAssistants.find((a) => a.id === ast.assistant_id);
@@ -83,22 +100,47 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
         setName('');
         setSelectedMembers([]);
         setLeaderSelectionId(undefined);
-        setWorkspace('');
+        const initParent = defaultParentId ?? null;
+        setParentId(initParent);
+        setDepartmentRole('');
+        setDescription('');
+        if (initParent && allTeams) {
+          const parentTeam = allTeams.find((item) => item.id === initParent);
+          if (parentTeam?.workspace) {
+            setWorkspace(resolveChildWorkspace(parentTeam.workspace, ''));
+          } else {
+            setWorkspace('');
+          }
+        } else {
+          setWorkspace('');
+        }
       }
     }
     prevVisibleRef.current = visible;
-  }, [visible, team, allAssistants]);
+  }, [visible, team, allAssistants, defaultParentId, allTeams]);
 
   const hasOneLeader = useMemo(
     () => Boolean(leaderSelectionId && selectedMembers.some((member) => member.selectionId === leaderSelectionId)),
     [leaderSelectionId, selectedMembers]
   );
 
+  const parentOptions = useMemo(() => {
+    if (!allTeams || allTeams.length === 0) return [];
+    return allTeams.filter((t) => {
+      if (team && t.id === team.id) return false;
+      if (team && wouldCreateCycle(allTeams, team.id, t.id)) return false;
+      return true;
+    });
+  }, [allTeams, team]);
+
   const handleClose = () => {
     setName('');
     setSelectedMembers([]);
     setLeaderSelectionId(undefined);
     setWorkspace('');
+    setParentId(null);
+    setDepartmentRole('');
+    setDescription('');
     setAssistantDropdownOpen(false);
     onClose();
   };
@@ -184,16 +226,42 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
           }
         }
 
-        await ipcBridge.team.updateTeam.invoke({
+        const updatePayload: {
+          id: string;
+          name: string;
+          workspace: string;
+          leader_assistant_id: string;
+          parent_id?: string | null;
+          department_role?: string;
+          description?: string;
+        } = {
           id: team.id,
           name: name.trim(),
           workspace: workspace.trim(),
           leader_assistant_id: finalLeaderSlotId,
-        });
+        };
+        if (parentId !== undefined && parentId !== null) {
+          updatePayload.parent_id = parentId;
+        } else if (team.parentId) {
+          updatePayload.parent_id = null;
+        }
+        if (departmentRole.trim()) {
+          updatePayload.department_role = departmentRole.trim();
+        }
+        if (description.trim()) {
+          updatePayload.description = description.trim();
+        }
+
+        await ipcBridge.team.updateTeam.invoke(updatePayload);
 
         const updated = await ipcBridge.team.get.invoke({ id: team.id });
         if (updated) {
-          onUpdated?.(updated);
+          onUpdated?.({
+            ...updated,
+            parentId: parentId ?? null,
+            departmentRole: departmentRole.trim() || undefined,
+            description: description.trim() || undefined,
+          });
         }
         Message.success(t('team.edit.success', { defaultValue: 'Team updated successfully' }));
         handleClose();
@@ -231,13 +299,24 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
         model: modelBySelectionId.get(member.selectionId),
       }));
 
-      const newTeam = await ipcBridge.team.create.invoke({
+      const createPayload: ICreateTeamParams = {
         user_id,
         name,
         workspace,
         workspace_mode: 'shared',
         agents,
-      });
+      };
+      if (parentId) {
+        createPayload.parentId = parentId;
+      }
+      if (departmentRole.trim()) {
+        createPayload.departmentRole = departmentRole.trim();
+      }
+      if (description.trim()) {
+        createPayload.description = description.trim();
+      }
+
+      const newTeam = await ipcBridge.team.create.invoke(createPayload);
 
       // The platform bridge swallows provider errors and returns a sentinel object
       const result = newTeam as unknown as { __bridgeError?: boolean; message?: string };
@@ -246,7 +325,12 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
         return;
       }
 
-      onCreated?.(newTeam);
+      onCreated?.({
+        ...newTeam,
+        parentId: parentId ?? null,
+        departmentRole: departmentRole.trim() || undefined,
+        description: description.trim() || undefined,
+      });
       handleClose();
     } catch (error) {
       Message.error(getConversationCreateErrorMessage(error, t));
@@ -286,6 +370,65 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
           value={name}
           onChange={setName}
           data-testid='team-create-name-input'
+          className='!h-38px !rounded-8px !text-13px'
+        />
+      </div>
+
+      <div className='text-14px font-500 leading-21px text-t-secondary'>
+        {t('team.create.parentLabel', { defaultValue: 'Parent Dept' })}
+      </div>
+      <div>
+        <Select
+          value={parentId ?? ''}
+          onChange={(val: string) => {
+            const nextParent = val || null;
+            setParentId(nextParent);
+            if (nextParent && (!workspace || !team)) {
+              const pTeam = allTeams?.find((item) => item.id === nextParent);
+              if (pTeam?.workspace) {
+                setWorkspace(resolveChildWorkspace(pTeam.workspace, name));
+              }
+            }
+          }}
+          placeholder={t('team.create.parentPlaceholder', { defaultValue: 'None (Top-Level Department / Root)' })}
+          allowClear
+          className='!h-38px !rounded-8px !text-13px'
+        >
+          <Select.Option value=''>
+            {t('team.create.noParentOption', { defaultValue: 'None (Top-Level Department / Root)' })}
+          </Select.Option>
+          {parentOptions.map((candidate) => (
+            <Select.Option key={candidate.id} value={candidate.id}>
+              {candidate.name} {candidate.departmentRole ? `[${candidate.departmentRole}]` : ''}
+            </Select.Option>
+          ))}
+        </Select>
+      </div>
+
+      <div className='text-14px font-500 leading-21px text-t-secondary'>
+        {t('team.create.departmentRoleLabel', { defaultValue: 'Role / Dept' })}
+      </div>
+      <div>
+        <Input
+          placeholder={t('team.create.departmentRolePlaceholder', {
+            defaultValue: 'e.g. Mobile Dev, QA, Core Backend',
+          })}
+          value={departmentRole}
+          onChange={setDepartmentRole}
+          className='!h-38px !rounded-8px !text-13px'
+        />
+      </div>
+
+      <div className='text-14px font-500 leading-21px text-t-secondary'>
+        {t('team.create.descriptionLabel', { defaultValue: 'Description' })}
+      </div>
+      <div>
+        <Input
+          placeholder={t('team.create.descriptionPlaceholder', {
+            defaultValue: 'Sub-team specialization directive',
+          })}
+          value={description}
+          onChange={setDescription}
           className='!h-38px !rounded-8px !text-13px'
         />
       </div>
