@@ -10,6 +10,9 @@ import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { SiderToolbar, SiderSearchEntry, SiderScheduledEntry, SiderAssistantEntry, SiderPrimaryNav } from './SiderNav';
 import SiderFooter from './SiderFooter';
 import TeamSiderSection from './TeamSiderSection';
+import ScopeSegmentedToggle from './ScopeSegmentedToggle';
+import OrganizationSiderContent from './OrganizationSiderContent';
+import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
 import siderStyles from './Sider.module.css';
 
 const WorkspaceGroupedHistory = React.lazy(() => import('@renderer/pages/conversation/GroupedHistory'));
@@ -30,11 +33,18 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { closePreview, clearPreviewForScope } = usePreviewContext();
   const { logout, status } = useAuth();
   const { theme, setTheme } = useThemeContext();
+  const { activeScope, setActiveScope } = useOrgStore();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const isSettings = pathname.startsWith('/settings');
   const lastNonSettingsPathRef = useRef('/guid');
   const showLogout =
     typeof window !== 'undefined' && !(window as { electronAPI?: unknown }).electronAPI && status === 'authenticated';
+
+  useEffect(() => {
+    if (pathname.startsWith('/organization') && activeScope !== 'organization') {
+      setActiveScope('organization');
+    }
+  }, [pathname, activeScope, setActiveScope]);
 
   useEffect(() => {
     if (!pathname.startsWith('/settings')) {
@@ -181,73 +191,85 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
           </Suspense>
         ) : (
           <div className='size-full flex flex-col gap-2px'>
-            <SiderToolbar
-              isMobile={isMobile}
-              isBatchMode={isBatchMode}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onNewChat={handleNewChat}
-              onToggleBatchMode={() => setIsBatchMode((prev) => !prev)}
-            />
-            {/* Search entry — desktop moves this into the titlebar toolbar;
-                mobile keeps it here in the sidebar. */}
-            {isMobile && (
-              <SiderSearchEntry
-                isMobile={isMobile}
-                collapsed={collapsed}
-                siderTooltipProps={siderTooltipProps}
-                onConversationSelect={handleConversationSelect}
-                onSessionClick={onSessionClick}
-              />
-            )}
-            {/* Primary Top-Level Navigation Switcher (Teams, Projects, Conversations, Organization) */}
-            <SiderPrimaryNav
-              isMobile={isMobile}
+            {/* Top segmented switcher: Workplace vs Organization */}
+            <ScopeSegmentedToggle
               collapsed={collapsed}
               siderTooltipProps={siderTooltipProps}
               onSessionClick={onSessionClick}
             />
-            {/* Assistant nav entry - fixed above Scheduled */}
-            <SiderAssistantEntry
-              isMobile={isMobile}
-              isActive={pathname.startsWith('/assistants')}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={handleAssistantClick}
-            />
-            {/* Scheduled tasks nav entry - fixed above scroll */}
-            <SiderScheduledEntry
-              isMobile={isMobile}
-              isActive={pathname === '/scheduled'}
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onClick={handleScheduledClick}
-            />
-            {/* Divider between fixed top nav and scrollable content area */}
-            <div
-              className={classNames(
-                'shrink-0 mt-6px mb-2px h-1px bg-[var(--color-border-2)]',
-                collapsed ? 'mx-6px' : 'mx-10px'
-              )}
-            />
-            {/* Scrollable content: pinned → team (slot) → projects → conversations */}
-            <div className={classNames('flex-1 min-h-0 overflow-y-auto', siderStyles.scrollArea)}>
-              <Suspense fallback={<div className='min-h-200px' />}>
-                <WorkspaceGroupedHistory
-                  {...workspaceHistoryProps}
-                  afterPinnedContent={
-                    <>
-                      <TeamSiderSection
-                        collapsed={collapsed}
-                        pathname={pathname}
-                        siderTooltipProps={siderTooltipProps}
-                        onSessionClick={onSessionClick}
-                      />
-                    </>
-                  }
+
+            {activeScope === 'organization' ? (
+              <div className={classNames('flex-1 min-h-0 overflow-y-auto', siderStyles.scrollArea)}>
+                <OrganizationSiderContent
+                  collapsed={collapsed}
+                  siderTooltipProps={siderTooltipProps}
+                  onSessionClick={onSessionClick}
                 />
-              </Suspense>
-            </div>
+              </div>
+            ) : (
+              <>
+                <SiderToolbar
+                  isMobile={isMobile}
+                  isBatchMode={isBatchMode}
+                  collapsed={collapsed}
+                  siderTooltipProps={siderTooltipProps}
+                  onNewChat={handleNewChat}
+                  onToggleBatchMode={() => setIsBatchMode((prev) => !prev)}
+                />
+                {/* Search entry — desktop moves this into the titlebar toolbar;
+                    mobile keeps it here in the sidebar. */}
+                {isMobile && (
+                  <SiderSearchEntry
+                    isMobile={isMobile}
+                    collapsed={collapsed}
+                    siderTooltipProps={siderTooltipProps}
+                    onConversationSelect={handleConversationSelect}
+                    onSessionClick={onSessionClick}
+                  />
+                )}
+                {/* Assistant nav entry - fixed above Scheduled */}
+                <SiderAssistantEntry
+                  isMobile={isMobile}
+                  isActive={pathname.startsWith('/assistants')}
+                  collapsed={collapsed}
+                  siderTooltipProps={siderTooltipProps}
+                  onClick={handleAssistantClick}
+                />
+                {/* Scheduled tasks nav entry - fixed above scroll */}
+                <SiderScheduledEntry
+                  isMobile={isMobile}
+                  isActive={pathname === '/scheduled'}
+                  collapsed={collapsed}
+                  siderTooltipProps={siderTooltipProps}
+                  onClick={handleScheduledClick}
+                />
+                {/* Divider between fixed top nav and scrollable content area */}
+                <div
+                  className={classNames(
+                    'shrink-0 mt-6px mb-2px h-1px bg-[var(--color-border-2)]',
+                    collapsed ? 'mx-6px' : 'mx-10px'
+                  )}
+                />
+                {/* Scrollable content: pinned → team (slot) → projects → conversations */}
+                <div className={classNames('flex-1 min-h-0 overflow-y-auto', siderStyles.scrollArea)}>
+                  <Suspense fallback={<div className='min-h-200px' />}>
+                    <WorkspaceGroupedHistory
+                      {...workspaceHistoryProps}
+                      afterPinnedContent={
+                        <>
+                          <TeamSiderSection
+                            collapsed={collapsed}
+                            pathname={pathname}
+                            siderTooltipProps={siderTooltipProps}
+                            onSessionClick={onSessionClick}
+                          />
+                        </>
+                      }
+                    />
+                  </Suspense>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

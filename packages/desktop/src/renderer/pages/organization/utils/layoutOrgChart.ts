@@ -7,9 +7,6 @@
 import dagre from 'dagre';
 import { type Node, type Edge, Position } from '@xyflow/react';
 
-const NODE_WIDTH = 320;
-const NODE_HEIGHT = 220;
-
 export function layoutOrgChart(
   nodes: Node[],
   edges: Edge[],
@@ -20,30 +17,48 @@ export function layoutOrgChart(
 
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 60,
-    ranksep: 90,
+    nodesep: direction === 'TB' ? 70 : 80,
+    ranksep: direction === 'TB' ? 100 : 90,
     align: 'DL',
   });
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    let width = 320;
+    let height = 200;
+    if (node.type === 'rootCeo') {
+      width = 360;
+      height = 240;
+    } else if (node.type === 'department') {
+      width = 330;
+      height = 210;
+    } else if (node.type === 'team') {
+      width = 290;
+      height = 190;
+    }
+    dagreGraph.setNode(node.id, { width, height });
   });
 
+  // Only layout structural edges (ignore tether lines)
   edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target);
+    if (edge.type !== 'tether') {
+      dagreGraph.setEdge(edge.source, edge.target);
+    }
   });
 
   dagre.layout(dagreGraph);
 
   const layoutedNodes: Node[] = nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id);
+    const nodeWithPosition = dagreGraph.node(node.id) || { x: 0, y: 0, width: 320, height: 200 };
+    const width = nodeWithPosition.width || 320;
+    const height = nodeWithPosition.height || 200;
+
     return {
       ...node,
       targetPosition: direction === 'LR' ? Position.Left : Position.Top,
       sourcePosition: direction === 'LR' ? Position.Right : Position.Bottom,
       position: {
-        x: nodeWithPosition.x - NODE_WIDTH / 2,
-        y: nodeWithPosition.y - NODE_HEIGHT / 2,
+        x: nodeWithPosition.x - width / 2,
+        y: nodeWithPosition.y - height / 2,
       },
     };
   });

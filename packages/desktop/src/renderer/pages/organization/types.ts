@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export * from '@/types/organization';
+
 export type NavigationTab = 'teams' | 'projects' | 'conversations' | 'organization';
 
 export type NodeExecutionStatus = 'idle' | 'thinking' | 'delegating' | 'completed' | 'error';

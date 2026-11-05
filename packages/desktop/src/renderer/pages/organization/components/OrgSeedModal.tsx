@@ -6,132 +6,31 @@
 
 import React, { useState } from 'react';
 import { Modal, Input, Button, Message } from '@arco-design/web-react';
-import { Upload } from '@icon-park/react';
-import { ipcBridge } from '@/common';
-import type { ICreateTeamParams, TeamAssistantInput } from '@/common/adapter/teamMapper';
-import { useSWRConfig } from 'swr';
+import { Upload, Refresh } from '@icon-park/react';
+import { useOrgStore } from '../store/useOrgStore';
+import { createDefaultOrgHierarchy } from '../utils/defaultOrgSeed';
 
 type OrgSeedModalProps = {
   visible: boolean;
   onClose: () => void;
 };
 
-const DEFAULT_SAMPLE_SEED = JSON.stringify(
-  [
-    {
-      name: 'Global Enterprise HQ',
-      departmentRole: 'Corporate Leadership',
-      description: 'Central executive command steering corporate operations.',
-      assistants: [
-        {
-          assistant_name: 'CEO Orchestrator',
-          assistant_backend: 'claude',
-          role: 'leader',
-          whenToUseHint: 'Strategic orchestration and division governance',
-        },
-        {
-          assistant_name: 'Chief Architect',
-          assistant_backend: 'claude',
-          role: 'teammate',
-          whenToUseHint: 'System-wide architecture and tech alignment',
-        },
-      ],
-    },
-    {
-      name: 'Engineering Division',
-      departmentRole: 'Software & Infrastructure',
-      description: 'Product engineering, platform infrastructure, and QA.',
-      parentName: 'Global Enterprise HQ',
-      assistants: [
-        {
-          assistant_name: 'VP of Engineering',
-          assistant_backend: 'claude',
-          role: 'leader',
-          whenToUseHint: 'Engineering sprint tracking and delegation',
-        },
-        {
-          assistant_name: 'DevOps Lead',
-          assistant_backend: 'claude',
-          role: 'teammate',
-          whenToUseHint: 'CI/CD and deployment pipelines',
-        },
-      ],
-    },
-    {
-      name: 'Frontend Core Sub-Team',
-      departmentRole: 'UI/UX & Web Client',
-      description: 'React, Electron, UnoCSS, and visual design implementation.',
-      parentName: 'Engineering Division',
-      assistants: [
-        {
-          assistant_name: 'Frontend Lead',
-          assistant_backend: 'claude',
-          role: 'leader',
-          whenToUseHint: 'Component development and layout styling',
-        },
-        {
-          assistant_name: 'UI Designer Agent',
-          assistant_backend: 'claude',
-          role: 'teammate',
-          whenToUseHint: 'Design tokens and accessibility compliance',
-        },
-      ],
-    },
-  ],
-  null,
-  2
-);
-
 export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) => {
-  const [jsonContent, setJsonContent] = useState(DEFAULT_SAMPLE_SEED);
+  const { hierarchy, resetToDefault } = useOrgStore();
+  const [jsonContent, setJsonContent] = useState(() => JSON.stringify(hierarchy, null, 2));
   const [importing, setImporting] = useState(false);
-  const { mutate } = useSWRConfig();
 
   const handleImport = async () => {
     try {
       const parsed = JSON.parse(jsonContent);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        throw new Error('Seed JSON must be a non-empty array of department objects.');
+      if (!parsed || !parsed.rootCeo || !Array.isArray(parsed.departments)) {
+        throw new Error('Seed JSON must include rootCeo and departments array.');
       }
 
       setImporting(true);
-      const nameToIdMap = new Map<string, string>();
-
-      for (const item of parsed) {
-        const parentId = item.parentName ? nameToIdMap.get(item.parentName) : item.parentId || null;
-
-        const agents: TeamAssistantInput[] = (
-          item.assistants || [
-            {
-              assistant_name: `${item.name} Lead`,
-              role: 'leader' as const,
-            },
-          ]
-        ).map((a: { assistant_name?: string; role?: 'leader' | 'teammate' }, idx: number) => ({
-          role: a.role || (idx === 0 ? ('leader' as const) : ('teammate' as const)),
-          assistant_name: a.assistant_name || `Agent ${idx + 1}`,
-        }));
-
-        const createPayload: ICreateTeamParams = {
-          user_id: 'system_default_user',
-          name: item.name,
-          workspace: item.workspace || '',
-          workspace_mode: 'shared',
-          agents,
-          parentId,
-          departmentRole: item.departmentRole || 'General Department',
-          description: item.description || '',
-        };
-
-        const newTeam = await ipcBridge.team.create.invoke(createPayload);
-
-        if (newTeam?.id) {
-          nameToIdMap.set(item.name, newTeam.id);
-        }
-      }
-
-      Message.success('Organization hierarchy seed imported successfully!');
-      void mutate('teams:list');
+      localStorage.setItem('aionui:org-hierarchy', JSON.stringify(parsed));
+      Message.success('Organization hierarchy seed loaded successfully!');
+      window.location.reload();
       onClose();
     } catch (err) {
       Message.error(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -140,33 +39,39 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
     }
   };
 
+  const handleResetDefault = () => {
+    resetToDefault();
+    setJsonContent(JSON.stringify(createDefaultOrgHierarchy(), null, 2));
+    Message.success('Reset to 5-Department Corporate Hierarchy!');
+    onClose();
+  };
+
   return (
     <Modal
       title={
         <div className='flex items-center gap-8px'>
           <Upload size={16} theme='outline' fill='currentColor' className='text-primary' />
-          <span>Import Organization Seed JSON</span>
+          <span>Organization Corporate Hierarchy Seed</span>
         </div>
       }
       visible={visible}
       onOk={handleImport}
       onCancel={onClose}
       confirmLoading={importing}
-      okText='Import & Generate Org Tree'
+      okText='Apply JSON Hierarchy'
       cancelText='Cancel'
-      style={{ width: 560 }}
+      style={{ width: 620 }}
     >
       <div className='flex flex-col gap-10px'>
         <div className='text-12px text-t-secondary'>
-          Paste or edit an enterprise hierarchical JSON tree. Departments referencing a parent will be nested
-          automatically.
+          Configure or export the complete corporate hierarchy (Root CEO, Departments, Sub-Teams, Leaders, and Specialists).
         </div>
-        <Input.TextArea rows={12} value={jsonContent} onChange={setJsonContent} className='font-mono text-11px' />
+        <Input.TextArea rows={14} value={jsonContent} onChange={setJsonContent} className='font-mono text-11px' />
         <div className='flex justify-between items-center text-11px text-t-tertiary'>
-          <Button size='mini' type='text' onClick={() => setJsonContent(DEFAULT_SAMPLE_SEED)}>
-            Reset to Sample Corporate Hierarchy
+          <Button size='small' type='secondary' icon={<Refresh size={12} />} onClick={handleResetDefault}>
+            Reset to Default Pre-Seeded Org
           </Button>
-          <span>Valid JSON required</span>
+          <span>Valid JSON format</span>
         </div>
       </div>
     </Modal>

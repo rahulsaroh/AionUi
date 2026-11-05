@@ -6,121 +6,65 @@
 
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Tag, Tooltip, Spin, Button } from '@arco-design/web-react';
+import { Tag, Tooltip, Button } from '@arco-design/web-react';
 import {
   Peoples,
-  Play,
-  Plus,
-  MessageOne,
+  AlarmClock,
+  FolderClose,
   Down,
   Right,
-  AlarmClock,
-  CheckOne,
-  CloseOne,
-  LoadingOne,
   Workbench,
+  Play,
+  Plus,
 } from '@icon-park/react';
-import type { TTeam, TeamAssistant } from '@/common/types/team/teamTypes';
-import { useOrgTelemetryStore } from '../store/useOrgTelemetryStore';
-import AgentMemberPill from './AgentMemberPill';
+import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
+import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
+import { useOrgStore } from '../store/useOrgStore';
 
-export type DepartmentNodeData = {
-  team: TTeam;
-  level: number;
-  isRoot: boolean;
-  hasChildren: boolean;
-  isCollapsed: boolean;
+export interface DepartmentNodeData {
+  department: OrgDepartmentNode;
+  isCollapsed?: boolean;
   orientation?: 'TB' | 'LR';
-  onToggleCollapse?: (teamId: string) => void;
-  onAddSubTeam?: (teamId: string) => void;
-  onOpenChat?: (teamId: string) => void;
-  onRunTask?: (team: TTeam) => void;
-  onSelectNode?: (team: TTeam) => void;
-};
+  onToggleCollapse?: (deptId: string) => void;
+  onAddSubTeam?: (deptId: string) => void;
+  onRunTask?: (dept: OrgDepartmentNode) => void;
+  onSelectNode?: (nodeId: string, nodeType: 'department') => void;
+}
 
 export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boolean }> = ({
   data,
   selected = false,
 }) => {
   const {
-    team,
-    level,
-    isRoot,
-    hasChildren,
-    isCollapsed,
+    department,
+    isCollapsed = false,
     orientation = 'TB',
     onToggleCollapse,
     onAddSubTeam,
-    onOpenChat,
     onRunTask,
     onSelectNode,
   } = data;
 
-  const { getNodeStatus, getActivity } = useOrgTelemetryStore();
-  const status = getNodeStatus(team.id);
-  const activity = getActivity(team.id);
+  const { nodeStatuses } = useOrgStore();
 
-  const assistants = team.assistants || [];
-  const leader = assistants.find((a: TeamAssistant) => a.role === 'leader') || assistants[0];
-  const specialists = assistants.filter((a: TeamAssistant) => a.slot_id !== leader?.slot_id);
-
-  const depthLabel = isRoot ? 'HQ' : level === 1 ? 'Division' : 'Sub-Team';
-  const depthColor = isRoot ? 'gold' : level === 1 ? 'arcoblue' : 'gray';
-
-  // Live status visuals
-  const getStatusVisuals = () => {
-    switch (status) {
-      case 'thinking':
-        return {
-          glow: 'ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.35)] border-cyan-500',
-          dot: 'bg-cyan-400 animate-pulse',
-          icon: <LoadingOne theme='outline' size={14} className='animate-spin text-cyan-400' />,
-          text: 'Executing',
-        };
-      case 'delegating':
-        return {
-          glow: 'ring-2 ring-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.35)] border-amber-500',
-          dot: 'bg-amber-400 animate-pulse',
-          icon: <LoadingOne theme='outline' size={14} className='animate-spin text-amber-400' />,
-          text: 'Delegating',
-        };
-      case 'completed':
-        return {
-          glow: 'ring-2 ring-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.35)] border-emerald-500',
-          dot: 'bg-emerald-400',
-          icon: <CheckOne theme='outline' size={14} className='text-emerald-400' />,
-          text: 'Completed',
-        };
-      case 'error':
-        return {
-          glow: 'ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.35)] border-red-500',
-          dot: 'bg-red-400 animate-pulse',
-          icon: <CloseOne theme='outline' size={14} className='text-red-400' />,
-          text: 'Error / Blocked',
-        };
-      default:
-        return {
-          glow: selected
-            ? 'ring-2 ring-primary border-primary shadow-lg'
-            : 'border-[var(--color-border-2)] hover:border-primary/60',
-          dot: 'bg-slate-400',
-          icon: null,
-          text: 'Idle',
-        };
-    }
-  };
-
-  const visuals = getStatusVisuals();
+  const currentStatus: OrgNodeStatus = nodeStatuses[department.id] || department.status || 'idle';
+  const effectiveStatus = computeLifecycleStatus(department.lastActiveAt, currentStatus);
+  const theme = ORG_THEME_PALETTE[effectiveStatus];
+  const nodeStyle = getOrgNodeStyle(effectiveStatus);
 
   const targetHandlePos = orientation === 'LR' ? Position.Left : Position.Top;
   const sourceHandlePos = orientation === 'LR' ? Position.Right : Position.Bottom;
 
+  const hasChildren = department.teams.length > 0;
+
   return (
     <div
-      onClick={() => onSelectNode?.(team)}
-      className={`group/card relative w-320px rounded-12px bg-[var(--color-bg-2)] border border-solid transition-all duration-200 cursor-pointer text-t-primary shadow-md flex flex-col overflow-hidden ${visuals.glow}`}
+      onClick={() => onSelectNode?.(department.id, 'department')}
+      style={nodeStyle}
+      className={`group/dept relative w-330px rounded-14px cursor-pointer text-t-primary shadow-lg flex flex-col overflow-hidden transition-all duration-300 ${
+        selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]' : ''
+      }`}
     >
-      {/* React Flow Handles */}
       <Handle
         type='target'
         position={targetHandlePos}
@@ -128,135 +72,132 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
       />
 
       {/* Header */}
-      <div className='p-12px pb-8px border-b border-[var(--color-border-2)] bg-fill-1 flex items-center justify-between'>
+      <div className='p-12px pb-8px bg-fill-1 border-b border-[var(--color-border-2)] flex items-center justify-between'>
         <div className='flex items-center gap-8px min-w-0'>
           <span className='size-28px rounded-8px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
             <Peoples size={16} theme='outline' fill='currentColor' />
           </span>
           <div className='flex flex-col min-w-0'>
-            <div className='flex items-center gap-6px'>
-              <span className='font-semibold text-14px truncate' title={team.name}>
-                {team.name}
-              </span>
-              <Tag size='small' color={depthColor} className='text-10px font-medium leading-none px-4px py-1px'>
-                {depthLabel}
-              </Tag>
-            </div>
-            {team.departmentRole && <span className='text-11px text-t-tertiary truncate'>{team.departmentRole}</span>}
+            <span className='font-bold text-14px truncate' title={department.name}>
+              {department.name}
+            </span>
+            <span className='text-10px text-t-tertiary truncate font-mono'>Division HQ</span>
           </div>
         </div>
 
-        {/* Status Dot / Indicator */}
-        <Tooltip content={`Status: ${visuals.text}`} position='top'>
-          <div className='flex items-center gap-4px shrink-0'>
-            {visuals.icon}
-            <span className={`size-8px rounded-full ${visuals.dot}`} />
-          </div>
-        </Tooltip>
+        <Tag
+          size='small'
+          style={{
+            borderColor: theme.borderColor,
+            color: theme.textColor,
+            backgroundColor: theme.backgroundColor,
+          }}
+          className='font-semibold text-10px px-5px py-0.5px rounded-full'
+        >
+          {theme.badgeText}
+        </Tag>
       </div>
 
-      {/* Body Section */}
-      <div className='p-12px flex flex-col gap-10px flex-1'>
-        {/* Leader Badge */}
-        {leader && (
-          <div className='flex items-center justify-between px-8px py-4px rounded-6px bg-blue-500/10 border border-solid border-blue-500/20 text-11px'>
-            <div className='flex items-center gap-6px truncate'>
-              <Workbench size={14} theme='outline' className='text-blue-400 shrink-0' />
-              <span className='text-blue-300 font-semibold truncate'>Lead: {leader.assistant_name}</span>
+      {/* Department CEO Leader Badge */}
+      <div className='p-10px flex flex-col gap-8px bg-[var(--color-bg-2)]'>
+        <div className='flex items-center justify-between px-8px py-5px rounded-8px bg-purple-500/10 border border-purple-500/20 text-11px'>
+          <div className='flex items-center gap-6px truncate'>
+            <Workbench size={14} theme='outline' className='text-purple-400 shrink-0' />
+            <div className='flex flex-col truncate'>
+              <span className='text-purple-300 font-semibold truncate'>
+                {department.departmentCeoAgent.name}
+              </span>
+              <span className='text-purple-400/80 text-9px'>
+                {department.departmentCeoAgent.title || 'Department Head / CEO'}
+              </span>
             </div>
-            <span className='text-10px text-blue-400/80 shrink-0 font-mono'>Aion CLI</span>
+          </div>
+          <span className='text-9px font-mono text-purple-300 px-4px py-1px rounded bg-purple-500/20 shrink-0'>
+            Tier 2
+          </span>
+        </div>
+
+        {/* Linked Org Projects Pills */}
+        {department.linkedProjects.length > 0 && (
+          <div className='flex flex-col gap-3px'>
+            <span className='text-9px font-semibold uppercase tracking-wider text-t-tertiary'>
+              Linked Projects ({department.linkedProjects.length})
+            </span>
+            <div className='flex items-center gap-4px flex-wrap max-h-48px overflow-y-auto'>
+              {department.linkedProjects.map((p) => (
+                <div
+                  key={p.id}
+                  className='flex items-center gap-4px px-6px py-2px rounded bg-fill-2 text-9px text-t-secondary font-mono border border-[var(--color-border-2)]'
+                >
+                  <FolderClose size={10} theme='outline' className='text-amber-400' />
+                  <span className='truncate max-w-100px'>{p.name}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Specialists Roster */}
-        <div className='flex flex-col gap-4px'>
-          <div className='text-10px uppercase tracking-wider text-t-tertiary font-semibold flex justify-between'>
-            <span>Specialists ({specialists.length})</span>
-            {team.description && (
-              <span className='lowercase font-normal truncate max-w-140px text-right' title={team.description}>
-                {team.description}
-              </span>
-            )}
+        {/* Cron Schedule Badge */}
+        {department.cronSchedule && (
+          <div className='flex items-center justify-between px-8px py-3px rounded bg-cyan-500/10 border border-cyan-500/20 text-10px text-cyan-300'>
+            <div className='flex items-center gap-5px truncate'>
+              <AlarmClock size={12} theme='outline' className='text-cyan-400 shrink-0' />
+              <span className='font-mono text-9px truncate'>{department.cronSchedule.schedule}</span>
+            </div>
+            <span className='text-9px truncate text-cyan-400/80 max-w-120px' title={department.cronSchedule.taskDirective}>
+              Active Cron
+            </span>
           </div>
-          <div className='flex items-center gap-6px flex-wrap max-h-56px overflow-y-auto pr-2px'>
-            {specialists.length === 0 ? (
-              <span className='text-11px text-t-tertiary italic'>No specialists assigned</span>
-            ) : (
-              specialists.map((spec: TeamAssistant) => (
-                <AgentMemberPill key={spec.slot_id} assistant={spec} isActive={status === 'thinking'} />
-              ))
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Live Status Micro-Readout Bar */}
-      <div className='px-10px py-6px bg-fill-2 border-t border-[var(--color-border-2)] text-10px font-mono text-t-secondary flex items-center justify-between gap-6px'>
-        <div className='flex items-center gap-4px truncate min-w-0'>
-          <span className='text-cyan-400 font-bold'>&gt;</span>
-          <span className='truncate' title={activity?.message || 'Ready for autonomous dispatch'}>
-            {activity?.message || 'Ready for autonomous dispatch'}
-          </span>
-        </div>
-        <span className='text-t-tertiary shrink-0 text-9px'>
-          {activity?.timestamp
-            ? new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : 'idle'}
+      {/* Footer Micro Status Bar */}
+      <div className='px-10px py-5px bg-fill-1 border-t border-[var(--color-border-2)] text-10px font-mono text-t-secondary flex items-center justify-between'>
+        <span className='truncate text-9px'>
+          {hasChildren ? `${department.teams.length} Specialized Teams` : 'Standalone Department'}
         </span>
+        {hasChildren && (
+          <Button
+            size='mini'
+            className='!px-5px !h-20px !text-10px'
+            icon={isCollapsed ? <Right size={10} theme='outline' /> : <Down size={10} theme='outline' />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse?.(department.id);
+            }}
+          >
+            {isCollapsed ? 'Expand' : 'Collapse'}
+          </Button>
+        )}
       </div>
 
-      {/* Quick Action Toolbar (revealed on hover) */}
-      <div className='absolute top-2 right-2 opacity-0 group-hover/card:opacity-100 transition-opacity flex items-center gap-4px bg-[var(--color-bg-1)]/95 backdrop-blur-sm p-4px rounded-8px shadow-lg border border-solid border-[var(--color-border-2)] z-10'>
-        <Tooltip content='Run Directive' position='top'>
+      {/* Hover Quick Actions */}
+      <div className='absolute top-2 right-2 opacity-0 group-hover/dept:opacity-100 transition-opacity flex items-center gap-4px bg-[var(--color-bg-1)]/95 backdrop-blur-sm p-3px rounded-6px shadow-md border border-[var(--color-border-2)] z-10'>
+        <Tooltip content='Dispatch Directive' position='top'>
           <Button
             size='mini'
             type='primary'
-            className='!px-6px !h-24px'
-            icon={<Play size={12} theme='outline' />}
+            className='!px-5px !h-22px'
+            icon={<Play size={11} theme='outline' />}
             onClick={(e) => {
               e.stopPropagation();
-              onRunTask?.(team);
+              onRunTask?.(department);
             }}
           />
         </Tooltip>
         <Tooltip content='Add Sub-Team' position='top'>
           <Button
             size='mini'
-            className='!px-6px !h-24px'
-            icon={<Plus size={12} theme='outline' />}
+            className='!px-5px !h-22px'
+            icon={<Plus size={11} theme='outline' />}
             onClick={(e) => {
               e.stopPropagation();
-              onAddSubTeam?.(team.id);
+              onAddSubTeam?.(department.id);
             }}
           />
         </Tooltip>
-        <Tooltip content='Open Team Chat' position='top'>
-          <Button
-            size='mini'
-            className='!px-6px !h-24px'
-            icon={<MessageOne size={12} theme='outline' />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenChat?.(team.id);
-            }}
-          />
-        </Tooltip>
-        {hasChildren && (
-          <Tooltip content={isCollapsed ? 'Expand Branch' : 'Collapse Branch'} position='top'>
-            <Button
-              size='mini'
-              className='!px-6px !h-24px'
-              icon={isCollapsed ? <Right size={12} theme='outline' /> : <Down size={12} theme='outline' />}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleCollapse?.(team.id);
-              }}
-            />
-          </Tooltip>
-        )}
       </div>
 
-      {/* Source Handle */}
       <Handle
         type='source'
         position={sourceHandlePos}

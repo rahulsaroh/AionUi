@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -12,7 +12,6 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
-  type Connection,
   type Node,
   type Edge,
   type NodeTypes,
@@ -21,75 +20,89 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Message, Spin, Empty } from '@arco-design/web-react';
+import { Empty, Modal, Input, Message } from '@arco-design/web-react';
 import { useNavigate } from 'react-router-dom';
-import { useSWRConfig } from 'swr';
-import { useTeamList } from '@/renderer/pages/team/hooks/useTeamList';
-import {
-  normalizeTeamsHierarchy,
-  wouldCreateCycle,
-  getDescendantTeamIds,
-} from '@/renderer/pages/team/utils/teamStorage';
-import { ipcBridge } from '@/common';
-import type { TTeam } from '@/common/types/team/teamTypes';
+import RootCeoNode from './components/RootCeoNode';
 import DepartmentNode from './components/DepartmentNode';
+import TeamNode from './components/TeamNode';
 import DelegationEdge from './components/DelegationEdge';
+import SharedMemberTetherEdge from './components/SharedMemberTetherEdge';
 import OrgCanvasToolbar from './components/OrgCanvasToolbar';
 import OrgInspectorDrawer from './components/OrgInspectorDrawer';
-import QuickRunTaskModal from './components/QuickRunTaskModal';
 import OrgSeedModal from './components/OrgSeedModal';
-import TeamCreateModal from '@/renderer/pages/team/components/TeamCreateModal';
 import { layoutOrgChart } from './utils/layoutOrgChart';
+import { useOrgStore } from './store/useOrgStore';
+import type { RootCEO, OrgDepartmentNode, OrgTeamNode } from '@/types/organization';
 
 const nodeTypes: NodeTypes = {
+  rootCeo: RootCeoNode,
   department: DepartmentNode,
+  team: TeamNode,
 };
 
 const edgeTypes: EdgeTypes = {
   delegation: DelegationEdge,
+  tether: SharedMemberTetherEdge,
 };
 
 const CanvasInner: React.FC = () => {
-  const { teams: rawTeams = [] } = useTeamList();
-  const { mutate } = useSWRConfig();
+  const {
+    hierarchy,
+    hoveredCanonicalAgentId,
+    selectedCanonicalAgentId,
+    addDepartment,
+    addSubTeam,
+  } = useOrgStore();
+
   const navigate = useNavigate();
   const { fitView } = useReactFlow();
 
   const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
   const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
-  const [selectedTeam, setSelectedTeam] = useState<TTeam | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeType, setSelectedNodeType] = useState<'ceo' | 'department' | 'team' | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
-  const [runTaskTeam, setRunTaskTeam] = useState<TTeam | null>(null);
-  const [isCreateSubTeamOpen, setIsCreateSubTeamOpen] = useState(false);
-  const [parentForNewSubTeam, setParentForNewSubTeam] = useState<string | null>(null);
   const [isSeedModalOpen, setIsSeedModalOpen] = useState(false);
+
+  // Quick Dispatch Modal for CEO
+  const [dispatchCeoModalVisible, setDispatchCeoModalVisible] = useState(false);
+  const [dispatchCeoPrompt, setDispatchCeoPrompt] = useState('');
+
+  // Create Department Modal
+  const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Normalize hierarchy
-  const normalizedTeams = useMemo(() => {
-    return normalizeTeamsHierarchy(rawTeams);
-  }, [rawTeams]);
+  // Calculate shared member counts across the entire organization
+  const { sharedCountsMap, agentLocationMap } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const locations: Record<string, string[]> = {}; // canonicalId -> nodeIds
 
-  // Compute hidden node IDs based on collapsed branches
-  const hiddenNodeIds = useMemo(() => {
-    const hidden = new Set<string>();
-    collapsedBranchIds.forEach((collapsedId) => {
-      const descendants = getDescendantTeamIds(normalizedTeams, collapsedId);
-      descendants.forEach((dId) => hidden.add(dId));
+    hierarchy.departments.forEach((dept) => {
+      dept.teams.forEach((team) => {
+        team.specialistMembers.forEach((spec) => {
+          counts[spec.canonicalAgentId] = (counts[spec.canonicalAgentId] || 0) + 1;
+          if (!locations[spec.canonicalAgentId]) {
+            locations[spec.canonicalAgentId] = [];
+          }
+          if (!locations[spec.canonicalAgentId].includes(team.id)) {
+            locations[spec.canonicalAgentId].push(team.id);
+          }
+        });
+      });
     });
-    return hidden;
-  }, [normalizedTeams, collapsedBranchIds]);
 
-  const handleToggleCollapse = useCallback((teamId: string) => {
+    return { sharedCountsMap: counts, agentLocationMap: locations };
+  }, [hierarchy]);
+
+  // Branch collapse toggle
+  const handleToggleCollapse = useCallback((deptId: string) => {
     setCollapsedBranchIds((prev) => {
       const next = new Set(prev);
-      if (next.has(teamId)) {
-        next.delete(teamId);
-      } else {
-        next.add(teamId);
-      }
+      if (next.has(deptId)) next.delete(deptId);
+      else next.add(deptId);
       return next;
     });
   }, []);
@@ -98,93 +111,146 @@ const CanvasInner: React.FC = () => {
     if (collapsedBranchIds.size > 0) {
       setCollapsedBranchIds(new Set());
     } else {
-      const allParentIds = normalizedTeams.filter((t) => (t.subTeamIds?.length || 0) > 0).map((t) => t.id);
-      setCollapsedBranchIds(new Set(allParentIds));
+      const allDeptIds = hierarchy.departments.map((d) => d.id);
+      setCollapsedBranchIds(new Set(allDeptIds));
     }
-  }, [collapsedBranchIds.size, normalizedTeams]);
+  }, [collapsedBranchIds.size, hierarchy.departments]);
 
-  const handleOpenChat = useCallback(
-    (teamId: string) => {
-      void navigate(`/team/${teamId}`);
-    },
-    [navigate]
-  );
-
-  const handleAddSubTeam = useCallback((teamId: string) => {
-    setParentForNewSubTeam(teamId);
-    setIsCreateSubTeamOpen(true);
+  const handleSelectNode = useCallback((nodeId: string, nodeType: 'ceo' | 'department' | 'team') => {
+    setSelectedNodeId(nodeId);
+    setSelectedNodeType(nodeType);
+    setIsInspectorOpen(true);
   }, []);
 
-  const handleSelectNode = useCallback((team: TTeam) => {
-    setSelectedTeam(team);
-    setIsInspectorOpen(true);
+  const handleDispatchToCeo = useCallback((_rootCeo: RootCEO) => {
+    setSelectedNodeId('root-ceo');
+    setSelectedNodeType('ceo');
+    setDispatchCeoModalVisible(true);
   }, []);
 
   // Build Graph Nodes and Edges
   useEffect(() => {
-    if (normalizedTeams.length === 0) {
-      setNodes([]);
-      setEdges([]);
-      return;
-    }
+    const rawNodes: Node[] = [];
+    const rawEdges: Edge[] = [];
 
-    const teamMap = new Map<string, TTeam>(normalizedTeams.map((t) => [t.id, t]));
-
-    // Calculate levels
-    const levelMap = new Map<string, number>();
-    function getLevel(team: TTeam): number {
-      if (levelMap.has(team.id)) return levelMap.get(team.id)!;
-      if (!team.parentId || !teamMap.has(team.parentId)) {
-        levelMap.set(team.id, 0);
-        return 0;
-      }
-      const parent = teamMap.get(team.parentId)!;
-      const lvl = getLevel(parent) + 1;
-      levelMap.set(team.id, lvl);
-      return lvl;
-    }
-    normalizedTeams.forEach(getLevel);
-
-    // Filter visible teams
-    const visibleTeams = normalizedTeams.filter((t) => !hiddenNodeIds.has(t.id));
-
-    // Construct raw nodes
-    const rawNodes: Node[] = visibleTeams.map((t) => {
-      const hasChildren = (t.subTeamIds?.length || 0) > 0;
-      const lvl = levelMap.get(t.id) || 0;
-
-      return {
-        id: t.id,
-        type: 'department',
-        data: {
-          team: t,
-          level: lvl,
-          isRoot: !t.parentId,
-          hasChildren,
-          isCollapsed: collapsedBranchIds.has(t.id),
-          orientation: direction,
-          onToggleCollapse: handleToggleCollapse,
-          onAddSubTeam: handleAddSubTeam,
-          onOpenChat: handleOpenChat,
-          onRunTask: (team: TTeam) => setRunTaskTeam(team),
-          onSelectNode: handleSelectNode,
-        },
-        position: { x: 0, y: 0 },
-      };
+    // 1. Root CEO Node
+    rawNodes.push({
+      id: hierarchy.rootCeo.id,
+      type: 'rootCeo',
+      data: {
+        rootCeo: hierarchy.rootCeo,
+        orientation: direction,
+        onDispatchToCeo: handleDispatchToCeo,
+        onSelectNode: (id: string, type: 'ceo') => handleSelectNode(id, type),
+      },
+      position: { x: 0, y: 0 },
     });
 
-    // Construct raw edges
-    const rawEdges: Edge[] = [];
-    visibleTeams.forEach((t) => {
-      if (t.parentId && !hiddenNodeIds.has(t.parentId) && teamMap.has(t.parentId)) {
-        rawEdges.push({
-          id: `${t.parentId}->${t.id}`,
-          source: t.parentId,
-          target: t.id,
-          type: 'delegation',
+    // 2. Department Nodes & Team Nodes
+    hierarchy.departments.forEach((dept) => {
+      const isDeptCollapsed = collapsedBranchIds.has(dept.id);
+
+      rawNodes.push({
+        id: dept.id,
+        type: 'department',
+        data: {
+          department: dept,
+          isCollapsed: isDeptCollapsed,
+          orientation: direction,
+          onToggleCollapse: handleToggleCollapse,
+          onAddSubTeam: (deptId: string) => {
+            const teamId = `team-${Date.now()}`;
+            addSubTeam(deptId, {
+              id: teamId,
+              departmentId: deptId,
+              name: `New Team ${dept.teams.length + 1}`,
+              lastActiveAt: Date.now(),
+              status: 'idle',
+              teamLeadAgent: {
+                id: `lead-${teamId}`,
+                canonicalAgentId: `canonical-lead-${teamId}`,
+                name: 'Team Lead',
+                role: 'team_lead',
+                assignedTeamIds: [teamId],
+                lastActiveAt: Date.now(),
+                status: 'idle',
+              },
+              hrCoordinatorAgent: {
+                id: `hr-${teamId}`,
+                canonicalAgentId: `canonical-hr-${teamId}`,
+                name: 'HR Coordinator',
+                role: 'hr_coordinator',
+                assignedTeamIds: [teamId],
+                lastActiveAt: Date.now(),
+                status: 'idle',
+              },
+              specialistMembers: [],
+            });
+            Message.success('Sub-team added to department!');
+          },
+          onRunTask: (d: OrgDepartmentNode) => {
+            handleSelectNode(d.id, 'department');
+          },
+          onSelectNode: (id: string, type: 'department') => handleSelectNode(id, type),
+        },
+        position: { x: 0, y: 0 },
+      });
+
+      // Edge from Root CEO to Department
+      rawEdges.push({
+        id: `edge-${hierarchy.rootCeo.id}->${dept.id}`,
+        source: hierarchy.rootCeo.id,
+        target: dept.id,
+        type: 'delegation',
+      });
+
+      // Child Teams (if not collapsed)
+      if (!isDeptCollapsed) {
+        dept.teams.forEach((team) => {
+          rawNodes.push({
+            id: team.id,
+            type: 'team',
+            data: {
+              team,
+              departmentName: dept.name,
+              orientation: direction,
+              sharedCountsMap,
+              onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
+            },
+            position: { x: 0, y: 0 },
+          });
+
+          // Edge from Department to Team
+          rawEdges.push({
+            id: `edge-${dept.id}->${team.id}`,
+            source: dept.id,
+            target: team.id,
+            type: 'delegation',
+          });
         });
       }
     });
+
+    // 3. Tether Lines for Shared Members across Departments/Teams
+    const activeSharedAgentId = hoveredCanonicalAgentId || selectedCanonicalAgentId;
+    if (activeSharedAgentId && agentLocationMap[activeSharedAgentId]) {
+      const targetNodeIds = agentLocationMap[activeSharedAgentId].filter((id) =>
+        rawNodes.some((n) => n.id === id)
+      );
+
+      // Connect each pair of nodes sharing this agent with smooth curved dotted tether line
+      for (let i = 0; i < targetNodeIds.length - 1; i++) {
+        for (let j = i + 1; j < targetNodeIds.length; j++) {
+          rawEdges.push({
+            id: `tether-${activeSharedAgentId}-${targetNodeIds[i]}<->${targetNodeIds[j]}`,
+            source: targetNodeIds[i],
+            target: targetNodeIds[j],
+            type: 'tether',
+            animated: true,
+          });
+        }
+      }
+    }
 
     // Run Dagre Layout
     const layouted = layoutOrgChart(rawNodes, rawEdges, direction);
@@ -192,51 +258,51 @@ const CanvasInner: React.FC = () => {
     setEdges(layouted.edges);
 
     setTimeout(() => {
-      void fitView({ padding: 0.2, duration: 400 });
+      void fitView({ padding: 0.25, duration: 400 });
     }, 50);
   }, [
-    normalizedTeams,
-    hiddenNodeIds,
+    hierarchy,
     collapsedBranchIds,
     direction,
+    hoveredCanonicalAgentId,
+    selectedCanonicalAgentId,
+    sharedCountsMap,
+    agentLocationMap,
     handleToggleCollapse,
-    handleAddSubTeam,
-    handleOpenChat,
     handleSelectNode,
+    handleDispatchToCeo,
+    addSubTeam,
     fitView,
     setNodes,
     setEdges,
   ]);
 
-  // Drag-and-Drop Re-parenting Connection Handler
-  const onConnect = useCallback(
-    async (params: Connection) => {
-      const sourceParentId = params.source;
-      const targetChildId = params.target;
-
-      if (!sourceParentId || !targetChildId || sourceParentId === targetChildId) {
-        return;
-      }
-
-      // Check for cycles
-      if (wouldCreateCycle(normalizedTeams, targetChildId, sourceParentId)) {
-        Message.error('Cannot re-parent: this connection would create a circular dependency loop.');
-        return;
-      }
-
-      try {
-        await ipcBridge.team.updateTeam.invoke({
-          id: targetChildId,
-          parent_id: sourceParentId,
-        });
-        Message.success('Department re-parented successfully!');
-        void mutate('teams:list');
-      } catch (err) {
-        Message.error(`Failed to re-parent department: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [normalizedTeams, mutate]
-  );
+  const handleConfirmCreateDept = () => {
+    if (!newDeptName.trim()) return;
+    const deptId = `dept-${Date.now()}`;
+    addDepartment({
+      id: deptId,
+      name: newDeptName.trim(),
+      parentDepartmentId: 'root-ceo',
+      lastActiveAt: Date.now(),
+      status: 'idle',
+      departmentCeoAgent: {
+        id: `agent-head-${deptId}`,
+        canonicalAgentId: `canonical-head-${deptId}`,
+        name: `${newDeptName.trim()} Head`,
+        title: 'Department CEO',
+        role: 'department_head',
+        assignedTeamIds: [],
+        lastActiveAt: Date.now(),
+        status: 'idle',
+      },
+      teams: [],
+      linkedProjects: [],
+    });
+    setNewDeptName('');
+    setCreateDeptModalVisible(false);
+    Message.success('Department created successfully!');
+  };
 
   return (
     <div className='relative size-full overflow-hidden bg-[var(--color-bg-1)]'>
@@ -244,98 +310,102 @@ const CanvasInner: React.FC = () => {
       <OrgCanvasToolbar
         direction={direction}
         onToggleDirection={() => setDirection((d) => (d === 'TB' ? 'LR' : 'TB'))}
-        onFitView={() => void fitView({ padding: 0.2, duration: 400 })}
+        onFitView={() => void fitView({ padding: 0.25, duration: 400 })}
         onToggleExpandAll={handleToggleExpandAll}
         isAllExpanded={collapsedBranchIds.size === 0}
-        onNewRootDepartment={() => {
-          setParentForNewSubTeam(null);
-          setIsCreateSubTeamOpen(true);
-        }}
+        onNewRootDepartment={() => setCreateDeptModalVisible(true)}
         onOpenSeedModal={() => setIsSeedModalOpen(true)}
       />
 
-      {/* Main Flow Canvas */}
-      {normalizedTeams.length === 0 ? (
-        <div className='size-full flex flex-col items-center justify-center gap-16px'>
-          <Empty description='No departments or teams created yet.' />
-          <div className='flex gap-12px'>
-            <button
-              type='button'
-              className='px-16px py-8px rounded-8px bg-primary text-white font-medium hover:bg-primary/90 transition-colors'
-              onClick={() => {
-                setParentForNewSubTeam(null);
-                setIsCreateSubTeamOpen(true);
-              }}
-            >
-              Create Root Department
-            </button>
-            <button
-              type='button'
-              className='px-16px py-8px rounded-8px bg-fill-2 border border-[var(--color-border-2)] text-t-primary font-medium hover:bg-fill-3 transition-colors'
-              onClick={() => setIsSeedModalOpen(true)}
-            >
-              Import Enterprise Template
-            </button>
-          </div>
-        </div>
-      ) : (
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          minZoom={0.2}
-          maxZoom={1.5}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background color='var(--color-border-3, #cbd5e1)' gap={20} size={1} />
-          <Controls className='!bg-[var(--color-bg-2)] !border-[var(--color-border-2)] !rounded-8px shadow-lg' />
-          <MiniMap
-            nodeStrokeWidth={3}
-            nodeColor={(n) => {
-              if (n.data?.isRoot) return '#f59e0b';
-              if (n.data?.level === 1) return '#3b82f6';
-              return '#64748b';
-            }}
-            className='!bg-[var(--color-bg-2)] !border-[var(--color-border-2)] !rounded-8px shadow-lg'
-          />
-        </ReactFlow>
-      )}
+      {/* Main React Flow Canvas */}
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        minZoom={0.2}
+        maxZoom={1.6}
+        fitView
+        fitViewOptions={{ padding: 0.25 }}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color='var(--color-border-3, #475569)' gap={24} size={1} />
+        <Controls className='!bg-[var(--color-bg-2)] !border-[var(--color-border-2)] !rounded-10px shadow-lg' />
+        <MiniMap
+          nodeStrokeWidth={3}
+          nodeColor={(n) => {
+            if (n.type === 'rootCeo') return '#F59E0B';
+            if (n.type === 'department') return '#3B82F6';
+            return '#10B981';
+          }}
+          className='!bg-[var(--color-bg-2)] !border-[var(--color-border-2)] !rounded-10px shadow-lg'
+        />
+      </ReactFlow>
 
       {/* Slide-Over Inspector Drawer */}
       <OrgInspectorDrawer
-        team={selectedTeam}
+        selectedNodeId={selectedNodeId}
+        selectedNodeType={selectedNodeType}
         visible={isInspectorOpen}
         onClose={() => setIsInspectorOpen(false)}
-        onRunTask={(team) => {
+        onOpenConversation={(convId) => {
           setIsInspectorOpen(false);
-          setRunTaskTeam(team);
+          void navigate(`/conversation/${convId}`);
         }}
       />
-
-      {/* Quick Run Task Modal */}
-      <QuickRunTaskModal team={runTaskTeam} visible={Boolean(runTaskTeam)} onClose={() => setRunTaskTeam(null)} />
 
       {/* Org Seed JSON Modal */}
       <OrgSeedModal visible={isSeedModalOpen} onClose={() => setIsSeedModalOpen(false)} />
 
-      {/* Create Department / Sub-Team Modal */}
-      {isCreateSubTeamOpen && (
-        <TeamCreateModal
-          visible={isCreateSubTeamOpen}
-          defaultParentId={parentForNewSubTeam}
-          onClose={() => setIsCreateSubTeamOpen(false)}
-          onCreated={() => {
-            setIsCreateSubTeamOpen(false);
-            void mutate('teams:list');
-          }}
-        />
-      )}
+      {/* Create Department Modal */}
+      <Modal
+        title='Create New Corporate Department'
+        visible={createDeptModalVisible}
+        onOk={handleConfirmCreateDept}
+        onCancel={() => setCreateDeptModalVisible(false)}
+        okText='Create Department'
+        okButtonProps={{ disabled: !newDeptName.trim() }}
+      >
+        <div className='flex flex-col gap-8px'>
+          <span className='text-12px text-t-secondary'>Enter the Department name:</span>
+          <Input
+            value={newDeptName}
+            onChange={setNewDeptName}
+            onPressEnter={handleConfirmCreateDept}
+            placeholder='e.g., Enterprise Solutions Department'
+            autoFocus
+          />
+        </div>
+      </Modal>
+
+      {/* Quick Dispatch to CEO Modal */}
+      <Modal
+        title='👑 Executive Directive to Root CEO'
+        visible={dispatchCeoModalVisible}
+        onOk={() => {
+          if (!dispatchCeoPrompt.trim()) return;
+          setIsInspectorOpen(true);
+          setDispatchCeoModalVisible(false);
+        }}
+        onCancel={() => setDispatchCeoModalVisible(false)}
+        okText='Open Inspector & Dispatch'
+        okButtonProps={{ disabled: !dispatchCeoPrompt.trim() }}
+      >
+        <div className='flex flex-col gap-8px'>
+          <span className='text-12px text-t-secondary'>
+            Assign a high-level strategic goal to the Root Organization CEO:
+          </span>
+          <Input.TextArea
+            rows={3}
+            value={dispatchCeoPrompt}
+            onChange={setDispatchCeoPrompt}
+            placeholder='e.g., Launch mobile biometric verification across all apps and schedule cross-platform social distribution...'
+            autoFocus
+          />
+        </div>
+      </Modal>
     </div>
   );
 };

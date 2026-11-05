@@ -238,8 +238,10 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
   }, [globalMutate, refreshTeams, renameId, renameName, t]);
 
   const sortedTeams = useMemo(() => {
-    const pinned = teams.filter((team) => pinnedIds.includes(team.id));
-    const unpinned = teams.filter((team) => !pinnedIds.includes(team.id));
+    // Workplace scope isolation: exclude teams belonging to the Organization namespace
+    const workplaceTeams = teams.filter((team) => (team as any).scope !== 'organization');
+    const pinned = workplaceTeams.filter((team) => pinnedIds.includes(team.id));
+    const unpinned = workplaceTeams.filter((team) => !pinnedIds.includes(team.id));
     return [...pinned, ...unpinned];
   }, [teams, pinnedIds]);
 

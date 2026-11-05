@@ -20,16 +20,22 @@ export const ConversationHistoryProvider: React.FC<React.PropsWithChildren> = ({
   const { t } = useTranslation();
   const conversationListSync = useConversationListSync();
 
+  // Strict dual-namespace isolation: exclude any conversation created under the Organization scope
+  const workplaceConversations = useMemo(() => {
+    return conversationListSync.conversations.filter((c) => (c as any).scope !== 'organization');
+  }, [conversationListSync.conversations]);
+
   const groupedHistory = useMemo(() => {
-    return buildGroupedHistory(conversationListSync.conversations, t);
-  }, [conversationListSync.conversations, t]);
+    return buildGroupedHistory(workplaceConversations, t);
+  }, [workplaceConversations, t]);
 
   const value = useMemo<ConversationHistoryContextValue>(() => {
     return {
       ...conversationListSync,
+      conversations: workplaceConversations,
       groupedHistory,
     };
-  }, [conversationListSync, groupedHistory]);
+  }, [conversationListSync, workplaceConversations, groupedHistory]);
 
   return <ConversationHistoryContext.Provider value={value}>{children}</ConversationHistoryContext.Provider>;
 };
