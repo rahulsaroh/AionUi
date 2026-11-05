@@ -33,6 +33,7 @@ import {
 } from '../utils/orgCoherence';
 import {
   migrateOrgStorageV2,
+  reconcileConversationsWithProjects,
   ORG_STORAGE_VERSION,
   loadOrgStorageVersion,
   saveOrgStorageVersion,
@@ -96,12 +97,17 @@ function createInitialState(): OrgStoreState {
     } catch {}
   }
   const reconciled = reconcileProjectsWithHierarchy(migration.hierarchy, migration.projects);
+  const conversationReconciled = reconcileConversationsWithProjects(
+    reconciled.hierarchy,
+    reconciled.projects,
+    migration.conversations
+  );
   return {
     activeScope:
       (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEYS.SCOPE) as OrgScope)) || 'workplace',
     hierarchy: reconciled.hierarchy,
-    projects: reconciled.projects,
-    conversations: migration.conversations,
+    projects: conversationReconciled.projects,
+    conversations: conversationReconciled.conversations,
     cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
     nodeStatuses: {},
     hoveredCanonicalAgentId: null,

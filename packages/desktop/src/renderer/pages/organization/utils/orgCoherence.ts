@@ -28,7 +28,9 @@ export function normalizeOrgProject(project: OrgProject): OrgProject {
     id: project.id.trim(),
     name: project.name.trim(),
     departmentId: project.departmentId.trim(),
-    teamIds: Array.from(new Set(project.teamIds)).filter(Boolean),
+    teamIds: Array.from(new Set([...(project.teamIds ?? []), ...(_legacyTeamId ? [_legacyTeamId] : [])])).filter(
+      Boolean
+    ),
     goal: normalizeText(project.goal ?? project.description),
     description: normalizeText(project.description),
     path: normalizePath(project.path),

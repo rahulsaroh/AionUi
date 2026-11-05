@@ -248,20 +248,34 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     return parts;
   }, [selectedProject, selectedTeam, selectedDepartment, teamsInSelectedDept, hierarchy.departments]);
 
-  // Node-aware conversation filter
-  const nodeConversations = useMemo(() => {
-    const targets = new Set<string>();
-    if (selectedProject) targets.add(selectedProject.id);
-    if (selectedTeam) targets.add(selectedTeam.id);
-    if (selectedDepartment) targets.add(selectedDepartment.id);
-    if (targets.size === 0) return conversations;
-    return conversations.filter((c) => targets.has(c.sourceNodeId) || targets.has(c.targetNodeId));
-  }, [conversations, selectedProject, selectedTeam, selectedDepartment]);
-
   const deptStatus = (dept: OrgDepartmentNode): OrgNodeStatus =>
     computeLifecycleStatus(dept.lastActiveAt, nodeStatuses[dept.id] || dept.status);
   const teamStatus = (team: OrgTeamNode): OrgNodeStatus =>
     computeLifecycleStatus(team.lastActiveAt, nodeStatuses[team.id] || team.status);
+
+  // Returns a short label for the chat row badge: team name or agent role
+  const chatBadgeLabel = (conv: OrgConversation): string => {
+    if (conv.teamId) {
+      const team = allTeams.find((t) => t.id === conv.teamId);
+      if (team) return team.name;
+    }
+    if (conv.agentId) {
+      const agent = allTeams
+        .flatMap((t) => [...t.specialistMembers, t.teamLeadAgent, t.hrCoordinatorAgent])
+        .find((a) => a.id === conv.agentId);
+      if (agent) return agent.name;
+    }
+    return '';
+  };
+
+  const formatChatTime = (timestamp: number): string => {
+    const now = Date.now();
+    const elapsed = now - timestamp;
+    if (elapsed < 60 * 1000) return 'Just now';
+    if (elapsed < 60 * 60 * 1000) return `${Math.floor(elapsed / 60000)}m ago`;
+    if (elapsed < 24 * 60 * 60 * 1000) return `${Math.floor(elapsed / 3600000)}h ago`;
+    return `${Math.floor(elapsed / 86400000)}d ago`;
+  };
 
   const handleSelectDept = (deptId: string) => {
     setSelectedDepartment(deptId);
@@ -284,6 +298,23 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     context: { departmentId?: string; teamId?: string }
   ) => {
     setEditEntity({ type, data, context });
+  };
+
+  const handleNewChat = (deptId: string, proj: OrgProject) => {
+    const teamId = proj.teamIds?.[0] ?? '';
+    addOrgConversation({
+      id: `conv-${Date.now()}`,
+      title: `Chat ${formatChatTime(Date.now())}`,
+      type: 'team_execution',
+      sourceNodeId: teamId || deptId,
+      targetNodeId: teamId || deptId,
+      projectId: proj.id,
+      teamId: teamId || undefined,
+      timestamp: Date.now(),
+      summary: '',
+      messages: [],
+    });
+    setSelectedProject(proj.id);
   };
 
   const handleEditSave = () => {
@@ -805,16 +836,24 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                             }}
                                             className='p-3px rounded-4px hover:bg-fill-2 cursor-pointer transition-colors flex flex-col gap-1px text-10px border border-transparent hover:border-[var(--color-border-2)]'
                                           >
-                                            <div className='flex items-center justify-between'>
+                                            <div className='flex items-center justify-between gap-4px'>
                                               <span
                                                 className='font-semibold text-t-primary truncate'
                                                 title={conv.title}
                                               >
                                                 {conv.title}
                                               </span>
+                                              <span className='text-8px text-t-tertiary font-mono'>
+                                                {formatChatTime(conv.timestamp)}
+                                              </span>
                                             </div>
                                             {conv.summary ? (
                                               <span className='text-9px text-t-secondary truncate'>{conv.summary}</span>
+                                            ) : null}
+                                            {chatBadgeLabel(conv) ? (
+                                              <span className='text-8px text-t-tertiary font-mono tracking-tight'>
+                                                {chatBadgeLabel(conv)}
+                                              </span>
                                             ) : null}
                                           </div>
                                         ))
@@ -822,7 +861,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          openProjectModal(dept.id, proj.teamIds?.[0] ?? undefined, proj);
+                                          handleNewChat(dept.id, proj);
                                         }}
                                         className='px-6px py-1px text-9px text-t-tertiary hover:text-t-primary hover:bg-fill-2 rounded cursor-pointer flex items-center gap-2px'
                                       >
@@ -847,271 +886,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       </div>
 
       <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
-
-      {/* Teams Section (drill-down: when a dept is selected, show only its teams) */}
-      <div className='flex flex-col'>
-        <div
-          className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
-          onClick={() => toggleSection('teams')}
-        >
-          <div className='flex items-center gap-6px'>
-            <span className='text-11px font-semibold uppercase tracking-wider'>
-              Teams{' '}
-              {selectedDepartment
-                ? `in ${selectedDepartment.name}`
-                : `(${hierarchy.departments.flatMap((d) => d.teams).length})`}
-            </span>
-            {collapsedSections.has('teams') ? <Right size={11} theme='outline' /> : <Down size={11} theme='outline' />}
-          </div>
-          <Tooltip content={t('team.organization.addTeam', { defaultValue: 'Add Team' })} position='top'>
-            <button
-              type='button'
-              className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3'
-              onClick={() => {
-                if (!selectedDepartment) {
-                  Message.warning('Select a department first to add a team.');
-                  return;
-                }
-                setTargetDeptIdForTeam(selectedDepartment.id);
-              }}
-            >
-              <Plus size={11} theme='outline' />
-            </button>
-          </Tooltip>
-        </div>
-
-        {!collapsedSections.has('teams') && (
-          <div className='flex flex-col gap-1px px-6px mt-2px'>
-            {teamsInSelectedDept.length === 0 ? (
-              <div className='px-6px py-4px text-11px text-t-tertiary italic'>
-                {selectedDepartment ? 'No teams in this department yet.' : 'No teams.'}
-              </div>
-            ) : (
-              teamsInSelectedDept.map((team) => {
-                const tStatus = teamStatus(team);
-                const tTheme = ORG_THEME_PALETTE[tStatus];
-                const isTeamSelected = selectedTeamId === team.id;
-                return (
-                  <div
-                    key={team.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectTeam(team.id);
-                    }}
-                    className={classNames(
-                      'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px',
-                      isTeamSelected
-                        ? 'bg-primary/10 text-t-primary border border-primary/20'
-                        : 'hover:bg-fill-2 text-t-primary'
-                    )}
-                  >
-                    <div className='flex items-center gap-6px truncate min-w-0'>
-                      <User size={12} theme='outline' className='text-primary shrink-0' />
-                      <span className='font-medium truncate' title={team.name}>
-                        {team.name}
-                      </span>
-                      {team.workspacePath && (
-                        <span
-                          className='text-9px font-mono text-t-tertiary truncate max-w-90px'
-                          title={team.workspacePath}
-                        >
-                          📁 {team.workspacePath}
-                        </span>
-                      )}
-                    </div>
-                    <div className='flex items-center gap-3px shrink-0'>
-                      <Tooltip content='Edit Team' position='top'>
-                        <span
-                          role='button'
-                          className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEntityEdit('team', team, { departmentId: team.departmentId, teamId: team.id });
-                          }}
-                        >
-                          <Edit size={10} theme='outline' />
-                        </span>
-                      </Tooltip>
-                      <span
-                        className='size-5px rounded-full shrink-0'
-                        style={{ backgroundColor: tTheme.borderColor }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
-
-      {/* Projects Section (drill-down: dept → team → projects) */}
-      <div className='flex flex-col'>
-        <div
-          className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
-          onClick={() => toggleSection('projects')}
-        >
-          <div className='flex items-center gap-6px'>
-            <span className='text-11px font-semibold uppercase tracking-wider'>
-              Projects{' '}
-              {selectedTeam
-                ? `in ${selectedTeam.name}`
-                : selectedDepartment
-                  ? `under ${selectedDepartment.name}`
-                  : `(${projects.length})`}
-            </span>
-            {collapsedSections.has('projects') ? (
-              <Right size={11} theme='outline' />
-            ) : (
-              <Down size={11} theme='outline' />
-            )}
-          </div>
-          <Tooltip content={t('team.organization.addProject', { defaultValue: 'Add Project' })} position='top'>
-            <button
-              type='button'
-              className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3'
-              onClick={() => {
-                if (!selectedDepartment) {
-                  Message.warning('Select a department first to add a project.');
-                  return;
-                }
-                openProjectModal(selectedDepartment.id, selectedTeamId ?? undefined);
-              }}
-            >
-              <Plus size={11} theme='outline' />
-            </button>
-          </Tooltip>
-        </div>
-
-        {!collapsedSections.has('projects') && (
-          <div className='flex flex-col gap-1px px-6px mt-2px'>
-            {projectsForSelection.length === 0 ? (
-              <div className='px-6px py-4px text-11px text-t-tertiary italic'>
-                {selectedTeam
-                  ? 'No projects assigned to this team.'
-                  : selectedDepartment
-                    ? 'No projects in this department.'
-                    : 'No projects.'}
-              </div>
-            ) : (
-              projectsForSelection.map((proj) => {
-                const isProjectSelected = selectedProjectId === proj.id;
-                const team = teamsInSelectedDept.find((t) => t.id === proj.teamIds?.[0]);
-                return (
-                  <div
-                    key={proj.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectProject(proj.id);
-                    }}
-                    className={classNames(
-                      'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary',
-                      isProjectSelected ? 'bg-primary/10 border border-primary/20' : 'hover:bg-fill-2'
-                    )}
-                    title={proj.workspacePath || proj.path || proj.name}
-                  >
-                    <div className='flex items-center gap-6px truncate min-w-0'>
-                      <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
-                      <span className='truncate font-medium'>{proj.name}</span>
-                      {proj.workspacePath && (
-                        <span
-                          className='text-9px font-mono text-t-tertiary truncate max-w-90px'
-                          title={proj.workspacePath}
-                        >
-                          📁 {proj.workspacePath}
-                        </span>
-                      )}
-                    </div>
-                    <div className='flex items-center gap-3px shrink-0'>
-                      <span className='text-9px font-mono text-t-tertiary'>{proj.status || 'active'}</span>
-                      <Tooltip content='Open Folder' position='top'>
-                        <span
-                          role='button'
-                          className='size-16px rounded flex items-center justify-center text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void navigate(`/organization`);
-                          }}
-                        >
-                          <LinkOne size={10} theme='outline' />
-                        </span>
-                      </Tooltip>
-                      <Tooltip content='Edit Project' position='top'>
-                        <span
-                          role='button'
-                          className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEntityEdit('project', proj, {
-                              departmentId: proj.departmentId,
-                              teamId: proj.teamIds?.[0],
-                            });
-                          }}
-                        >
-                          <Edit size={10} theme='outline' />
-                        </span>
-                      </Tooltip>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
-
-      {/* Conversations Section (filtered to selected node) */}
-      <div className='flex flex-col'>
-        <div
-          className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
-          onClick={() => toggleSection('conversations')}
-        >
-          <span className='text-11px font-semibold uppercase tracking-wider'>
-            Org Conversations{' '}
-            {selectedTeam
-              ? `· ${selectedTeam.name}`
-              : selectedDepartment
-                ? `· ${selectedDepartment.name}`
-                : `(${conversations.length})`}
-          </span>
-          {collapsedSections.has('conversations') ? (
-            <Right size={11} theme='outline' />
-          ) : (
-            <Down size={11} theme='outline' />
-          )}
-        </div>
-        {!collapsedSections.has('conversations') && (
-          <div className='flex flex-col gap-2px px-6px mt-2px pb-16px'>
-            {nodeConversations.length === 0 ? (
-              <div className='px-6px py-4px text-11px text-t-tertiary italic'>
-                No threads for the current selection.
-              </div>
-            ) : (
-              nodeConversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  onClick={() => {
-                    onSessionClick?.();
-                    void navigate('/organization');
-                  }}
-                  className='p-6px rounded-6px hover:bg-fill-2 cursor-pointer transition-colors flex flex-col gap-2px text-11px border border-transparent hover:border-[var(--color-border-2)]'
-                >
-                  <div className='flex items-center justify-between'>
-                    <span className='font-semibold text-t-primary truncate' title={conv.title}>
-                      {conv.title}
-                    </span>
-                  </div>
-                  {conv.summary ? <span className='text-10px text-t-secondary truncate'>{conv.summary}</span> : null}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
 
       <Modal
         title='👑 Directive Command to Root CEO'

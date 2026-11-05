@@ -6,7 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 import type { OrgConversation, OrgDepartmentNode, OrgHierarchy, OrgProject, OrgTeamNode } from '@/types/organization';
-import { migrateOrgStorageV2, ORG_STORAGE_VERSION } from '@/renderer/pages/organization/utils/orgMigration';
+import {
+  migrateOrgStorageV2,
+  ORG_STORAGE_VERSION,
+  reconcileConversationsWithProjects,
+} from '@/renderer/pages/organization/utils/orgMigration';
 
 const now = 1_700_000_000_000;
 
@@ -239,5 +243,82 @@ describe('migrateOrgStorageV2', () => {
     expect(result.hierarchy).toBe(hierarchy);
     expect(result.projects).toBe(projects);
     expect(result.conversations).toBe(conversations);
+  });
+});
+
+describe('reconcileConversationsWithProjects', () => {
+  it('creates a General project per department when missing', () => {
+    const { projects } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
+    const appsGeneral = projects.find((p) => p.departmentId === 'dept-apps' && p.name === 'General');
+    const ytGeneral = projects.find((p) => p.departmentId === 'dept-yt' && p.name === 'General');
+    expect(appsGeneral).toBeDefined();
+    expect(ytGeneral).toBeDefined();
+    expect(appsGeneral!.id).toBe('proj-general-dept-apps');
+    expect(ytGeneral!.id).toBe('proj-general-dept-yt');
+  });
+
+  it('assigns conversation to team project via sourceNodeId', () => {
+    const { conversations } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
+    const conv1 = conversations.find((c) => c.id === 'conv-1');
+    expect(conv1?.projectId).toBe('proj-gym');
+    expect(conv1?.teamId).toBe('team-gym');
+  });
+
+  it('assigns conversation to team project via targetNodeId', () => {
+    const { conversations } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
+    const conv3 = conversations.find((c) => c.id === 'conv-3');
+    expect(conv3?.projectId).toBe('proj-yt');
+    expect(conv3?.teamId).toBe('team-tech-news');
+  });
+
+  it('falls back to General project when team has no project', () => {
+    const { conversations, projects } = reconcileConversationsWithProjects(
+      makeHierarchy(),
+      makeProjects(),
+      makeConversations()
+    );
+    const conv2 = conversations.find((c) => c.id === 'conv-2');
+    const general = projects.find((p) => p.departmentId === 'dept-apps' && p.name === 'General');
+    expect(conv2?.projectId).toBe(general?.id);
+    expect(conv2?.teamId).toBe('team-aionui');
+    // Team should be linked to General project
+    expect(general?.teamIds).toContain('team-aionui');
+  });
+
+  it('keeps Root CEO conversations without projectId', () => {
+    const { conversations } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
+    const convCeo = conversations.find((c) => c.id === 'conv-ceo');
+    expect(convCeo?.projectId).toBeUndefined();
+  });
+
+  it('returns migrated count', () => {
+    const { migratedCount } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
+    // conv-1, conv-2, conv-3 get projectId; conv-ceo does not
+    expect(migratedCount).toBe(3);
+  });
+
+  it('does not re-migrate conversations that already have projectId', () => {
+    const conversations: OrgConversation[] = [
+      {
+        ...makeConversation('conv-existing', 'team-gym', 'dept-apps'),
+        projectId: 'proj-gym',
+        teamId: 'team-gym',
+      },
+    ];
+    const { conversations: next, migratedCount } = reconcileConversationsWithProjects(
+      makeHierarchy(),
+      makeProjects(),
+      conversations
+    );
+    expect(migratedCount).toBe(0);
+    expect(next[0].projectId).toBe('proj-gym');
+  });
+
+  it('is idempotent: second run migrates nothing', () => {
+    const hierarchy = makeHierarchy();
+    const first = reconcileConversationsWithProjects(hierarchy, makeProjects(), makeConversations());
+    expect(first.migratedCount).toBeGreaterThan(0);
+    const second = reconcileConversationsWithProjects(hierarchy, first.projects, first.conversations);
+    expect(second.migratedCount).toBe(0);
   });
 });

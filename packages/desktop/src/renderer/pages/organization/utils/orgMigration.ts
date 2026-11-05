@@ -29,6 +29,7 @@ import type {
   OrgProject,
   OrgTeamNode,
 } from '@/types/organization';
+import { normalizeOrgProject } from './orgCoherence';
 
 export const ORG_STORAGE_VERSION = 2;
 export const ORG_STORAGE_VERSION_KEY = 'aionui:org-storage-version';
@@ -199,4 +200,106 @@ export function migrateOrgStorageV2(
     migrated: true,
     report,
   };
+}
+
+export interface OrgConversationReconciliationResult {
+  projects: OrgProject[];
+  conversations: OrgConversation[];
+  migratedCount: number;
+}
+
+/**
+ * Assigns projectId to conversations that lack one.
+ *
+ * Rules:
+ * - Root CEO conversations (sourceNodeId or targetNodeId === 'root-ceo') stay without projectId.
+ * - Match via team: if sourceNodeId or targetNodeId is a team id, use that team's project.
+ * - Fall back to the department's "General" project (created if missing).
+ * - When a conversation is assigned to the "General" project, its team is linked to that project.
+ */
+export function reconcileConversationsWithProjects(
+  hierarchy: OrgHierarchy,
+  projects: OrgProject[],
+  conversations: OrgConversation[]
+): OrgConversationReconciliationResult {
+  // Normalize legacy teamId -> teamIds
+  const normalizedProjects = projects.map(normalizeOrgProject);
+
+  // Build team -> department map
+  const teamToDept = new Map<string, OrgDepartmentNode>();
+  for (const dept of hierarchy.departments) {
+    for (const team of dept.teams) {
+      teamToDept.set(team.id, dept);
+    }
+  }
+
+  // Ensure each department has a "General" project
+  let nextProjects = [...normalizedProjects];
+  for (const dept of hierarchy.departments) {
+    const hasGeneral = nextProjects.some((p) => p.departmentId === dept.id && p.name === 'General');
+    if (!hasGeneral) {
+      const generalProject: OrgProject = {
+        id: `proj-general-${dept.id}`,
+        name: 'General',
+        departmentId: dept.id,
+        teamIds: [],
+        description: 'Default project for unassigned conversations',
+        status: 'active',
+      };
+      nextProjects.push(generalProject);
+    }
+  }
+
+  // Build team -> first project id map
+  const teamToProject = new Map<string, string>();
+  for (const proj of nextProjects) {
+    for (const teamId of proj.teamIds) {
+      if (!teamToProject.has(teamId)) {
+        teamToProject.set(teamId, proj.id);
+      }
+    }
+  }
+
+  // Assign projectId to conversations lacking it
+  let migratedCount = 0;
+  const nextConversations = conversations.map((conv) => {
+    // Root CEO chats stay under Root CEO (no project)
+    if (conv.sourceNodeId === 'root-ceo' || conv.targetNodeId === 'root-ceo') {
+      return conv;
+    }
+    if (conv.projectId) return conv;
+
+    // Try to match via team (sourceNodeId or targetNodeId is a team)
+    const teamId = teamToDept.has(conv.sourceNodeId)
+      ? conv.sourceNodeId
+      : teamToDept.has(conv.targetNodeId)
+        ? conv.targetNodeId
+        : undefined;
+
+    let projectId: string | undefined;
+    if (teamId) {
+      projectId = teamToProject.get(teamId);
+    }
+
+    // Fall back to department's "General" project
+    if (!projectId && teamId) {
+      const dept = teamToDept.get(teamId)!;
+      const general = nextProjects.find((p) => p.departmentId === dept.id && p.name === 'General');
+      if (general) {
+        projectId = general.id;
+        // Link the team to the General project so it appears under the team
+        if (!general.teamIds.includes(teamId)) {
+          general.teamIds = [...general.teamIds, teamId];
+        }
+      }
+    }
+
+    if (projectId && projectId !== conv.projectId) {
+      migratedCount++;
+      return { ...conv, projectId, teamId: teamId ?? conv.teamId };
+    }
+    return conv;
+  });
+
+  return { projects: nextProjects, conversations: nextConversations, migratedCount };
 }
