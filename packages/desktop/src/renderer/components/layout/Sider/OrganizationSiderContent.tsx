@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Tooltip, Tag, Modal, Input, Message, Divider } from '@arco-design/web-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Tooltip, Tag, Modal, Input, Message } from '@arco-design/web-react';
 import {
   NetworkTree,
   AlarmClock,
@@ -66,6 +66,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'dormant' | 'shared'>('all');
   const [deptSubTabs, setDeptSubTabs] = useState<Record<string, 'teams' | 'projects'>>({});
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [ceoChatModalVisible, setCeoChatModalVisible] = useState(false);
@@ -374,11 +375,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         <div className='flex items-center gap-3px overflow-hidden'>
           <span className='text-10px text-t-tertiary font-mono'>🏢 All Depts</span>
           {breadcrumb.map((part, idx) => (
-            <span key={part.id} className='flex items-center gap-3px text-11px text-t-primary truncate'>
-              <span className='text-t-tertiary text-9px'>›</span>
+            <span key={part.id} className='flex items-center gap-3px overflow-hidden'>
+              <span className='text-t-tertiary text-9px shrink-0 opacity-60'>›</span>
               <button
                 type='button'
-                className='p-1px truncate hover:text-primary hover:underline transition-colors'
+                className='p-2px truncate hover:bg-fill-2 hover:text-primary transition-colors rounded-3px'
                 onClick={(e) => {
                   e.stopPropagation();
                   if (part.type === 'dept') handleSelectDept(part.id!);
@@ -386,7 +387,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                   if (part.type === 'project') handleSelectProject(part.id!);
                 }}
               >
-                {part.label}
+                <span className='text-11px text-t-secondary truncate' title={part.label}>
+                  {part.label}
+                </span>
               </button>
             </span>
           ))}
@@ -563,16 +566,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                       )}
                     </div>
                     <div className='flex items-center gap-3px shrink-0'>
-                      {/* Sub-tab pills */}
-                      <div className='flex gap-0.5px'>
+                      {/* Sub-tab pills (segmented control) */}
+                      <div className='flex rounded-4px border border-[var(--color-border-2)] bg-fill-1 shrink-0'>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setDeptSubTab(dept.id, 'teams');
                           }}
                           className={classNames(
-                            'px-5px py-1px text-9px rounded-tl-3px rounded-bl-3px transition-colors shrink-0',
-                            subTab === 'teams' ? 'bg-fill-3 text-t-primary' : 'text-t-tertiary hover:bg-fill-2'
+                            'px-5px py-1px text-9px transition-colors shrink-0 rounded-l-4px',
+                            subTab === 'teams'
+                              ? 'bg-fill-3 text-t-primary'
+                              : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
                           )}
                         >
                           {t('team.organization.teamsTab', { defaultValue: 'Teams' })}
@@ -583,8 +588,10 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                             setDeptSubTab(dept.id, 'projects');
                           }}
                           className={classNames(
-                            'px-5px py-1px text-9px rounded-tr-3px rounded-br-3px transition-colors shrink-0',
-                            subTab === 'projects' ? 'bg-fill-3 text-t-primary' : 'text-t-tertiary hover:bg-fill-2'
+                            'px-5px py-1px text-9px transition-colors shrink-0 rounded-r-4px',
+                            subTab === 'projects'
+                              ? 'bg-fill-3 text-t-primary'
+                              : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
                           )}
                         >
                           {t('team.organization.project', { defaultValue: 'Projects' })}
@@ -827,36 +834,48 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                           {t('team.organization.noChats', { defaultValue: 'No chats yet.' })}
                                         </div>
                                       ) : (
-                                        chats.map((conv) => (
-                                          <div
-                                            key={conv.id}
-                                            onClick={() => {
-                                              onSessionClick?.();
-                                              void navigate('/organization');
-                                            }}
-                                            className='p-3px rounded-4px hover:bg-fill-2 cursor-pointer transition-colors flex flex-col gap-1px text-10px border border-transparent hover:border-[var(--color-border-2)]'
-                                          >
-                                            <div className='flex items-center justify-between gap-4px'>
-                                              <span
-                                                className='font-semibold text-t-primary truncate'
-                                                title={conv.title}
-                                              >
-                                                {conv.title}
-                                              </span>
-                                              <span className='text-8px text-t-tertiary font-mono'>
-                                                {formatChatTime(conv.timestamp)}
-                                              </span>
+                                        chats.map((conv) => {
+                                          const isChatSelected = selectedChatId === conv.id;
+                                          return (
+                                            <div
+                                              key={conv.id}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedChatId(conv.id);
+                                                onSessionClick?.();
+                                                void navigate('/organization');
+                                              }}
+                                              className={classNames(
+                                                'p-3px rounded-4px cursor-pointer transition-colors flex flex-col gap-1px text-10px border border-transparent',
+                                                isChatSelected
+                                                  ? 'bg-primary/10 border-primary/30 text-t-primary'
+                                                  : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary hover:border-[var(--color-border-2)]'
+                                              )}
+                                            >
+                                              <div className='flex items-center justify-between gap-4px'>
+                                                <span
+                                                  className='font-semibold text-t-primary truncate'
+                                                  title={conv.title}
+                                                >
+                                                  {conv.title}
+                                                </span>
+                                                <span className='text-8px text-t-tertiary font-mono'>
+                                                  {formatChatTime(conv.timestamp)}
+                                                </span>
+                                              </div>
+                                              {conv.summary ? (
+                                                <span className='text-9px text-t-secondary truncate'>
+                                                  {conv.summary}
+                                                </span>
+                                              ) : null}
+                                              {chatBadgeLabel(conv) ? (
+                                                <span className='text-8px text-t-tertiary font-mono tracking-tight'>
+                                                  {chatBadgeLabel(conv)}
+                                                </span>
+                                              ) : null}
                                             </div>
-                                            {conv.summary ? (
-                                              <span className='text-9px text-t-secondary truncate'>{conv.summary}</span>
-                                            ) : null}
-                                            {chatBadgeLabel(conv) ? (
-                                              <span className='text-8px text-t-tertiary font-mono tracking-tight'>
-                                                {chatBadgeLabel(conv)}
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        ))
+                                          );
+                                        })
                                       )}
                                       <button
                                         onClick={(e) => {
