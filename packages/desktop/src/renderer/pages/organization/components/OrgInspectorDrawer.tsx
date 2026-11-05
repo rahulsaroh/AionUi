@@ -1,10 +1,10 @@
-/**
+﻿/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Drawer, Button, Tag, Tabs, Input, Message } from '@arco-design/web-react';
 import {
   Peoples,
@@ -15,18 +15,25 @@ import {
   FolderClose,
   MessageOne,
   Terminal,
+  Edit,
+  LinkOne,
+  User,
 } from '@icon-park/react';
 import { useOrgStore } from '../store/useOrgStore';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
+import type { OrgProject } from '@/types/organization';
 
-interface OrgInspectorDrawerProps {
+type OrgInspectorDrawerProps = {
   selectedNodeId: string | null;
   selectedNodeType: 'ceo' | 'department' | 'team' | null;
   visible: boolean;
   onClose: () => void;
   onOpenConversation?: (convId: string) => void;
-}
+  onEditDepartment?: (departmentId: string) => void;
+  onEditProject?: (project: OrgProject) => void;
+  onSetFolder?: (nodeId: string, nodeType: 'ceo' | 'department' | 'team') => void;
+};
 
 export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   selectedNodeId,
@@ -34,9 +41,20 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   visible,
   onClose,
   onOpenConversation,
+  onEditDepartment,
+  onEditProject,
+  onSetFolder,
 }) => {
-  const { hierarchy, conversations, nodeStatuses, addOrgConversation, updateNodeStatus } =
-    useOrgStore();
+  const {
+    hierarchy,
+    projects,
+    conversations,
+    nodeStatuses,
+    addOrgConversation,
+    updateNodeStatus,
+    updateDepartment,
+    updateTeamNode,
+  } = useOrgStore();
   const [activeTab, setActiveTab] = useState<'conversations' | 'terminal' | 'members'>('conversations');
   const [directiveInput, setDirectiveInput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
@@ -44,14 +62,16 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
 
   if (!visible || !selectedNodeId) return null;
 
-  // Resolve node data
   let nodeTitle = 'Executive Node';
   let nodeRole = 'HQ';
   let lastActiveAt: number | null = null;
   let leaderName = '';
   let leaderTitle = '';
+  let leaderRole = '';
+  let nodeWorkspacePath: string | null = null;
   let specialists: Array<{ id: string; name: string; title?: string }> = [];
-  let linkedProjects: Array<{ id: string; name: string }> = [];
+  let linkedProjects: Array<{ id: string; name: string; path?: string }> = [];
+  let editableDepartmentId: string | null = null;
 
   if (selectedNodeType === 'ceo' || selectedNodeId === 'root-ceo') {
     nodeTitle = hierarchy.rootCeo.name;
@@ -59,6 +79,8 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     lastActiveAt = hierarchy.rootCeo.lastActiveAt;
     leaderName = hierarchy.rootCeo.ceoAgent.name;
     leaderTitle = hierarchy.rootCeo.ceoAgent.title || 'CEO';
+    leaderRole = 'Root CEO';
+    nodeWorkspacePath = hierarchy.rootCeo.workspacePath ?? null;
     if (hierarchy.rootCeo.chiefOfStaffAgent) {
       specialists.push({
         id: hierarchy.rootCeo.chiefOfStaffAgent.id,
@@ -69,37 +91,41 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   } else if (selectedNodeType === 'department') {
     const dept = hierarchy.departments.find((d) => d.id === selectedNodeId);
     if (dept) {
+      editableDepartmentId = dept.id;
       nodeTitle = dept.name;
       nodeRole = 'Department HQ';
       lastActiveAt = dept.lastActiveAt;
       leaderName = dept.departmentCeoAgent.name;
       leaderTitle = dept.departmentCeoAgent.title || 'Department Head';
+      leaderRole = 'Department Head';
+      nodeWorkspacePath = dept.workspacePath ?? null;
       linkedProjects = dept.linkedProjects;
-      dept.teams.forEach((t) => {
+      dept.teams.forEach((teamNode) => {
         specialists.push({
-          id: t.id,
-          name: t.name,
-          title: `Team Lead: ${t.teamLeadAgent.name}`,
+          id: teamNode.id,
+          name: teamNode.name,
+          title: `Team Lead: ${teamNode.teamLeadAgent.name}`,
         });
       });
     }
   } else if (selectedNodeType === 'team') {
     for (const d of hierarchy.departments) {
-      const t = d.teams.find((team) => team.id === selectedNodeId);
-      if (t) {
-        nodeTitle = t.name;
+      const teamNode = d.teams.find((team) => team.id === selectedNodeId);
+      if (teamNode) {
+        nodeTitle = teamNode.name;
         nodeRole = `Sub-Team (${d.name})`;
-        lastActiveAt = t.lastActiveAt;
-        leaderName = t.teamLeadAgent.name;
-        leaderTitle = t.teamLeadAgent.title || 'Team Manager';
-        if (t.linkedProjectName) {
-          linkedProjects.push({ id: t.linkedProjectId || t.id, name: t.linkedProjectName });
+        lastActiveAt = teamNode.lastActiveAt;
+        leaderName = teamNode.teamLeadAgent.name;
+        leaderTitle = teamNode.teamLeadAgent.title || 'Team Manager';
+        leaderRole = 'Team Lead';
+        nodeWorkspacePath = teamNode.workspacePath ?? null;
+        linkedProjects = projects
+          .filter((project) => project.teamIds.includes(teamNode.id))
+          .map((project) => ({ id: project.id, name: project.name, path: project.path }));
+        if (linkedProjects.length === 0 && teamNode.linkedProjectName) {
+          linkedProjects.push({ id: teamNode.linkedProjectId || teamNode.id, name: teamNode.linkedProjectName });
         }
-        specialists = t.specialistMembers.map((s) => ({
-          id: s.id,
-          name: s.name,
-          title: s.title || s.role,
-        }));
+        specialists = teamNode.specialistMembers.map((s) => ({ id: s.id, name: s.name, title: s.title || s.role }));
         break;
       }
     }
@@ -109,7 +135,6 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   const effectiveStatus = computeLifecycleStatus(lastActiveAt, currentStatus);
   const theme = ORG_THEME_PALETTE[effectiveStatus];
 
-  // Filter isolated conversations
   const nodeConversations = conversations.filter(
     (c) =>
       c.sourceNodeId === selectedNodeId ||
@@ -117,30 +142,72 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       (selectedNodeType === 'ceo' && c.type === 'ceo_directive')
   );
 
+  const teamProjectForSelectedTeam = useMemo(() => {
+    if (selectedNodeType !== 'team' || !selectedNodeId) return undefined;
+    return projects.find((p) => p.teamIds.includes(selectedNodeId))?.id;
+  }, [projects, selectedNodeType, selectedNodeId]);
+
+  const handleChangeFolder = async () => {
+    if (!selectedNodeId || !selectedNodeType) return;
+    try {
+      const paths = await window.electronAPI.selectDirectory({ defaultPath: nodeWorkspacePath || undefined });
+      const chosenPath = paths?.[0];
+      if (!chosenPath) return;
+
+      if (selectedNodeType === 'department') {
+        const dept = hierarchy.departments.find((d) => d.id === selectedNodeId);
+        if (dept) {
+          await updateDepartment(dept.id, { workspacePath: chosenPath });
+        }
+      } else if (selectedNodeType === 'team') {
+        for (const d of hierarchy.departments) {
+          const teamNode = d.teams.find((t) => t.id === selectedNodeId);
+          if (teamNode) {
+            // eslint-disable-next-line no-await-in-loop
+            await updateTeamNode(teamNode.id, { workspacePath: chosenPath });
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[OrgInspectorDrawer] selectDirectory failed:', err);
+    }
+  };
+
   const handleDispatchDirective = async () => {
     if (!directiveInput.trim()) return;
     const prompt = directiveInput.trim();
     setDirectiveInput('');
     setIsExecuting(true);
-    setExecutionLogs((prev) => [
-      `[${new Date().toLocaleTimeString()}] Directive initiated: "${prompt}"`,
-      ...prev,
-    ]);
-
+    setExecutionLogs((prev) => [`[${new Date().toLocaleTimeString()}] Directive initiated: "${prompt}"`, ...prev]);
     updateNodeStatus(selectedNodeId, 'working');
 
-    const engine = new OrgDelegationEngine(hierarchy, (step) => {
-      setExecutionLogs((prev) => [
-        `[${new Date(step.timestamp).toLocaleTimeString()}] (Depth ${step.depth}) ${step.fromName} -> ${step.toName}: ${step.message}`,
-        ...prev,
-      ]);
-    });
+    const engine = new OrgDelegationEngine(
+      hierarchy,
+      (step) => {
+        setExecutionLogs((prev) => [
+          `[${new Date(step.timestamp).toLocaleTimeString()}] (Depth ${step.depth}) ${step.fromName} -> ${step.toName}: ${step.message}`,
+          ...prev,
+        ]);
+      },
+      (text) => {
+        setExecutionLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${text}`, ...prev]);
+      },
+      (nodeId, status) => {
+        updateNodeStatus(nodeId, status);
+      }
+    );
 
     try {
-      const result = await engine.executeDirective(prompt, selectedNodeType === 'department' ? selectedNodeId : undefined);
+      const result = await engine.executeDirective(
+        prompt,
+        selectedNodeType === 'department' ? selectedNodeId : undefined,
+        selectedNodeType === 'team' ? selectedNodeId : undefined,
+        teamProjectForSelectedTeam,
+        true // useRealExecution
+      );
       if (result.success) {
         Message.success('Executive directive executed successfully!');
-        // Record org conversation
         addOrgConversation({
           id: `conv-exec-${Date.now()}`,
           title: `Directive: ${prompt.slice(0, 45)}...`,
@@ -150,13 +217,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           timestamp: Date.now(),
           summary: result.finalSynthesis,
           messages: [
-            {
-              id: `msg-${Date.now()}-1`,
-              sender: leaderName,
-              role: 'lead',
-              content: prompt,
-              timestamp: Date.now(),
-            },
+            { id: `msg-${Date.now()}-1`, sender: leaderName, role: 'lead', content: prompt, timestamp: Date.now() },
             {
               id: `msg-${Date.now()}-2`,
               sender: 'Org Delegation Engine',
@@ -173,6 +234,13 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       setIsExecuting(false);
       updateNodeStatus(selectedNodeId, 'recently_finished');
       setTimeout(() => updateNodeStatus(selectedNodeId, 'idle'), 4000);
+      // Persist lastActiveAt so computeLifecycleStatus reflects recent use
+      const now = Date.now();
+      if (selectedNodeType === 'department' && selectedNodeId) {
+        void updateDepartment(selectedNodeId, { lastActiveAt: now });
+      } else if (selectedNodeType === 'team' && selectedNodeId) {
+        void updateTeamNode(selectedNodeId, { lastActiveAt: now });
+      }
     }
   };
 
@@ -180,25 +248,69 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     <Drawer
       title={
         <div className='flex items-center justify-between w-full pr-12px select-none'>
-          <div className='flex items-center gap-8px min-w-0'>
-            <span className='size-24px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
-              <Peoples size={14} theme='outline' fill='currentColor' />
-            </span>
-            <span className='font-bold text-14px text-t-primary truncate' title={nodeTitle}>
-              {nodeTitle}
-            </span>
-            <Tag size='small' color='arcoblue' className='text-10px font-medium'>
-              {nodeRole}
-            </Tag>
+          <div className='flex flex-col gap-2px min-w-0'>
+            <div className='flex items-center gap-6px'>
+              <span className='size-20px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
+                {selectedNodeType === 'ceo' ? (
+                  <Peoples size={12} theme='outline' fill='currentColor' />
+                ) : selectedNodeType === 'department' ? (
+                  <Workbench size={12} theme='outline' fill='currentColor' />
+                ) : (
+                  <User size={12} theme='outline' fill='currentColor' />
+                )}
+              </span>
+              <span className='font-bold text-14px text-t-primary truncate' title={nodeTitle}>
+                {nodeTitle}
+              </span>
+              <Tag size='small' color='arcoblue' className='text-10px font-medium px-5px py-0.5px rounded-full'>
+                {nodeRole}
+              </Tag>
+            </div>
+            <div className='flex items-center gap-8px text-10px font-mono'>
+              <Tag
+                size='small'
+                className='text-t-secondary px-4px py-0.5px rounded-full border border-[var(--color-border-2)]'
+              >
+                💬 Chatting with: {leaderRole} ({leaderName})
+              </Tag>
+              {nodeWorkspacePath ? (
+                <div className='flex items-center gap-3px text-t-primary px-5px py-0.5px rounded bg-amber-500/10 border border-amber-500/20 shrink-0'>
+                  <FolderClose size={10} theme='outline' className='text-amber-400 shrink-0' />
+                  <span className='truncate max-w-160px' title={nodeWorkspacePath}>
+                    {nodeWorkspacePath}
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </div>
-
+          <div className='flex items-center gap-3px'>
+            {onSetFolder && (
+              <Button
+                size='mini'
+                type='text'
+                icon={<LinkOne size={11} />}
+                onClick={handleChangeFolder}
+                disabled={!selectedNodeId}
+              >
+                Change Folder
+              </Button>
+            )}
+            <Button
+              size='mini'
+              type='text'
+              icon={<Edit size={11} />}
+              onClick={() => {
+                if (selectedNodeType === 'department' && editableDepartmentId) {
+                  onEditDepartment?.(editableDepartmentId);
+                }
+              }}
+            >
+              Quick Edit
+            </Button>
+          </div>
           <Tag
             size='small'
-            style={{
-              borderColor: theme.borderColor,
-              color: theme.textColor,
-              backgroundColor: theme.backgroundColor,
-            }}
+            style={{ borderColor: theme.borderColor, color: theme.textColor, backgroundColor: theme.backgroundColor }}
             className='text-10px font-medium px-5px py-0.5px rounded-full'
           >
             {theme.badgeText}
@@ -207,7 +319,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       }
       visible={visible}
       onCancel={onClose}
-      width={480}
+      width={520}
       footer={
         <div className='flex items-center gap-8px w-full'>
           <Input
@@ -231,7 +343,6 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       }
     >
       <div className='flex flex-col gap-14px h-full overflow-y-auto pr-2px'>
-        {/* Leader Summary Pill */}
         <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center justify-between'>
           <div className='flex items-center gap-10px min-w-0'>
             <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
@@ -246,36 +357,47 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
             <Time size={12} theme='outline' />
             <span>
               {lastActiveAt
-                ? new Date(lastActiveAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                ? new Date(lastActiveAt).toLocaleDateString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
                 : 'Dormant (7d+)'}
             </span>
           </div>
         </div>
 
-        {/* Linked Projects Section */}
         {linkedProjects.length > 0 && (
           <div className='flex flex-col gap-6px'>
             <span className='text-10px font-semibold uppercase tracking-wider text-t-tertiary'>
               Operating Projects ({linkedProjects.length})
             </span>
             <div className='flex items-center gap-6px flex-wrap'>
-              {linkedProjects.map((p) => (
-                <div
-                  key={p.id}
-                  className='flex items-center gap-5px px-8px py-3px rounded-6px bg-fill-1 border border-[var(--color-border-2)] text-11px font-mono text-t-primary'
-                >
-                  <FolderClose size={12} theme='outline' className='text-amber-400' />
-                  <span>{p.name}</span>
-                </div>
-              ))}
+              {linkedProjects.map((p) => {
+                const project = projects.find((item) => item.id === p.id);
+                return (
+                  <Button
+                    key={p.id}
+                    size='mini'
+                    className='!h-auto !px-8px !py-3px !rounded-6px !bg-fill-1 !border !border-[var(--color-border-2)] !text-11px !font-mono !text-t-primary'
+                    icon={<FolderClose size={12} theme='outline' className='text-amber-400' />}
+                    onClick={() => {
+                      if (project) onEditProject?.(project);
+                    }}
+                    title={p.path || p.name}
+                  >
+                    <span className='max-w-220px truncate'>{p.name}</span>
+                  </Button>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Tab Navigation */}
         <Tabs
           activeTab={activeTab}
-          onChange={(key) => setActiveTab(key as any)}
+          onChange={(key) => setActiveTab(key as 'conversations' | 'terminal' | 'members')}
           type='rounded'
           className='w-full'
         >
@@ -301,18 +423,14 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                     className='p-10px rounded-8px bg-fill-1 hover:bg-fill-2 border border-[var(--color-border-2)] cursor-pointer transition-colors flex flex-col gap-4px'
                   >
                     <div className='flex items-center justify-between'>
-                      <span className='text-12px font-semibold text-t-primary truncate'>
-                        {conv.title}
-                      </span>
+                      <span className='text-12px font-semibold text-t-primary truncate'>{conv.title}</span>
                       <span className='text-10px font-mono text-t-tertiary shrink-0'>
                         {new Date(conv.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    {conv.summary && (
-                      <span className='text-11px text-t-secondary line-clamp-2'>
-                        {conv.summary}
-                      </span>
-                    )}
+                    {conv.summary ? (
+                      <span className='text-11px text-t-secondary line-clamp-2'>{conv.summary}</span>
+                    ) : null}
                   </div>
                 ))
               )}
@@ -360,9 +478,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                     <Robot size={14} theme='outline' className='text-primary shrink-0' />
                     <span className='font-medium text-t-primary truncate'>{spec.name}</span>
                   </div>
-                  <span className='text-11px text-t-tertiary truncate max-w-160px font-mono'>
-                    {spec.title}
-                  </span>
+                  <span className='text-11px text-t-tertiary truncate max-w-160px font-mono'>{spec.title}</span>
                 </div>
               ))}
             </div>

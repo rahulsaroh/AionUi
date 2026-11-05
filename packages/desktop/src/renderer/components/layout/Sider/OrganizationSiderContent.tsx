@@ -1,11 +1,11 @@
-/**
+﻿/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
-import { Tooltip, Tag, Modal, Input, Message } from '@arco-design/web-react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Tooltip, Tag, Modal, Input, Message, Divider } from '@arco-design/web-react';
 import {
   NetworkTree,
   AlarmClock,
@@ -13,29 +13,37 @@ import {
   Right,
   Down,
   FolderClose,
-  MessageOne,
-  Send,
+  Edit,
   User,
-  Peoples,
+  FolderPlus,
+  Close,
+  Robot,
+  LinkOne,
 } from '@icon-park/react';
 import classNames from 'classnames';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '@/renderer/pages/organization/utils/orgTheme';
-import type { OrgNodeStatus } from '@/types/organization';
+import { createDepartmentShell, createTeamShell } from '@/renderer/pages/organization/utils/orgCoherence';
+import type { OrgNodeStatus, OrgProject, OrgDepartmentNode, OrgTeamNode } from '@/types/organization';
+import OrgProjectModal from '@/renderer/pages/organization/components/OrgProjectModal';
+import OrgDepartmentModal from '@/renderer/pages/organization/components/OrgDepartmentModal';
+import OrgEntityEditModal from '@/renderer/pages/organization/components/OrgEntityEditModal';
 
-interface OrganizationSiderContentProps {
+type OrganizationSiderContentProps = {
   collapsed: boolean;
   siderTooltipProps: SiderTooltipProps;
   onSessionClick?: () => void;
-}
+};
 
 export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> = ({
   collapsed,
   siderTooltipProps,
   onSessionClick,
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -45,20 +53,38 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     cronJobs,
     nodeStatuses,
     addOrgConversation,
+    addDepartment,
     addSubTeam,
+    selectedDepartmentId,
+    selectedTeamId,
+    selectedProjectId,
+    setSelectedDepartment,
+    setSelectedTeam,
+    setSelectedProject,
+    clearOrgSelection,
   } = useOrgStore();
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'dormant' | 'shared'>('all');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-
-  // Direct CEO chat modal
   const [ceoChatModalVisible, setCeoChatModalVisible] = useState(false);
   const [ceoPrompt, setCeoPrompt] = useState('');
-
-  // Add Sub-Team modal
   const [targetDeptIdForTeam, setTargetDeptIdForTeam] = useState<string | null>(null);
   const [newSubTeamName, setNewSubTeamName] = useState('');
+  const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [projectModal, setProjectModal] = useState<{
+    visible: boolean;
+    project: OrgProject | null;
+    departmentId?: string;
+    teamId?: string;
+  }>({ visible: false, project: null });
+  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
+  const [editEntity, setEditEntity] = useState<{
+    type: 'department' | 'team' | 'member' | 'project';
+    data: any;
+    context: { departmentId?: string; teamId?: string };
+  } | null>(null);
 
   const isCanvasActive = location.pathname === '/organization';
 
@@ -80,54 +106,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     });
   };
 
-  // Filter departments & teams
-  const filteredDepartments = useMemo(() => {
-    if (activeFilter === 'all') return hierarchy.departments;
-
-    return hierarchy.departments
-      .map((dept) => {
-        const deptStatus: OrgNodeStatus = computeLifecycleStatus(
-          dept.lastActiveAt,
-          nodeStatuses[dept.id] || dept.status
-        );
-
-        if (activeFilter === 'active') {
-          const activeTeams = dept.teams.filter((t) => {
-            const s = computeLifecycleStatus(t.lastActiveAt, nodeStatuses[t.id] || t.status);
-            return s === 'working' || s === 'department_standby' || s === 'queued_next';
-          });
-          if (deptStatus === 'working' || deptStatus === 'department_standby' || activeTeams.length > 0) {
-            return { ...dept, teams: activeTeams.length > 0 ? activeTeams : dept.teams };
-          }
-          return null;
-        }
-
-        if (activeFilter === 'dormant') {
-          const dormantTeams = dept.teams.filter((t) => {
-            const s = computeLifecycleStatus(t.lastActiveAt, nodeStatuses[t.id] || t.status);
-            return s === 'dormant';
-          });
-          if (deptStatus === 'dormant' || dormantTeams.length > 0) {
-            return { ...dept, teams: dormantTeams.length > 0 ? dormantTeams : dept.teams };
-          }
-          return null;
-        }
-
-        if (activeFilter === 'shared') {
-          const sharedTeams = dept.teams.filter((t) =>
-            t.specialistMembers.some((s) => s.assignedTeamIds.length > 1)
-          );
-          if (sharedTeams.length > 0) {
-            return { ...dept, teams: sharedTeams };
-          }
-          return null;
-        }
-
-        return dept;
-      })
-      .filter((d): d is NonNullable<typeof d> => Boolean(d));
-  }, [hierarchy.departments, activeFilter, nodeStatuses]);
-
   const handleOpenCeoChat = () => {
     onSessionClick?.();
     setCeoChatModalVisible(true);
@@ -138,7 +116,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     const prompt = ceoPrompt.trim();
     setCeoPrompt('');
     setCeoChatModalVisible(false);
-
     addOrgConversation({
       id: `conv-ceo-${Date.now()}`,
       title: `Directive to Root CEO: ${prompt.slice(0, 35)}...`,
@@ -148,13 +125,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       timestamp: Date.now(),
       summary: `Direct user instruction to Root CEO: ${prompt}`,
       messages: [
-        {
-          id: `msg-${Date.now()}`,
-          sender: 'Executive User',
-          role: 'user',
-          content: prompt,
-          timestamp: Date.now(),
-        },
+        { id: `msg-${Date.now()}`, sender: 'Executive User', role: 'user', content: prompt, timestamp: Date.now() },
       ],
     });
     Message.success('Executive directive sent to Root CEO! Check 2D Canvas for live cascading glow.');
@@ -163,36 +134,121 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const handleConfirmAddTeam = () => {
     if (!targetDeptIdForTeam || !newSubTeamName.trim()) return;
-    const teamId = `team-${Date.now()}`;
-    addSubTeam(targetDeptIdForTeam, {
-      id: teamId,
-      departmentId: targetDeptIdForTeam,
-      name: newSubTeamName.trim(),
-      lastActiveAt: Date.now(),
-      status: 'idle',
-      teamLeadAgent: {
-        id: `lead-${teamId}`,
-        canonicalAgentId: `canonical-lead-${teamId}`,
-        name: 'Team Manager',
-        role: 'team_lead',
-        assignedTeamIds: [teamId],
-        lastActiveAt: Date.now(),
-        status: 'idle',
-      },
-      hrCoordinatorAgent: {
-        id: `hr-${teamId}`,
-        canonicalAgentId: `canonical-hr-${teamId}`,
-        name: 'HR Coordinator',
-        role: 'hr_coordinator',
-        assignedTeamIds: [teamId],
-        lastActiveAt: Date.now(),
-        status: 'idle',
-      },
-      specialistMembers: [],
-    });
+    addSubTeam(targetDeptIdForTeam, createTeamShell(targetDeptIdForTeam, newSubTeamName));
     setNewSubTeamName('');
     setTargetDeptIdForTeam(null);
-    Message.success('Sub-team created in department!');
+    Message.success(t('team.organization.teamSaved', { defaultValue: 'Sub-team saved' }));
+  };
+
+  const handleConfirmAddDepartment = () => {
+    if (!newDeptName.trim()) return;
+    addDepartment(createDepartmentShell(newDeptName));
+    setNewDeptName('');
+    setCreateDeptModalVisible(false);
+    Message.success(t('team.organization.departmentSaved', { defaultValue: 'Department saved' }));
+  };
+
+  const openProjectModal = (departmentId?: string, teamId?: string, project: OrgProject | null = null) => {
+    setProjectModal({ visible: true, project, departmentId, teamId });
+  };
+
+  // ---------- Drill-down derived data ----------
+  const selectedDepartment = useMemo(
+    () => hierarchy.departments.find((d) => d.id === selectedDepartmentId),
+    [hierarchy.departments, selectedDepartmentId]
+  );
+
+  const allTeams = useMemo(() => hierarchy.departments.flatMap((d) => d.teams), [hierarchy.departments]);
+
+  const teamsInSelectedDept = useMemo(() => {
+    if (selectedDepartmentId) {
+      return hierarchy.departments.find((d) => d.id === selectedDepartmentId)?.teams ?? [];
+    }
+    return allTeams;
+  }, [hierarchy.departments, selectedDepartmentId, allTeams]);
+
+  const selectedTeam = useMemo(
+    () => teamsInSelectedDept.find((t) => t.id === selectedTeamId),
+    [teamsInSelectedDept, selectedTeamId]
+  );
+
+  const projectsForSelection = useMemo(() => {
+    if (selectedTeamId) {
+      return projects.filter((p) => p.teamIds.includes(selectedTeamId));
+    }
+    if (selectedDepartmentId) {
+      return projects.filter((p) => p.departmentId === selectedDepartmentId);
+    }
+    return projects;
+  }, [projects, selectedTeamId, selectedDepartmentId]);
+
+  const selectedProject = useMemo(
+    () => projectsForSelection.find((p) => p.id === selectedProjectId),
+    [projectsForSelection, selectedProjectId]
+  );
+
+  // Breadcrumb path
+  const breadcrumb = useMemo(() => {
+    const parts: Array<{ label: string; id: string | null; type: 'dept' | 'team' | 'project' }> = [];
+    if (selectedProject) {
+      const team = teamsInSelectedDept.find((t) => t.id === selectedProject.teamIds?.[0]);
+      const dept = team ? hierarchy.departments.find((d) => d.id === team.departmentId) : selectedDepartment;
+      if (dept) parts.push({ label: dept.name, id: dept.id, type: 'dept' });
+      if (team) parts.push({ label: team.name, id: team.id, type: 'team' });
+      parts.push({ label: selectedProject.name, id: selectedProject.id, type: 'project' });
+    } else if (selectedTeam) {
+      const dept = hierarchy.departments.find((d) => d.id === selectedTeam.departmentId);
+      if (dept) parts.push({ label: dept.name, id: dept.id, type: 'dept' });
+      parts.push({ label: selectedTeam.name, id: selectedTeam.id, type: 'team' });
+    } else if (selectedDepartment) {
+      parts.push({ label: selectedDepartment.name, id: selectedDepartment.id, type: 'dept' });
+    }
+    return parts;
+  }, [selectedProject, selectedTeam, selectedDepartment, teamsInSelectedDept, hierarchy.departments]);
+
+  // Node-aware conversation filter
+  const nodeConversations = useMemo(() => {
+    const targets = new Set<string>();
+    if (selectedProject) targets.add(selectedProject.id);
+    if (selectedTeam) targets.add(selectedTeam.id);
+    if (selectedDepartment) targets.add(selectedDepartment.id);
+    if (targets.size === 0) return conversations;
+    return conversations.filter((c) => targets.has(c.sourceNodeId) || targets.has(c.targetNodeId));
+  }, [conversations, selectedProject, selectedTeam, selectedDepartment]);
+
+  const deptStatus = (dept: OrgDepartmentNode): OrgNodeStatus =>
+    computeLifecycleStatus(dept.lastActiveAt, nodeStatuses[dept.id] || dept.status);
+  const teamStatus = (team: OrgTeamNode): OrgNodeStatus =>
+    computeLifecycleStatus(team.lastActiveAt, nodeStatuses[team.id] || team.status);
+
+  const handleSelectDept = (deptId: string) => {
+    setSelectedDepartment(deptId);
+    setSelectedTeam(null);
+    setSelectedProject(null);
+  };
+
+  const handleSelectTeam = (teamId: string) => {
+    setSelectedTeam(teamId);
+    setSelectedProject(null);
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    setSelectedProject(projectId);
+  };
+
+  const handleOpenEntityEdit = (
+    type: 'department' | 'team' | 'member' | 'project',
+    data: any,
+    context: { departmentId?: string; teamId?: string }
+  ) => {
+    setEditEntity({ type, data, context });
+  };
+
+  const handleEditSave = () => {
+    if (editEntity) {
+      Message.success('Saved.');
+    }
+    setEditEntity(null);
   };
 
   if (collapsed) {
@@ -207,7 +263,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             👑
           </button>
         </Tooltip>
-
         <Tooltip {...siderTooltipProps} content='🗺️ 2D Org-Chart Canvas' position='right'>
           <button
             type='button'
@@ -223,7 +278,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             <NetworkTree size={16} theme='outline' fill='currentColor' />
           </button>
         </Tooltip>
-
         <Tooltip {...siderTooltipProps} content='⏱️ Org Automations' position='right'>
           <button
             type='button'
@@ -242,22 +296,63 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   return (
     <div className='flex flex-col gap-4px select-none'>
-      {/* 👑 Talk to Root CEO Button */}
-      <div className='px-8px mb-2px'>
+      {/* Breadcrumb header */}
+      <div className='px-12px py-4px bg-fill-2 border-b border-[var(--color-border-2)] flex items-center justify-between min-h-28px'>
+        <div className='flex items-center gap-3px overflow-hidden'>
+          <span className='text-10px text-t-tertiary font-mono'>🏢 All Depts</span>
+          {breadcrumb.map((part, idx) => (
+            <span key={part.id} className='flex items-center gap-3px text-11px text-t-primary truncate'>
+              <span className='text-t-tertiary text-9px'>›</span>
+              <button
+                type='button'
+                className='p-1px truncate hover:text-primary hover:underline transition-colors'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (part.type === 'dept') handleSelectDept(part.id!);
+                  if (part.type === 'team') handleSelectTeam(part.id!);
+                  if (part.type === 'project') handleSelectProject(part.id!);
+                }}
+              >
+                {part.label}
+              </button>
+            </span>
+          ))}
+          {breadcrumb.length > 0 && (
+            <button
+              type='button'
+              className='p-1px text-t-tertiary hover:text-t-danger transition-colors'
+              onClick={clearOrgSelection}
+              title='Clear Filter'
+            >
+              <Close size={12} theme='outline' />
+            </button>
+          )}
+        </div>
+        <span className='text-9px font-mono text-t-tertiary shrink-0'>
+          {breadcrumb.length ? 'Drill-down active' : 'All organization'}
+        </span>
+      </div>
+
+      <div className='px-8px mb-2px flex items-center gap-6px'>
         <button
           type='button'
           onClick={handleOpenCeoChat}
-          className='w-full h-34px flex items-center gap-8px px-10px rounded-8px bg-gradient-to-r from-amber-500/15 via-primary/10 to-emerald-500/15 hover:from-amber-500/25 hover:to-emerald-500/25 border border-amber-500/30 text-amber-200 cursor-pointer transition-all shadow-sm group'
+          className='flex-1 h-34px flex items-center gap-8px px-10px rounded-8px bg-gradient-to-r from-amber-500/15 via-primary/10 to-emerald-500/15 hover:from-amber-500/25 hover:to-emerald-500/25 border border-amber-500/30 text-amber-200 cursor-pointer transition-all shadow-sm group'
         >
           <span className='text-14px leading-none group-hover:scale-110 transition-transform'>👑</span>
           <span className='font-semibold text-12px tracking-wide truncate'>Talk to Root CEO</span>
-          <span className='ms-auto text-9px font-mono bg-amber-500/20 text-amber-300 px-4px py-1px rounded'>
-            Command
-          </span>
         </button>
+        <Tooltip content={t('team.organization.addDepartment', { defaultValue: 'Add Department' })} position='top'>
+          <button
+            type='button'
+            onClick={() => setCreateDeptModalVisible(true)}
+            className='size-34px rounded-8px flex items-center justify-center bg-fill-2 hover:bg-fill-3 text-t-primary border border-[var(--color-border-2)] cursor-pointer'
+          >
+            <Plus size={14} />
+          </button>
+        </Tooltip>
       </div>
 
-      {/* 🗺️ 2D Org-Chart Canvas Entry */}
       <div className='px-8px mb-2px'>
         <button
           type='button'
@@ -274,13 +369,10 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         >
           <span className='text-13px'>🗺️</span>
           <span className='text-12px font-medium truncate'>2D Org-Chart Canvas</span>
-          <span className='ms-auto text-9px font-mono text-t-tertiary px-4px py-0.5px rounded bg-fill-2'>
-            Live
-          </span>
+          <span className='ms-auto text-9px font-mono text-t-tertiary px-4px py-0.5px rounded bg-fill-2'>Live</span>
         </button>
       </div>
 
-      {/* ⏱️ Org Scheduled Automations */}
       <div className='px-8px mb-4px'>
         <button
           type='button'
@@ -298,7 +390,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         </button>
       </div>
 
-      {/* Filter Pills: All | Active | Dormant | Shared */}
       <div className='px-12px py-4px flex items-center gap-4px flex-wrap text-11px'>
         {(['all', 'active', 'dormant', 'shared'] as const).map((filter) => (
           <Tag
@@ -315,7 +406,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
       <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
 
-      {/* Section 1: 🏢 Departments & Sub-Teams */}
+      {/* Departments Section */}
       <div className='flex flex-col'>
         <div
           className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
@@ -323,7 +414,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         >
           <div className='flex items-center gap-6px'>
             <span className='text-11px font-semibold uppercase tracking-wider'>
-              Departments ({filteredDepartments.length})
+              Departments ({hierarchy.departments.length})
             </span>
             {collapsedSections.has('departments') ? (
               <Right size={11} theme='outline' />
@@ -335,30 +426,87 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
         {!collapsedSections.has('departments') && (
           <div className='flex flex-col gap-2px px-6px mt-2px'>
-            {filteredDepartments.map((dept) => {
+            {hierarchy.departments.map((dept) => {
+              const status = deptStatus(dept);
+              const theme = ORG_THEME_PALETTE[status];
+              const isSelected = selectedDepartmentId === dept.id;
               const isDeptExpanded = !collapsedDepts.has(dept.id);
-              const deptStatus: OrgNodeStatus = computeLifecycleStatus(
-                dept.lastActiveAt,
-                nodeStatuses[dept.id] || dept.status
-              );
-              const theme = ORG_THEME_PALETTE[deptStatus];
-
+              const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
               return (
                 <div key={dept.id} className='flex flex-col rounded-8px overflow-hidden'>
-                  {/* Department Item Header */}
                   <div
-                    onClick={() => toggleDept(dept.id)}
-                    className='group flex items-center justify-between px-8px py-5px rounded-6px hover:bg-fill-2 cursor-pointer transition-colors text-12px text-t-primary'
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectDept(dept.id);
+                    }}
+                    className={classNames(
+                      'group flex items-center justify-between px-8px py-5px rounded-6px cursor-pointer transition-colors text-12px',
+                      isSelected
+                        ? 'bg-primary/10 text-t-primary border border-primary/20'
+                        : 'hover:bg-fill-2 text-t-primary'
+                    )}
                   >
                     <div className='flex items-center gap-6px min-w-0'>
                       <span className='size-5px rounded-full shrink-0' style={{ backgroundColor: theme.borderColor }} />
                       <span className='font-semibold truncate' title={dept.name}>
                         {dept.name}
                       </span>
+                      {dept.workspacePath && (
+                        <span
+                          className='text-9px font-mono text-t-tertiary truncate max-w-80px'
+                          title={dept.workspacePath}
+                        >
+                          📁 {dept.workspacePath}
+                        </span>
+                      )}
                     </div>
-
                     <div className='flex items-center gap-4px shrink-0'>
-                      <Tooltip content='Add Sub-Team' position='top'>
+                      <Tooltip
+                        content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
+                        position='top'
+                      >
+                        <span
+                          role='button'
+                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEntityEdit('department', dept, { departmentId: dept.id });
+                          }}
+                        >
+                          <Edit size={11} theme='outline' />
+                        </span>
+                      </Tooltip>
+                      <Tooltip content='Set Folder' position='top'>
+                        <span
+                          role='button'
+                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-amber-400 hover:bg-amber-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEntityEdit('department', dept, { departmentId: dept.id });
+                          }}
+                        >
+                          <LinkOne size={11} theme='outline' />
+                        </span>
+                      </Tooltip>
+                      <Tooltip
+                        content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
+                        position='top'
+                      >
+                        <span
+                          role='button'
+                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openProjectModal(dept.id);
+                          }}
+                        >
+                          <FolderPlus size={11} theme='outline' />
+                        </span>
+                      </Tooltip>
+                      <Tooltip
+                        content={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
+                        position='top'
+                      >
                         <span
                           role='button'
                           className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
@@ -370,41 +518,63 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                           <Plus size={11} theme='outline' />
                         </span>
                       </Tooltip>
-                      {dept.teams.length > 0 && (
+                      {deptTeams.length > 0 ? (
                         <span className='text-t-tertiary'>
                           {isDeptExpanded ? <Down size={10} theme='outline' /> : <Right size={10} theme='outline' />}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </div>
-
-                  {/* Child Teams Tree */}
-                  {isDeptExpanded && dept.teams.length > 0 && (
-                    <div className='flex flex-col gap-1px pl-18px pr-4px py-2px border-l border-slate-700/40 ml-12px'>
-                      {dept.teams.map((team) => {
-                        const teamStatus = computeLifecycleStatus(
-                          team.lastActiveAt,
-                          nodeStatuses[team.id] || team.status
-                        );
-                        const teamTheme = ORG_THEME_PALETTE[teamStatus];
-
+                  {isDeptExpanded && deptTeams.length > 0 && (
+                    <div className='flex flex-col gap-1px pl-20px pr-4px py-2px border-l border-slate-700/40 ml-12px'>
+                      {deptTeams.map((team) => {
+                        const tStatus = teamStatus(team);
+                        const tTheme = ORG_THEME_PALETTE[tStatus];
+                        const isTeamSelected = selectedTeamId === team.id;
                         return (
                           <div
                             key={team.id}
-                            onClick={() => {
-                              onSessionClick?.();
-                              void navigate('/organization');
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectTeam(team.id);
                             }}
-                            className='flex items-center justify-between px-6px py-3px rounded hover:bg-fill-2 cursor-pointer text-11px text-t-secondary hover:text-t-primary transition-colors'
+                            className={classNames(
+                              'flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px',
+                              isTeamSelected
+                                ? 'bg-primary/10 text-t-primary border border-primary/20'
+                                : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary'
+                            )}
                           >
                             <div className='flex items-center gap-5px truncate min-w-0'>
                               <User size={11} theme='outline' className='text-primary shrink-0' />
                               <span className='truncate'>{team.name}</span>
+                              {team.workspacePath && (
+                                <span
+                                  className='text-9px font-mono text-t-tertiary truncate max-w-80px'
+                                  title={team.workspacePath}
+                                >
+                                  📁 {team.workspacePath}
+                                </span>
+                              )}
                             </div>
-                            <span
-                              className='size-5px rounded-full shrink-0'
-                              style={{ backgroundColor: teamTheme.borderColor }}
-                            />
+                            <div className='flex items-center gap-3px shrink-0'>
+                              <Tooltip content='Edit Team' position='top'>
+                                <span
+                                  role='button'
+                                  className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEntityEdit('team', team, { departmentId: dept.id, teamId: team.id });
+                                  }}
+                                >
+                                  <Edit size={10} theme='outline' />
+                                </span>
+                              </Tooltip>
+                              <span
+                                className='size-5px rounded-full shrink-0'
+                                style={{ backgroundColor: tTheme.borderColor }}
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -419,54 +589,235 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
       <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
 
-      {/* Section 2: 📁 Org Projects */}
+      {/* Teams Section (drill-down: when a dept is selected, show only its teams) */}
       <div className='flex flex-col'>
         <div
           className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
-          onClick={() => toggleSection('projects')}
+          onClick={() => toggleSection('teams')}
         >
-          <span className='text-11px font-semibold uppercase tracking-wider'>
-            Org Projects ({projects.length})
-          </span>
-          {collapsedSections.has('projects') ? (
-            <Right size={11} theme='outline' />
-          ) : (
-            <Down size={11} theme='outline' />
-          )}
+          <div className='flex items-center gap-6px'>
+            <span className='text-11px font-semibold uppercase tracking-wider'>
+              Teams{' '}
+              {selectedDepartment
+                ? `in ${selectedDepartment.name}`
+                : `(${hierarchy.departments.flatMap((d) => d.teams).length})`}
+            </span>
+            {collapsedSections.has('teams') ? <Right size={11} theme='outline' /> : <Down size={11} theme='outline' />}
+          </div>
+          <Tooltip content={t('team.organization.addTeam', { defaultValue: 'Add Team' })} position='top'>
+            <button
+              type='button'
+              className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3'
+              onClick={() => {
+                if (!selectedDepartment) {
+                  Message.warning('Select a department first to add a team.');
+                  return;
+                }
+                setTargetDeptIdForTeam(selectedDepartment.id);
+              }}
+            >
+              <Plus size={11} theme='outline' />
+            </button>
+          </Tooltip>
         </div>
 
-        {!collapsedSections.has('projects') && (
+        {!collapsedSections.has('teams') && (
           <div className='flex flex-col gap-1px px-6px mt-2px'>
-            {projects.map((proj) => (
-              <div
-                key={proj.id}
-                onClick={() => {
-                  onSessionClick?.();
-                  void navigate('/organization');
-                }}
-                className='flex items-center justify-between px-8px py-4px rounded-6px hover:bg-fill-2 cursor-pointer text-12px text-t-primary transition-colors'
-              >
-                <div className='flex items-center gap-6px truncate min-w-0'>
-                  <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
-                  <span className='truncate font-medium'>{proj.name}</span>
-                </div>
-                <span className='text-9px font-mono text-t-tertiary'>Active</span>
+            {teamsInSelectedDept.length === 0 ? (
+              <div className='px-6px py-4px text-11px text-t-tertiary italic'>
+                {selectedDepartment ? 'No teams in this department yet.' : 'No teams.'}
               </div>
-            ))}
+            ) : (
+              teamsInSelectedDept.map((team) => {
+                const tStatus = teamStatus(team);
+                const tTheme = ORG_THEME_PALETTE[tStatus];
+                const isTeamSelected = selectedTeamId === team.id;
+                return (
+                  <div
+                    key={team.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectTeam(team.id);
+                    }}
+                    className={classNames(
+                      'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px',
+                      isTeamSelected
+                        ? 'bg-primary/10 text-t-primary border border-primary/20'
+                        : 'hover:bg-fill-2 text-t-primary'
+                    )}
+                  >
+                    <div className='flex items-center gap-6px truncate min-w-0'>
+                      <User size={12} theme='outline' className='text-primary shrink-0' />
+                      <span className='font-medium truncate' title={team.name}>
+                        {team.name}
+                      </span>
+                      {team.workspacePath && (
+                        <span
+                          className='text-9px font-mono text-t-tertiary truncate max-w-90px'
+                          title={team.workspacePath}
+                        >
+                          📁 {team.workspacePath}
+                        </span>
+                      )}
+                    </div>
+                    <div className='flex items-center gap-3px shrink-0'>
+                      <Tooltip content='Edit Team' position='top'>
+                        <span
+                          role='button'
+                          className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEntityEdit('team', team, { departmentId: team.departmentId, teamId: team.id });
+                          }}
+                        >
+                          <Edit size={10} theme='outline' />
+                        </span>
+                      </Tooltip>
+                      <span
+                        className='size-5px rounded-full shrink-0'
+                        style={{ backgroundColor: tTheme.borderColor }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>
 
       <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
 
-      {/* Section 3: 💬 Org Conversations */}
+      {/* Projects Section (drill-down: dept → team → projects) */}
+      <div className='flex flex-col'>
+        <div
+          className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
+          onClick={() => toggleSection('projects')}
+        >
+          <div className='flex items-center gap-6px'>
+            <span className='text-11px font-semibold uppercase tracking-wider'>
+              Projects{' '}
+              {selectedTeam
+                ? `in ${selectedTeam.name}`
+                : selectedDepartment
+                  ? `under ${selectedDepartment.name}`
+                  : `(${projects.length})`}
+            </span>
+            {collapsedSections.has('projects') ? (
+              <Right size={11} theme='outline' />
+            ) : (
+              <Down size={11} theme='outline' />
+            )}
+          </div>
+          <Tooltip content={t('team.organization.addProject', { defaultValue: 'Add Project' })} position='top'>
+            <button
+              type='button'
+              className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3'
+              onClick={() => {
+                if (!selectedDepartment) {
+                  Message.warning('Select a department first to add a project.');
+                  return;
+                }
+                openProjectModal(selectedDepartment.id, selectedTeamId ?? undefined);
+              }}
+            >
+              <Plus size={11} theme='outline' />
+            </button>
+          </Tooltip>
+        </div>
+
+        {!collapsedSections.has('projects') && (
+          <div className='flex flex-col gap-1px px-6px mt-2px'>
+            {projectsForSelection.length === 0 ? (
+              <div className='px-6px py-4px text-11px text-t-tertiary italic'>
+                {selectedTeam
+                  ? 'No projects assigned to this team.'
+                  : selectedDepartment
+                    ? 'No projects in this department.'
+                    : 'No projects.'}
+              </div>
+            ) : (
+              projectsForSelection.map((proj) => {
+                const isProjectSelected = selectedProjectId === proj.id;
+                const team = teamsInSelectedDept.find((t) => t.id === proj.teamIds?.[0]);
+                return (
+                  <div
+                    key={proj.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectProject(proj.id);
+                    }}
+                    className={classNames(
+                      'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary',
+                      isProjectSelected ? 'bg-primary/10 border border-primary/20' : 'hover:bg-fill-2'
+                    )}
+                    title={proj.workspacePath || proj.path || proj.name}
+                  >
+                    <div className='flex items-center gap-6px truncate min-w-0'>
+                      <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
+                      <span className='truncate font-medium'>{proj.name}</span>
+                      {proj.workspacePath && (
+                        <span
+                          className='text-9px font-mono text-t-tertiary truncate max-w-90px'
+                          title={proj.workspacePath}
+                        >
+                          📁 {proj.workspacePath}
+                        </span>
+                      )}
+                    </div>
+                    <div className='flex items-center gap-3px shrink-0'>
+                      <span className='text-9px font-mono text-t-tertiary'>{proj.status || 'active'}</span>
+                      <Tooltip content='Open Folder' position='top'>
+                        <span
+                          role='button'
+                          className='size-16px rounded flex items-center justify-center text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void navigate(`/organization`);
+                          }}
+                        >
+                          <LinkOne size={10} theme='outline' />
+                        </span>
+                      </Tooltip>
+                      <Tooltip content='Edit Project' position='top'>
+                        <span
+                          role='button'
+                          className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEntityEdit('project', proj, {
+                              departmentId: proj.departmentId,
+                              teamId: proj.teamIds?.[0],
+                            });
+                          }}
+                        >
+                          <Edit size={10} theme='outline' />
+                        </span>
+                      </Tooltip>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
+
+      {/* Conversations Section (filtered to selected node) */}
       <div className='flex flex-col'>
         <div
           className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
           onClick={() => toggleSection('conversations')}
         >
           <span className='text-11px font-semibold uppercase tracking-wider'>
-            Org Conversations ({conversations.length})
+            Org Conversations{' '}
+            {selectedTeam
+              ? `· ${selectedTeam.name}`
+              : selectedDepartment
+                ? `· ${selectedDepartment.name}`
+                : `(${conversations.length})`}
           </span>
           {collapsedSections.has('conversations') ? (
             <Right size={11} theme='outline' />
@@ -474,33 +825,35 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             <Down size={11} theme='outline' />
           )}
         </div>
-
         {!collapsedSections.has('conversations') && (
           <div className='flex flex-col gap-2px px-6px mt-2px pb-16px'>
-            {conversations.map((conv) => (
-              <div
-                key={conv.id}
-                onClick={() => {
-                  onSessionClick?.();
-                  void navigate('/organization');
-                }}
-                className='p-6px rounded-6px hover:bg-fill-2 cursor-pointer transition-colors flex flex-col gap-2px text-11px border border-transparent hover:border-[var(--color-border-2)]'
-              >
-                <div className='flex items-center justify-between'>
-                  <span className='font-semibold text-t-primary truncate' title={conv.title}>
-                    {conv.title}
-                  </span>
-                </div>
-                {conv.summary && (
-                  <span className='text-10px text-t-secondary truncate'>{conv.summary}</span>
-                )}
+            {nodeConversations.length === 0 ? (
+              <div className='px-6px py-4px text-11px text-t-tertiary italic'>
+                No threads for the current selection.
               </div>
-            ))}
+            ) : (
+              nodeConversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  onClick={() => {
+                    onSessionClick?.();
+                    void navigate('/organization');
+                  }}
+                  className='p-6px rounded-6px hover:bg-fill-2 cursor-pointer transition-colors flex flex-col gap-2px text-11px border border-transparent hover:border-[var(--color-border-2)]'
+                >
+                  <div className='flex items-center justify-between'>
+                    <span className='font-semibold text-t-primary truncate' title={conv.title}>
+                      {conv.title}
+                    </span>
+                  </div>
+                  {conv.summary ? <span className='text-10px text-t-secondary truncate'>{conv.summary}</span> : null}
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
 
-      {/* Modal: Talk to Root CEO */}
       <Modal
         title='👑 Directive Command to Root CEO'
         visible={ceoChatModalVisible}
@@ -509,40 +862,54 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         okText='Dispatch Directive'
         okButtonProps={{ disabled: !ceoPrompt.trim() }}
       >
-        <div className='flex flex-col gap-8px'>
-          <span className='text-12px text-t-secondary'>
-            Assign an executive strategic objective to the Global Organization CEO:
-          </span>
-          <Input.TextArea
-            rows={3}
-            value={ceoPrompt}
-            onChange={setCeoPrompt}
-            placeholder='e.g., Roll out the new 2D Org-Chart Canvas and integrate biometrics across App Builder Department...'
-            autoFocus
-          />
-        </div>
+        <Input.TextArea rows={3} value={ceoPrompt} onChange={setCeoPrompt} autoFocus />
       </Modal>
-
-      {/* Modal: Add Sub-Team */}
       <Modal
-        title='Add Sub-Team to Department'
+        title={t('team.organization.addDepartment', { defaultValue: 'Add Department' })}
+        visible={createDeptModalVisible}
+        onOk={handleConfirmAddDepartment}
+        onCancel={() => setCreateDeptModalVisible(false)}
+        okText={t('team.organization.save', { defaultValue: 'Save' })}
+        okButtonProps={{ disabled: !newDeptName.trim() }}
+      >
+        <Input
+          value={newDeptName}
+          onChange={setNewDeptName}
+          placeholder={t('team.organization.departmentName', { defaultValue: 'Department name' })}
+          onPressEnter={handleConfirmAddDepartment}
+          autoFocus
+        />
+      </Modal>
+      <Modal
+        title={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
         visible={Boolean(targetDeptIdForTeam)}
         onOk={handleConfirmAddTeam}
         onCancel={() => setTargetDeptIdForTeam(null)}
-        okText='Create Team'
+        okText={t('team.organization.save', { defaultValue: 'Save' })}
         okButtonProps={{ disabled: !newSubTeamName.trim() }}
       >
-        <div className='flex flex-col gap-8px'>
-          <span className='text-12px text-t-secondary'>Team Name:</span>
-          <Input
-            value={newSubTeamName}
-            onChange={setNewSubTeamName}
-            placeholder='e.g., Growth Automation Team'
-            onPressEnter={handleConfirmAddTeam}
-            autoFocus
-          />
-        </div>
+        <Input value={newSubTeamName} onChange={setNewSubTeamName} onPressEnter={handleConfirmAddTeam} autoFocus />
       </Modal>
+      <OrgProjectModal
+        visible={projectModal.visible}
+        project={projectModal.project}
+        defaultDepartmentId={projectModal.departmentId}
+        defaultTeamId={projectModal.teamId}
+        onClose={() => setProjectModal({ visible: false, project: null })}
+      />
+      <OrgDepartmentModal
+        visible={Boolean(editingDepartmentId)}
+        department={hierarchy.departments.find((d) => d.id === editingDepartmentId) ?? null}
+        onClose={() => setEditingDepartmentId(null)}
+      />
+      <OrgEntityEditModal
+        visible={Boolean(editEntity)}
+        entity={editEntity?.type ?? 'department'}
+        data={editEntity?.data ?? null}
+        context={editEntity?.context ?? {}}
+        onClose={() => setEditEntity(null)}
+        onSave={handleEditSave}
+      />
     </div>
   );
 };

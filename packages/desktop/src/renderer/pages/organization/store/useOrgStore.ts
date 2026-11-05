@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -9,6 +9,7 @@ import type {
   OrgHierarchy,
   OrgDepartmentNode,
   OrgTeamNode,
+  OrgAgentMember,
   OrgNodeStatus,
   OrgProject,
   OrgConversation,
@@ -21,6 +22,21 @@ import {
   createDefaultOrgConversations,
   createDefaultOrgCronJobs,
 } from '../utils/defaultOrgSeed';
+import {
+  applyProjectMutation,
+  applyProjectRemoval,
+  normalizeOrgProject,
+  reconcileProjectsWithHierarchy,
+  syncHierarchyProjectReferences,
+  updateDepartmentInHierarchy,
+  updateTeamInHierarchy,
+} from '../utils/orgCoherence';
+import {
+  migrateOrgStorageV2,
+  ORG_STORAGE_VERSION,
+  loadOrgStorageVersion,
+  saveOrgStorageVersion,
+} from '../utils/orgMigration';
 
 const STORAGE_KEYS = {
   SCOPE: 'aionui:active-scope',
@@ -28,6 +44,7 @@ const STORAGE_KEYS = {
   PROJECTS: 'aionui:org-projects',
   CONVERSATIONS: 'aionui:org-conversations',
   CRON_JOBS: 'aionui:org-cron-jobs',
+  VERSION: 'aionui:org-storage-version',
 };
 
 function loadStored<T>(key: string, fallback: () => T): T {
@@ -49,7 +66,7 @@ function saveStored<T>(key: string, value: T): void {
   }
 }
 
-interface OrgStoreState {
+type OrgStoreState = {
   activeScope: OrgScope;
   hierarchy: OrgHierarchy;
   projects: OrgProject[];
@@ -58,30 +75,58 @@ interface OrgStoreState {
   nodeStatuses: Record<string, OrgNodeStatus>;
   hoveredCanonicalAgentId: string | null;
   selectedCanonicalAgentId: string | null;
+  // Contextual drill-down selection (Sidebar <-> Canvas synchronization)
+  selectedDepartmentId: string | null;
+  selectedTeamId: string | null;
+  selectedProjectId: string | null;
   isSimulating: boolean;
   simulationStep: number;
   simulationMessage: string;
+};
+
+function createInitialState(): OrgStoreState {
+  const rawHierarchy = loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
+  const rawProjects = loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
+  const rawConversations = loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
+  const storedVersion = loadStored(STORAGE_KEYS.VERSION, () => 0);
+  const migration = migrateOrgStorageV2(rawHierarchy, rawProjects, rawConversations, storedVersion);
+  if (migration.migrated) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.VERSION, String(ORG_STORAGE_VERSION));
+    } catch {}
+  }
+  const reconciled = reconcileProjectsWithHierarchy(migration.hierarchy, migration.projects);
+  return {
+    activeScope:
+      (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEYS.SCOPE) as OrgScope)) || 'workplace',
+    hierarchy: reconciled.hierarchy,
+    projects: reconciled.projects,
+    conversations: migration.conversations,
+    cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
+    nodeStatuses: {},
+    hoveredCanonicalAgentId: null,
+    selectedCanonicalAgentId: null,
+    selectedDepartmentId: null,
+    selectedTeamId: null,
+    selectedProjectId: null,
+    isSimulating: false,
+    simulationStep: 0,
+    simulationMessage: '',
+  };
 }
 
-let globalState: OrgStoreState = {
-  activeScope: (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEYS.SCOPE) as OrgScope)) || 'workplace',
-  hierarchy: loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy),
-  projects: loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects),
-  conversations: loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations),
-  cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
-  nodeStatuses: {},
-  hoveredCanonicalAgentId: null,
-  selectedCanonicalAgentId: null,
-  isSimulating: false,
-  simulationStep: 0,
-  simulationMessage: '',
-};
+let globalState: OrgStoreState = createInitialState();
 
 const listeners = new Set<(state: OrgStoreState) => void>();
 
 function notify() {
   const snapshot = { ...globalState };
   listeners.forEach((l) => l(snapshot));
+}
+
+function persistHierarchyAndProjects(next: Pick<OrgStoreState, 'hierarchy' | 'projects'>) {
+  saveStored(STORAGE_KEYS.HIERARCHY, next.hierarchy);
+  saveStored(STORAGE_KEYS.PROJECTS, next.projects);
 }
 
 export function useOrgStore() {
@@ -124,16 +169,37 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const setSelectedDepartment = useCallback((departmentId: string | null) => {
+    globalState = { ...globalState, selectedDepartmentId: departmentId, selectedTeamId: null, selectedProjectId: null };
+    notify();
+  }, []);
+
+  const setSelectedTeam = useCallback((teamId: string | null) => {
+    globalState = { ...globalState, selectedTeamId: teamId, selectedProjectId: null };
+    notify();
+  }, []);
+
+  const setSelectedProject = useCallback((projectId: string | null) => {
+    globalState = { ...globalState, selectedProjectId: projectId };
+    notify();
+  }, []);
+
+  const clearOrgSelection = useCallback(() => {
+    globalState = { ...globalState, selectedDepartmentId: null, selectedTeamId: null, selectedProjectId: null };
+    notify();
+  }, []);
+
   const resetToDefault = useCallback(() => {
     const defHierarchy = createDefaultOrgHierarchy();
     const defProjects = createDefaultOrgProjects();
     const defConversations = createDefaultOrgConversations();
     const defCron = createDefaultOrgCronJobs();
+    const reconciled = reconcileProjectsWithHierarchy(defHierarchy, defProjects);
 
     globalState = {
       ...globalState,
-      hierarchy: defHierarchy,
-      projects: defProjects,
+      hierarchy: reconciled.hierarchy,
+      projects: reconciled.projects,
       conversations: defConversations,
       cronJobs: defCron,
       nodeStatuses: {},
@@ -141,33 +207,86 @@ export function useOrgStore() {
       simulationStep: 0,
       simulationMessage: '',
     };
-    saveStored(STORAGE_KEYS.HIERARCHY, defHierarchy);
-    saveStored(STORAGE_KEYS.PROJECTS, defProjects);
+    persistHierarchyAndProjects(reconciled);
     saveStored(STORAGE_KEYS.CONVERSATIONS, defConversations);
     saveStored(STORAGE_KEYS.CRON_JOBS, defCron);
     notify();
   }, []);
 
   const addDepartment = useCallback((dept: OrgDepartmentNode) => {
-    const nextDepartments = [...globalState.hierarchy.departments, dept];
-    const nextHierarchy = { ...globalState.hierarchy, departments: nextDepartments, lastUpdated: Date.now() };
+    const nextHierarchy = syncHierarchyProjectReferences(
+      {
+        ...globalState.hierarchy,
+        departments: [...globalState.hierarchy.departments, { ...dept, linkedProjects: dept.linkedProjects ?? [] }],
+        lastUpdated: Date.now(),
+      },
+      globalState.projects
+    );
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+  }, []);
+
+  const updateDepartment = useCallback((departmentId: string, patch: Partial<OrgDepartmentNode>) => {
+    const nextHierarchy = syncHierarchyProjectReferences(
+      updateDepartmentInHierarchy(globalState.hierarchy, departmentId, patch),
+      globalState.projects
+    );
     globalState = { ...globalState, hierarchy: nextHierarchy };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
     notify();
   }, []);
 
   const addSubTeam = useCallback((departmentId: string, team: OrgTeamNode) => {
-    const nextDepartments = globalState.hierarchy.departments.map((d) => {
-      if (d.id === departmentId) {
-        return {
-          ...d,
-          teams: [...d.teams, team],
-          lastActiveAt: Date.now(),
-        };
-      }
-      return d;
-    });
-    const nextHierarchy = { ...globalState.hierarchy, departments: nextDepartments, lastUpdated: Date.now() };
+    const nextHierarchy = syncHierarchyProjectReferences(
+      {
+        ...globalState.hierarchy,
+        lastUpdated: Date.now(),
+        departments: globalState.hierarchy.departments.map((d) =>
+          d.id === departmentId
+            ? {
+                ...d,
+                teams: [...d.teams, team],
+                lastActiveAt: Date.now(),
+              }
+            : d
+        ),
+      },
+      globalState.projects
+    );
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+  }, []);
+
+  const updateTeamNode = useCallback((teamId: string, patch: Partial<OrgTeamNode>) => {
+    const nextHierarchy = syncHierarchyProjectReferences(
+      updateTeamInHierarchy(globalState.hierarchy, teamId, patch),
+      globalState.projects
+    );
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+  }, []);
+
+  const updateTeamMember = useCallback((teamId: string, memberId: string, patch: Partial<OrgAgentMember>) => {
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      lastUpdated: Date.now(),
+      departments: globalState.hierarchy.departments.map((department) => ({
+        ...department,
+        teams: department.teams.map((team) =>
+          team.id === teamId
+            ? {
+                ...team,
+                specialistMembers: team.specialistMembers.map((member) =>
+                  member.id === memberId ? { ...member, ...patch, id: member.id } : member
+                ),
+              }
+            : team
+        ),
+      })),
+    };
     globalState = { ...globalState, hierarchy: nextHierarchy };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
     notify();
@@ -180,10 +299,24 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const upsertOrgProject = useCallback((project: OrgProject) => {
+    const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(project));
+    globalState = { ...globalState, ...next };
+    persistHierarchyAndProjects(next);
+    notify();
+  }, []);
+
   const addOrgProject = useCallback((project: OrgProject) => {
-    const nextProjects = [...globalState.projects, project];
-    globalState = { ...globalState, projects: nextProjects };
-    saveStored(STORAGE_KEYS.PROJECTS, nextProjects);
+    const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(project));
+    globalState = { ...globalState, ...next };
+    persistHierarchyAndProjects(next);
+    notify();
+  }, []);
+
+  const deleteOrgProject = useCallback((projectId: string) => {
+    const next = applyProjectRemoval(globalState.hierarchy, globalState.projects, projectId);
+    globalState = { ...globalState, ...next };
+    persistHierarchyAndProjects(next);
     notify();
   }, []);
 
@@ -204,7 +337,8 @@ export function useOrgStore() {
       ...globalState,
       isSimulating: true,
       simulationStep: 1,
-      simulationMessage: 'Step 1/6: Root CEO receives high-level directive: "Deploy Mobile Biometrics & Video Pipeline"...',
+      simulationMessage:
+        'Step 1/6: Root CEO receives high-level directive: "Deploy Mobile Biometrics & Video Pipeline"...',
       nodeStatuses: {
         'root-ceo': 'working',
       },
@@ -213,11 +347,11 @@ export function useOrgStore() {
 
     await delay(1800);
 
-    // Step 2: Root CEO delegates to App Builder Department
     globalState = {
       ...globalState,
       simulationStep: 2,
-      simulationMessage: 'Step 2/6: Root CEO delegates to App Builder Department. CEO transitions to Standby (Amber), Dept CEO wakes up (Emerald)...',
+      simulationMessage:
+        'Step 2/6: Root CEO delegates to App Builder Department. CEO transitions to Standby (Amber), Dept CEO wakes up (Emerald)...',
       nodeStatuses: {
         'root-ceo': 'department_standby',
         'dept-app-builder': 'working',
@@ -228,11 +362,11 @@ export function useOrgStore() {
 
     await delay(2000);
 
-    // Step 3: App Builder Dept CEO delegates to AionUi Team & Gym Mentor App Team
     globalState = {
       ...globalState,
       simulationStep: 3,
-      simulationMessage: 'Step 3/6: Department CEO delegates to Team Manager & HR. Team in Standby (Amber), UI/UX Specialist working (Emerald), Backend queued next (Steel Cyan)...',
+      simulationMessage:
+        'Step 3/6: Department CEO delegates to Team Manager & HR. Team in Standby (Amber), UI/UX Specialist working (Emerald), Backend queued next (Steel Cyan)...',
       nodeStatuses: {
         'root-ceo': 'department_standby',
         'dept-app-builder': 'department_standby',
@@ -247,11 +381,11 @@ export function useOrgStore() {
 
     await delay(2200);
 
-    // Step 4: UI/UX Specialist completes -> Just Finished (Teal). Backend Integration turns Emerald (Working).
     globalState = {
       ...globalState,
       simulationStep: 4,
-      simulationMessage: 'Step 4/6: UI/UX Specialist finished (Muted Teal-Mint). Backend Integration now actively working (Soft Sage Emerald)...',
+      simulationMessage:
+        'Step 4/6: UI/UX Specialist finished (Muted Teal-Mint). Backend Integration now actively working (Soft Sage Emerald)...',
       nodeStatuses: {
         'root-ceo': 'department_standby',
         'dept-app-builder': 'department_standby',
@@ -264,11 +398,11 @@ export function useOrgStore() {
 
     await delay(2200);
 
-    // Step 5: Shared Member Visual Designer lights up across YouTube Automation and Social Media
     globalState = {
       ...globalState,
       simulationStep: 5,
-      simulationMessage: 'Step 5/6: Shared Visual Designer working in YouTube Automation; Social Media pill displays "Busy in YouTube Dept" with Emerald ring...',
+      simulationMessage:
+        'Step 5/6: Shared Visual Designer working in YouTube Automation; Social Media pill displays "Busy in YouTube Dept" with Emerald ring...',
       nodeStatuses: {
         'root-ceo': 'department_standby',
         'dept-app-builder': 'department_standby',
@@ -277,18 +411,18 @@ export function useOrgStore() {
         'spec-be-1': 'recently_finished',
         'dept-youtube': 'working',
         'spec-vis-shared': 'working',
-        'team-dormant-vitality': 'dormant', // 7d+ Unused remains dimmed in Charcoal
+        'team-dormant-vitality': 'dormant',
       },
     };
     notify();
 
     await delay(2400);
 
-    // Step 6: Completion rolled back up to Root CEO
     globalState = {
       ...globalState,
       simulationStep: 6,
-      simulationMessage: 'Step 6/6: Deliverables verified and synthesized! Executive report delivered back up to Root CEO.',
+      simulationMessage:
+        'Step 6/6: Deliverables verified and synthesized! Executive report delivered back up to Root CEO.',
       nodeStatuses: {
         'root-ceo': 'working',
         'dept-app-builder': 'recently_finished',
@@ -302,7 +436,6 @@ export function useOrgStore() {
 
     await delay(2200);
 
-    // End simulation, return to idle
     globalState = {
       ...globalState,
       isSimulating: false,
@@ -319,11 +452,20 @@ export function useOrgStore() {
     updateNodeStatus,
     setHoveredCanonicalAgentId,
     setSelectedCanonicalAgentId,
+    setSelectedDepartment,
+    setSelectedTeam,
+    setSelectedProject,
+    clearOrgSelection,
     resetToDefault,
     addDepartment,
+    updateDepartment,
     addSubTeam,
+    updateTeamNode,
+    updateTeamMember,
     addOrgConversation,
     addOrgProject,
+    upsertOrgProject,
+    deleteOrgProject,
     toggleCronJob,
     runSimulation,
   };

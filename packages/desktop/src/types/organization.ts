@@ -6,18 +6,13 @@
 
 export type OrgScope = 'workplace' | 'organization';
 
-export type OrgNodeStatus =
-  | 'working'
-  | 'department_standby'
-  | 'queued_next'
-  | 'recently_finished'
-  | 'idle'
-  | 'dormant';
+export type OrgNodeStatus = 'working' | 'department_standby' | 'queued_next' | 'recently_finished' | 'idle' | 'dormant';
 
 export type OrgAgentRole =
   | 'ceo'
   | 'chief_of_staff'
   | 'department_head'
+  | 'project_manager'
   | 'team_lead'
   | 'hr_coordinator'
   | 'specialist';
@@ -35,6 +30,8 @@ export interface OrgAgentMember {
   status: OrgNodeStatus;
   busyInDepartmentId?: string | null;
   busyInDepartmentName?: string | null;
+  /** Persistent local disk directory bound to this entity (if any). */
+  workspacePath?: string | null;
 }
 
 export interface OrgTeamNode {
@@ -44,18 +41,28 @@ export interface OrgTeamNode {
   teamLeadAgent: OrgAgentMember;
   hrCoordinatorAgent: OrgAgentMember;
   specialistMembers: OrgAgentMember[];
+  /** Flat team membership (includes leads, HR and specialists). */
+  members?: OrgAgentMember[];
   linkedProjectId?: string;
   linkedProjectName?: string;
   lastActiveAt: number | null;
   status: OrgNodeStatus;
   description?: string;
+  /** Persistent local disk directory bound to this team. */
+  workspacePath?: string | null;
 }
 
 export interface OrgDepartmentNode {
   id: string;
   name: string;
+  icon?: string;
+  color?: string;
+  order?: number;
   parentDepartmentId: string | null;
   departmentCeoAgent: OrgAgentMember;
+  /** Default project manager for this department (pmAgentId === pmAgent.id). */
+  pmAgent?: OrgAgentMember;
+  pmAgentId?: string;
   teams: OrgTeamNode[];
   subDepartmentIds?: string[];
   linkedProjects: Array<{ id: string; name: string; path?: string }>;
@@ -63,6 +70,8 @@ export interface OrgDepartmentNode {
   lastActiveAt: number | null;
   status: OrgNodeStatus;
   description?: string;
+  /** Persistent local disk directory bound to this department. */
+  workspacePath?: string | null;
 }
 
 export interface RootCEO {
@@ -73,6 +82,8 @@ export interface RootCEO {
   chiefOfStaffAgent?: OrgAgentMember;
   lastActiveAt: number | null;
   status: OrgNodeStatus;
+  /** Persistent local disk directory bound to the root organization. */
+  workspacePath?: string | null;
 }
 
 export interface OrgHierarchy {
@@ -85,10 +96,14 @@ export interface OrgProject {
   id: string;
   name: string;
   departmentId: string;
-  teamId?: string;
+  teamIds: string[];
+  goal?: string;
   description?: string;
-  status?: 'active' | 'completed' | 'queued';
+  context?: { repos?: string[]; skills?: string[]; notes?: string };
+  status: 'active' | 'dormant' | 'done';
   path?: string;
+  /** Persistent local disk directory bound to this project (canonical folder path). */
+  workspacePath?: string | null;
 }
 
 export interface OrgConversationMessage {
@@ -102,6 +117,12 @@ export interface OrgConversationMessage {
 export interface OrgConversation {
   id: string;
   title: string;
+  /** Chat belongs to exactly one project. */
+  projectId?: string;
+  /** Optional team that handled the chat. */
+  teamId?: string;
+  /** Optional agent that handled the chat. */
+  agentId?: string;
   type: 'ceo_directive' | 'dept_handoff' | 'team_execution';
   sourceNodeId: string;
   targetNodeId: string;
