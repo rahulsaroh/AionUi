@@ -67,6 +67,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'dormant' | 'shared'>('all');
   const [deptSubTabs, setDeptSubTabs] = useState<Record<string, 'teams' | 'projects'>>({});
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [ceoChatModalVisible, setCeoChatModalVisible] = useState(false);
@@ -202,6 +203,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   );
 
   const allTeams = useMemo(() => hierarchy.departments.flatMap((d) => d.teams), [hierarchy.departments]);
+
+  const query = searchQuery.trim().toLowerCase();
+  const filteredDepartments = useMemo(() => {
+    if (!query) return hierarchy.departments;
+    return hierarchy.departments.filter((dept) => {
+      if (dept.name.toLowerCase().includes(query)) return true;
+      const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
+      if (deptTeams.some((t) => t.name.toLowerCase().includes(query))) return true;
+      const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+      return deptProjects.some((p) => p.name.toLowerCase().includes(query));
+    });
+  }, [hierarchy.departments, allTeams, projects, query]);
 
   const teamsInSelectedDept = useMemo(() => {
     if (selectedDepartmentId) {
@@ -490,7 +503,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         >
           <div className='flex items-center gap-6px'>
             <span className='text-11px font-semibold uppercase tracking-wider'>
-              Departments ({hierarchy.departments.length})
+              Departments ({filteredDepartments.length})
             </span>
             {collapsedSections.has('departments') ? (
               <Right size={11} theme='outline' />
@@ -502,7 +515,13 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
         {!collapsedSections.has('departments') && (
           <div className='flex flex-col gap-2px px-6px mt-2px'>
-            {hierarchy.departments.map((dept) => {
+            <Input
+              className='w-full h-26px text-10px'
+              placeholder='Search departments, teams, projects...'
+              value={searchQuery}
+              onChange={setSearchQuery}
+            />
+            {filteredDepartments.map((dept) => {
               const status = deptStatus(dept);
               const theme = ORG_THEME_PALETTE[status];
               const isSelected = selectedDepartmentId === dept.id;
@@ -552,18 +571,13 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                     )}
                   >
                     <div className='flex items-center gap-6px min-w-0'>
-                      <span className='size-5px rounded-full shrink-0' style={{ backgroundColor: theme.borderColor }} />
+                      <span
+                        className='size-4px rounded-full shrink-0 opacity-60'
+                        style={{ backgroundColor: theme.borderColor }}
+                      />
                       <span className='font-semibold truncate' title={dept.name}>
                         {dept.name}
                       </span>
-                      {dept.workspacePath && (
-                        <span
-                          className='text-9px font-mono text-t-tertiary truncate max-w-60px'
-                          title={dept.workspacePath}
-                        >
-                          📁 {dept.workspacePath}
-                        </span>
-                      )}
                     </div>
                     <div className='flex items-center gap-3px shrink-0'>
                       {/* Sub-tab pills (segmented control) */}
@@ -677,18 +691,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                           {dept.pmAgent && (
                             <div
                               key='pm-pinned'
-                              className='flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px bg-amber-500/10 border border-amber-500/20'
+                              className='flex items-center justify-between px-6px py-2px rounded cursor-pointer transition-colors text-10px hover:bg-fill-2'
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectDept(dept.id);
                               }}
                             >
-                              <div className='flex items-center gap-5px truncate min-w-0'>
-                                <Robot size={11} theme='outline' className='text-amber-400 shrink-0' />
+                              <div className='flex items-center gap-4px truncate min-w-0'>
+                                <Robot size={10} theme='outline' className='text-t-tertiary shrink-0' />
                                 <span className='font-medium truncate' title={dept.pmAgent.name}>
                                   {dept.pmAgent.name}
                                 </span>
-                                <span className='text-9px text-amber-400 font-mono'>
+                                <span className='text-8px text-t-tertiary font-mono'>
                                   {t('team.organization.pm', { defaultValue: 'PM' })}
                                 </span>
                               </div>
@@ -726,15 +740,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                   >
                                     <div className='flex items-center gap-5px truncate min-w-0'>
                                       <User size={11} theme='outline' className='text-primary shrink-0' />
-                                      <span className='truncate'>{team.name}</span>
-                                      {team.workspacePath && (
-                                        <span
-                                          className='text-9px font-mono text-t-tertiary truncate max-w-60px'
-                                          title={team.workspacePath}
-                                        >
-                                          📁 {team.workspacePath}
-                                        </span>
-                                      )}
+                                      <span className='truncate' title={team.name}>
+                                        {team.name}
+                                      </span>
                                     </div>
                                     <div className='flex items-center gap-3px shrink-0'>
                                       <Tooltip content='Edit Team' position='top'>
@@ -753,7 +761,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                         </span>
                                       </Tooltip>
                                       <span
-                                        className='size-5px rounded-full shrink-0'
+                                        className='size-4px rounded-full shrink-0 opacity-60'
                                         style={{ backgroundColor: tTheme.borderColor }}
                                       />
                                     </div>
@@ -796,15 +804,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                     >
                                       <div className='flex items-center gap-6px truncate min-w-0'>
                                         <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
-                                        <span className='truncate font-medium'>{proj.name}</span>
-                                        {proj.workspacePath && (
-                                          <span
-                                            className='text-9px font-mono text-t-tertiary truncate max-w-60px'
-                                            title={proj.workspacePath}
-                                          >
-                                            📁 {proj.workspacePath}
-                                          </span>
-                                        )}
+                                        <span className='truncate font-medium' title={proj.name}>
+                                          {proj.name}
+                                        </span>
                                       </div>
                                       <div className='flex items-center gap-3px shrink-0'>
                                         <Tag size='small' color={statusColor} className='text-9px'>
