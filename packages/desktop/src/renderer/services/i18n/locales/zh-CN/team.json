@@ -65,7 +65,10 @@
     "noTeams": "此部门暂无团队",
     "noProjects": "此部门暂无项目",
     "noChats": "暂无聊天",
-    "newChat": "新建聊天"
+    "newChat": "新建聊天",
+    "noSearchResults": "未找到匹配的部门、团队或项目。",
+    "noDepartments": "未找到部门。",
+    "searchPlaceholder": "搜索部门、团队、项目..."
   },
   "activeMembers": {
     "title": "工作中成员",

@@ -381,6 +381,9 @@
     "noTeams": "No teams in this department yet.",
     "noProjects": "No projects in this department.",
     "noChats": "No chats yet.",
-    "newChat": "New chat"
+    "newChat": "New chat",
+    "noSearchResults": "No departments, teams, or projects match your search.",
+    "noDepartments": "No departments found.",
+    "searchPlaceholder": "Search departments, teams, projects..."
   }
 }

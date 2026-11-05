@@ -516,392 +516,447 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         {!collapsedSections.has('departments') && (
           <div className='flex flex-col gap-2px px-6px mt-2px'>
             <Input
+              allowClear
               className='w-full h-26px text-10px'
-              placeholder='Search departments, teams, projects...'
+              placeholder={t('team.organization.searchPlaceholder', {
+                defaultValue: 'Search departments, teams, projects...',
+              })}
               value={searchQuery}
               onChange={setSearchQuery}
             />
-            {filteredDepartments.map((dept) => {
-              const status = deptStatus(dept);
-              const theme = ORG_THEME_PALETTE[status];
-              const isSelected = selectedDepartmentId === dept.id;
-              const isDeptExpanded = !collapsedDepts.has(dept.id);
-              const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
-              const deptProjects = projects.filter((p) => p.departmentId === dept.id);
-              const subTab = deptSubTabs[dept.id] ?? 'teams';
+            {filteredDepartments.length === 0 ? (
+              <div className='px-12px py-16px text-center text-11px text-t-tertiary'>
+                {searchQuery
+                  ? t('team.organization.noSearchResults', {
+                      defaultValue: 'No departments, teams, or projects match your search.',
+                    })
+                  : t('team.organization.noDepartments', { defaultValue: 'No departments found.' })}
+              </div>
+            ) : (
+              filteredDepartments.map((dept) => {
+                const status = deptStatus(dept);
+                const theme = ORG_THEME_PALETTE[status];
+                const isSelected = selectedDepartmentId === dept.id;
+                const isDeptExpanded = !collapsedDepts.has(dept.id);
+                const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
+                const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+                const subTab = deptSubTabs[dept.id] ?? 'teams';
 
-              const sharedCanonicalIds = new Set<string>();
-              deptTeams.forEach((t) =>
-                t.specialistMembers.forEach((m) => {
-                  if (m.assignedTeamIds.length > 1) sharedCanonicalIds.add(m.canonicalAgentId);
-                })
-              );
+                const sharedCanonicalIds = new Set<string>();
+                deptTeams.forEach((t) =>
+                  t.specialistMembers.forEach((m) => {
+                    if (m.assignedTeamIds.length > 1) sharedCanonicalIds.add(m.canonicalAgentId);
+                  })
+                );
 
-              const filteredTeams = deptTeams.filter((team) => {
-                if (activeFilter === 'all') return true;
-                if (activeFilter === 'dormant') return teamStatus(team) === 'dormant';
-                if (activeFilter === 'shared') {
-                  return team.specialistMembers.some((m) => sharedCanonicalIds.has(m.canonicalAgentId));
-                }
-                return teamStatus(team) !== 'dormant';
-              });
+                const filteredTeams = deptTeams.filter((team) => {
+                  if (activeFilter === 'all') return true;
+                  if (activeFilter === 'dormant') return teamStatus(team) === 'dormant';
+                  if (activeFilter === 'shared') {
+                    return team.specialistMembers.some((m) => sharedCanonicalIds.has(m.canonicalAgentId));
+                  }
+                  return teamStatus(team) !== 'dormant';
+                });
 
-              const filteredProjects = deptProjects.filter((proj) => {
-                if (activeFilter === 'all') return true;
-                if (activeFilter === 'shared') return proj.teamIds.length > 1;
-                return proj.status === activeFilter;
-              });
+                const filteredProjects = deptProjects.filter((proj) => {
+                  if (activeFilter === 'all') return true;
+                  if (activeFilter === 'shared') return proj.teamIds.length > 1;
+                  return proj.status === activeFilter;
+                });
 
-              return (
-                <div
-                  key={dept.id}
-                  className='flex flex-col rounded-8px overflow-hidden mb-4px border border-[var(--color-border-2)] bg-[var(--color-bg-2)]'
-                >
-                  {/* Department header */}
+                return (
                   <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectDept(dept.id);
-                    }}
-                    className={classNames(
-                      'group flex items-center justify-between px-8px py-5px rounded-6px cursor-pointer transition-colors text-12px',
-                      isSelected
-                        ? 'bg-primary/10 text-t-primary border border-primary/20'
-                        : 'hover:bg-fill-3 text-t-primary'
-                    )}
+                    key={dept.id}
+                    className='flex flex-col rounded-8px overflow-hidden mb-4px border border-[var(--color-border-2)] bg-[var(--color-bg-2)]'
                   >
-                    <div className='flex items-center gap-6px min-w-0'>
-                      <span
-                        className='size-4px rounded-full shrink-0 opacity-60'
-                        style={{ backgroundColor: theme.borderColor }}
-                      />
-                      <span className='font-semibold truncate' title={dept.name}>
-                        {dept.name}
-                      </span>
-                    </div>
-                    <div className='flex items-center gap-3px shrink-0'>
-                      {/* Sub-tab pills (segmented control) */}
-                      <div className='flex rounded-4px border border-[var(--color-border-2)] bg-fill-1 shrink-0'>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeptSubTab(dept.id, 'teams');
-                          }}
-                          className={classNames(
-                            'px-5px py-1px text-9px transition-colors shrink-0 rounded-l-4px',
-                            subTab === 'teams'
-                              ? 'bg-fill-3 text-t-primary'
-                              : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
-                          )}
-                        >
-                          {t('team.organization.teamsTab', { defaultValue: 'Teams' })}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeptSubTab(dept.id, 'projects');
-                          }}
-                          className={classNames(
-                            'px-5px py-1px text-9px transition-colors shrink-0 rounded-r-4px',
-                            subTab === 'projects'
-                              ? 'bg-fill-3 text-t-primary'
-                              : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
-                          )}
-                        >
-                          {t('team.organization.project', { defaultValue: 'Projects' })}
-                        </button>
+                    {/* Department header */}
+                    <div
+                      role='button'
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectDept(dept.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectDept(dept.id);
+                        }
+                      }}
+                      className={classNames(
+                        'group flex items-center justify-between px-8px py-5px rounded-6px cursor-pointer transition-colors text-12px',
+                        isSelected
+                          ? 'bg-primary/10 text-t-primary border border-primary/20'
+                          : 'hover:bg-fill-3 text-t-primary'
+                      )}
+                    >
+                      <div className='flex items-center gap-6px min-w-0'>
+                        <span
+                          className='size-4px rounded-full shrink-0 opacity-60'
+                          style={{ backgroundColor: theme.borderColor }}
+                        />
+                        <span className='font-semibold truncate' title={dept.name}>
+                          {dept.name}
+                        </span>
                       </div>
-                      <Tooltip
-                        content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
-                        position='top'
-                      >
-                        <span
-                          role='button'
-                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity ml-2px'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEntityEdit('department', dept, { departmentId: dept.id });
-                          }}
-                        >
-                          <Edit size={11} theme='outline' />
-                        </span>
-                      </Tooltip>
-                      <Tooltip content='Set Folder' position='top'>
-                        <span
-                          role='button'
-                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-amber-400 hover:bg-amber-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEntityEdit('department', dept, { departmentId: dept.id });
-                          }}
-                        >
-                          <LinkOne size={11} theme='outline' />
-                        </span>
-                      </Tooltip>
-                      <Tooltip
-                        content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
-                        position='top'
-                      >
-                        <span
-                          role='button'
-                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openProjectModal(dept.id);
-                          }}
-                        >
-                          <FolderPlus size={11} theme='outline' />
-                        </span>
-                      </Tooltip>
-                      <Tooltip
-                        content={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
-                        position='top'
-                      >
-                        <span
-                          role='button'
-                          className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTargetDeptIdForTeam(dept.id);
-                          }}
-                        >
-                          <Plus size={11} theme='outline' />
-                        </span>
-                      </Tooltip>
-                      {deptTeams.length > 0 ? (
-                        <span
-                          className='text-t-tertiary'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleDept(dept.id);
-                          }}
-                          role='button'
-                        >
-                          {isDeptExpanded ? <Down size={10} theme='outline' /> : <Right size={10} theme='outline' />}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {isDeptExpanded && (
-                    <div className='flex flex-col gap-1px pl-20px pr-4px py-2px border-l border-slate-700/40 ml-12px'>
-                      {subTab === 'teams' ? (
-                        <>
-                          {/* PM pinned at top */}
-                          {dept.pmAgent && (
-                            <div
-                              key='pm-pinned'
-                              className='flex items-center justify-between px-6px py-2px rounded cursor-pointer transition-colors text-10px hover:bg-fill-2'
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectDept(dept.id);
-                              }}
-                            >
-                              <div className='flex items-center gap-4px truncate min-w-0'>
-                                <Robot size={10} theme='outline' className='text-t-tertiary shrink-0' />
-                                <span className='font-medium truncate' title={dept.pmAgent.name}>
-                                  {dept.pmAgent.name}
-                                </span>
-                                <span className='text-8px text-t-tertiary font-mono'>
-                                  {t('team.organization.pm', { defaultValue: 'PM' })}
-                                </span>
-                              </div>
-                              <span className='text-9px text-amber-400 font-mono'>
-                                {t('team.organization.pinned', { defaultValue: 'Pinned' })}
-                              </span>
-                            </div>
-                          )}
-                          {/* Teams list */}
-                          <div className='flex flex-col gap-0.5px'>
-                            {filteredTeams.length === 0 ? (
-                              <div className='px-6px py-4px text-10px text-t-tertiary italic'>
-                                {activeFilter === 'all'
-                                  ? t('team.organization.noTeams', { defaultValue: 'No teams in this department yet.' })
-                                  : 'No matching teams.'}
-                              </div>
-                            ) : (
-                              filteredTeams.map((team) => {
-                                const tStatus = teamStatus(team);
-                                const tTheme = ORG_THEME_PALETTE[tStatus];
-                                const isTeamSelected = selectedTeamId === team.id;
-                                return (
-                                  <div
-                                    key={team.id}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSelectTeam(team.id);
-                                    }}
-                                    className={classNames(
-                                      'flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px',
-                                      isTeamSelected
-                                        ? 'bg-primary/10 text-t-primary border border-primary/20'
-                                        : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary'
-                                    )}
-                                  >
-                                    <div className='flex items-center gap-5px truncate min-w-0'>
-                                      <User size={11} theme='outline' className='text-primary shrink-0' />
-                                      <span className='truncate' title={team.name}>
-                                        {team.name}
-                                      </span>
-                                    </div>
-                                    <div className='flex items-center gap-3px shrink-0'>
-                                      <Tooltip content='Edit Team' position='top'>
-                                        <span
-                                          role='button'
-                                          className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleOpenEntityEdit('team', team, {
-                                              departmentId: dept.id,
-                                              teamId: team.id,
-                                            });
-                                          }}
-                                        >
-                                          <Edit size={10} theme='outline' />
-                                        </span>
-                                      </Tooltip>
-                                      <span
-                                        className='size-4px rounded-full shrink-0 opacity-60'
-                                        style={{ backgroundColor: tTheme.borderColor }}
-                                      />
-                                    </div>
-                                  </div>
-                                );
-                              })
+                      <div className='flex items-center gap-3px shrink-0'>
+                        {/* Sub-tab pills (segmented control) */}
+                        <div className='flex rounded-4px border border-[var(--color-border-2)] bg-fill-1 shrink-0'>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeptSubTab(dept.id, 'teams');
+                            }}
+                            className={classNames(
+                              'px-5px py-1px text-9px transition-colors shrink-0 rounded-l-4px',
+                              subTab === 'teams'
+                                ? 'bg-fill-3 text-t-primary'
+                                : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
                             )}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          {/* Projects list with chats nested underneath */}
-                          <div className='flex flex-col gap-1px'>
-                            {filteredProjects.length === 0 ? (
-                              <div className='px-6px py-4px text-10px text-t-tertiary italic'>
-                                {activeFilter === 'all'
-                                  ? t('team.organization.noProjects', {
-                                      defaultValue: 'No projects in this department.',
-                                    })
-                                  : 'No matching projects.'}
+                          >
+                            {t('team.organization.teamsTab', { defaultValue: 'Teams' })}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeptSubTab(dept.id, 'projects');
+                            }}
+                            className={classNames(
+                              'px-5px py-1px text-9px transition-colors shrink-0 rounded-r-4px',
+                              subTab === 'projects'
+                                ? 'bg-fill-3 text-t-primary'
+                                : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
+                            )}
+                          >
+                            {t('team.organization.project', { defaultValue: 'Projects' })}
+                          </button>
+                        </div>
+                        <Tooltip
+                          content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
+                          position='top'
+                        >
+                          <span
+                            role='button'
+                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity ml-2px'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEntityEdit('department', dept, { departmentId: dept.id });
+                            }}
+                          >
+                            <Edit size={11} theme='outline' />
+                          </span>
+                        </Tooltip>
+                        <Tooltip content='Set Folder' position='top'>
+                          <span
+                            role='button'
+                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-amber-400 hover:bg-amber-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEntityEdit('department', dept, { departmentId: dept.id });
+                            }}
+                          >
+                            <LinkOne size={11} theme='outline' />
+                          </span>
+                        </Tooltip>
+                        <Tooltip
+                          content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
+                          position='top'
+                        >
+                          <span
+                            role='button'
+                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openProjectModal(dept.id);
+                            }}
+                          >
+                            <FolderPlus size={11} theme='outline' />
+                          </span>
+                        </Tooltip>
+                        <Tooltip
+                          content={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
+                          position='top'
+                        >
+                          <span
+                            role='button'
+                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTargetDeptIdForTeam(dept.id);
+                            }}
+                          >
+                            <Plus size={11} theme='outline' />
+                          </span>
+                        </Tooltip>
+                        {deptTeams.length > 0 ? (
+                          <span
+                            className='text-t-tertiary'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDept(dept.id);
+                            }}
+                            role='button'
+                          >
+                            {isDeptExpanded ? <Down size={10} theme='outline' /> : <Right size={10} theme='outline' />}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {isDeptExpanded && (
+                      <div className='flex flex-col gap-1px pl-20px pr-4px py-2px border-l border-slate-700/40 ml-12px'>
+                        {subTab === 'teams' ? (
+                          <>
+                            {/* PM pinned at top */}
+                            {dept.pmAgent && (
+                              <div
+                                key='pm-pinned'
+                                className='flex items-center justify-between px-6px py-2px rounded cursor-pointer transition-colors text-10px hover:bg-fill-2'
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectDept(dept.id);
+                                }}
+                              >
+                                <div className='flex items-center gap-4px truncate min-w-0'>
+                                  <Robot size={10} theme='outline' className='text-t-tertiary shrink-0' />
+                                  <span className='font-medium truncate' title={dept.pmAgent.name}>
+                                    {dept.pmAgent.name}
+                                  </span>
+                                  <span className='text-8px text-t-tertiary font-mono'>
+                                    {t('team.organization.pm', { defaultValue: 'PM' })}
+                                  </span>
+                                </div>
+                                <span className='text-9px text-amber-400 font-mono'>
+                                  {t('team.organization.pinned', { defaultValue: 'Pinned' })}
+                                </span>
                               </div>
-                            ) : (
-                              filteredProjects.map((proj) => {
-                                const chats = projectConversationsMap.get(proj.id) ?? [];
-                                const isProjectSelected = selectedProjectId === proj.id;
-                                const statusColor =
-                                  proj.status === 'active' ? 'emerald' : proj.status === 'dormant' ? 'gray' : 'purple';
-                                return (
-                                  <div key={proj.id} className='flex flex-col'>
-                                    {/* Project row */}
+                            )}
+                            {/* Teams list */}
+                            <div className='flex flex-col gap-0.5px'>
+                              {filteredTeams.length === 0 ? (
+                                <div className='px-6px py-4px text-10px text-t-tertiary italic'>
+                                  {activeFilter === 'all'
+                                    ? t('team.organization.noTeams', {
+                                        defaultValue: 'No teams in this department yet.',
+                                      })
+                                    : 'No matching teams.'}
+                                </div>
+                              ) : (
+                                filteredTeams.map((team) => {
+                                  const tStatus = teamStatus(team);
+                                  const tTheme = ORG_THEME_PALETTE[tStatus];
+                                  const isTeamSelected = selectedTeamId === team.id;
+                                  return (
                                     <div
+                                      key={team.id}
+                                      role='button'
+                                      tabIndex={0}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleSelectProject(proj.id);
+                                        handleSelectTeam(team.id);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault();
+                                          handleSelectTeam(team.id);
+                                        }
                                       }}
                                       className={classNames(
-                                        'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary',
-                                        isProjectSelected ? 'bg-primary/10 border border-primary/20' : 'hover:bg-fill-2'
+                                        'flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px',
+                                        isTeamSelected
+                                          ? 'bg-primary/10 text-t-primary border border-primary/20'
+                                          : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary'
                                       )}
                                     >
-                                      <div className='flex items-center gap-6px truncate min-w-0'>
-                                        <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
-                                        <span className='truncate font-medium' title={proj.name}>
-                                          {proj.name}
+                                      <div className='flex items-center gap-5px truncate min-w-0'>
+                                        <User size={11} theme='outline' className='text-primary shrink-0' />
+                                        <span className='truncate' title={team.name}>
+                                          {team.name}
                                         </span>
                                       </div>
                                       <div className='flex items-center gap-3px shrink-0'>
-                                        <Tag size='small' color={statusColor} className='text-9px'>
-                                          {proj.status}
-                                        </Tag>
-                                        <Tooltip content='Edit Project' position='top'>
+                                        <Tooltip content='Edit Team' position='top'>
                                           <span
                                             role='button'
                                             className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              handleOpenEntityEdit('project', proj, {
-                                                departmentId: proj.departmentId,
-                                                teamId: proj.teamIds?.[0],
+                                              handleOpenEntityEdit('team', team, {
+                                                departmentId: dept.id,
+                                                teamId: team.id,
                                               });
                                             }}
                                           >
                                             <Edit size={10} theme='outline' />
                                           </span>
                                         </Tooltip>
+                                        <span
+                                          className='size-4px rounded-full shrink-0 opacity-60'
+                                          style={{ backgroundColor: tTheme.borderColor }}
+                                        />
                                       </div>
                                     </div>
-                                    {/* Chats nested under project */}
-                                    <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-slate-700/20 ml-12px'>
-                                      {chats.length === 0 ? (
-                                        <div className='px-6px py-2px text-9px text-t-tertiary italic'>
-                                          {t('team.organization.noChats', { defaultValue: 'No chats yet.' })}
-                                        </div>
-                                      ) : (
-                                        chats.map((conv) => {
-                                          const isChatSelected = selectedChatId === conv.id;
-                                          return (
-                                            <div
-                                              key={conv.id}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedChatId(conv.id);
-                                                onSessionClick?.();
-                                                void navigate('/organization');
-                                              }}
-                                              className={classNames(
-                                                'p-3px rounded-4px cursor-pointer transition-colors flex flex-col gap-1px text-10px border border-transparent',
-                                                isChatSelected
-                                                  ? 'bg-primary/10 border-primary/30 text-t-primary'
-                                                  : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary hover:border-[var(--color-border-2)]'
-                                              )}
-                                            >
-                                              <div className='flex items-center justify-between gap-4px'>
-                                                <span
-                                                  className='font-semibold text-t-primary truncate'
-                                                  title={conv.title}
-                                                >
-                                                  {conv.title}
-                                                </span>
-                                                <span className='text-8px text-t-tertiary font-mono'>
-                                                  {formatChatTime(conv.timestamp)}
-                                                </span>
-                                              </div>
-                                              {conv.summary ? (
-                                                <span className='text-9px text-t-secondary truncate'>
-                                                  {conv.summary}
-                                                </span>
-                                              ) : null}
-                                              {chatBadgeLabel(conv) ? (
-                                                <span className='text-8px text-t-tertiary font-mono tracking-tight'>
-                                                  {chatBadgeLabel(conv)}
-                                                </span>
-                                              ) : null}
-                                            </div>
-                                          );
-                                        })
-                                      )}
-                                      <button
+                                  );
+                                })
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* Projects list with chats nested underneath */}
+                            <div className='flex flex-col gap-1px'>
+                              {filteredProjects.length === 0 ? (
+                                <div className='px-6px py-4px text-10px text-t-tertiary italic'>
+                                  {activeFilter === 'all'
+                                    ? t('team.organization.noProjects', {
+                                        defaultValue: 'No projects in this department.',
+                                      })
+                                    : 'No matching projects.'}
+                                </div>
+                              ) : (
+                                filteredProjects.map((proj) => {
+                                  const chats = projectConversationsMap.get(proj.id) ?? [];
+                                  const isProjectSelected = selectedProjectId === proj.id;
+                                  const statusColor =
+                                    proj.status === 'active'
+                                      ? 'emerald'
+                                      : proj.status === 'dormant'
+                                        ? 'gray'
+                                        : 'purple';
+                                  return (
+                                    <div key={proj.id} className='flex flex-col'>
+                                      {/* Project row */}
+                                      <div
+                                        role='button'
+                                        tabIndex={0}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleNewChat(dept.id, proj);
+                                          handleSelectProject(proj.id);
                                         }}
-                                        className='px-6px py-1px text-9px text-t-tertiary hover:text-t-primary hover:bg-fill-2 rounded cursor-pointer flex items-center gap-2px'
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            handleSelectProject(proj.id);
+                                          }
+                                        }}
+                                        className={classNames(
+                                          'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary',
+                                          isProjectSelected
+                                            ? 'bg-primary/10 border border-primary/20'
+                                            : 'hover:bg-fill-2'
+                                        )}
                                       >
-                                        <Plus size={10} />
-                                        <span>{t('team.organization.newChat', { defaultValue: 'New chat' })}</span>
-                                      </button>
+                                        <div className='flex items-center gap-6px truncate min-w-0'>
+                                          <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
+                                          <span className='truncate font-medium' title={proj.name}>
+                                            {proj.name}
+                                          </span>
+                                        </div>
+                                        <div className='flex items-center gap-3px shrink-0'>
+                                          <Tag size='small' color={statusColor} className='text-9px'>
+                                            {proj.status}
+                                          </Tag>
+                                          <Tooltip content='Edit Project' position='top'>
+                                            <span
+                                              role='button'
+                                              className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenEntityEdit('project', proj, {
+                                                  departmentId: proj.departmentId,
+                                                  teamId: proj.teamIds?.[0],
+                                                });
+                                              }}
+                                            >
+                                              <Edit size={10} theme='outline' />
+                                            </span>
+                                          </Tooltip>
+                                        </div>
+                                      </div>
+                                      {/* Chats nested under project */}
+                                      <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-slate-700/20 ml-12px'>
+                                        {chats.length === 0 ? (
+                                          <div className='px-6px py-2px text-9px text-t-tertiary italic'>
+                                            {t('team.organization.noChats', { defaultValue: 'No chats yet.' })}
+                                          </div>
+                                        ) : (
+                                          chats.map((conv) => {
+                                            const isChatSelected = selectedChatId === conv.id;
+                                            return (
+                                              <div
+                                                key={conv.id}
+                                                role='button'
+                                                tabIndex={0}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedChatId(conv.id);
+                                                  onSessionClick?.();
+                                                  void navigate('/organization');
+                                                }}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    setSelectedChatId(conv.id);
+                                                    onSessionClick?.();
+                                                    void navigate('/organization');
+                                                  }
+                                                }}
+                                                className={classNames(
+                                                  'p-3px rounded-4px cursor-pointer transition-colors flex flex-col gap-1px text-10px border border-transparent',
+                                                  isChatSelected
+                                                    ? 'bg-primary/10 border-primary/30 text-t-primary'
+                                                    : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary hover:border-[var(--color-border-2)]'
+                                                )}
+                                              >
+                                                <div className='flex items-center justify-between gap-4px'>
+                                                  <span
+                                                    className='font-semibold text-t-primary truncate'
+                                                    title={conv.title}
+                                                  >
+                                                    {conv.title}
+                                                  </span>
+                                                  <span className='text-8px text-t-tertiary font-mono'>
+                                                    {formatChatTime(conv.timestamp)}
+                                                  </span>
+                                                </div>
+                                                {conv.summary ? (
+                                                  <span className='text-9px text-t-secondary truncate'>
+                                                    {conv.summary}
+                                                  </span>
+                                                ) : null}
+                                                {chatBadgeLabel(conv) ? (
+                                                  <span className='text-8px text-t-tertiary font-mono tracking-tight'>
+                                                    {chatBadgeLabel(conv)}
+                                                  </span>
+                                                ) : null}
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleNewChat(dept.id, proj);
+                                          }}
+                                          className='px-6px py-1px text-9px text-t-tertiary hover:text-t-primary hover:bg-fill-2 rounded cursor-pointer flex items-center gap-2px'
+                                        >
+                                          <Plus size={10} />
+                                          <span>{t('team.organization.newChat', { defaultValue: 'New chat' })}</span>
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                                  );
+                                })
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>
