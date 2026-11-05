@@ -58,7 +58,14 @@
     "departmentName": "部门名称",
     "manageProjects": "管理项目",
     "statusDormant": "Dormant",
-    "statusDone": "Done"
+    "statusDone": "Done",
+    "project": "项目",
+    "pm": "PM",
+    "pinned": "已固定",
+    "noTeams": "此部门暂无团队",
+    "noProjects": "此部门暂无项目",
+    "noChats": "暂无聊天",
+    "newChat": "新建聊天"
   },
   "activeMembers": {
     "title": "工作中成员",
