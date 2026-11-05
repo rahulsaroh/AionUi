@@ -61,6 +61,7 @@ const CanvasInner: React.FC = () => {
     selectedDepartmentId,
     selectedTeamId,
     selectedProjectId,
+    focusedNodeId,
     setSelectedDepartment,
     setSelectedTeam,
     setSelectedProject,
@@ -73,7 +74,7 @@ const CanvasInner: React.FC = () => {
   } = useOrgStore();
 
   const navigate = useNavigate();
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter, getNode } = useReactFlow();
 
   const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
   const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
@@ -202,6 +203,10 @@ const CanvasInner: React.FC = () => {
         onSelectNode: (id: string, type: 'ceo') => handleSelectNode(id, type),
       },
       position: { x: 0, y: 0 },
+      className:
+        focusedNodeId === hierarchy.rootCeo.id
+          ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
+          : undefined,
     });
 
     hierarchy.departments.forEach((dept) => {
@@ -235,6 +240,8 @@ const CanvasInner: React.FC = () => {
           },
         },
         position: { x: 0, y: 0 },
+        className:
+          focusedNodeId === dept.id ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]' : undefined,
       });
 
       rawEdges.push({
@@ -267,6 +274,10 @@ const CanvasInner: React.FC = () => {
               },
             },
             position: { x: 0, y: 0 },
+            className:
+              focusedNodeId === team.id
+                ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
+                : undefined,
           });
           rawEdges.push({ id: `edge-${dept.id}->${team.id}`, source: dept.id, target: team.id, type: 'delegation' });
 
@@ -290,6 +301,10 @@ const CanvasInner: React.FC = () => {
                   setEditEntity({ type: 'project', data: proj, context: { departmentId: dept.id, teamId: team.id } }),
               },
               position: { x: 0, y: 0 },
+              className:
+                focusedNodeId === `project-${proj.id}`
+                  ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
+                  : undefined,
             });
             rawEdges.push({
               id: `edge-${team.id}->project-${proj.id}`,
@@ -342,6 +357,15 @@ const CanvasInner: React.FC = () => {
     setEdges,
     t,
   ]);
+
+  // Center canvas on the focused node when sidebar-driven selection changes
+  useEffect(() => {
+    if (!focusedNodeId) return;
+    const node = getNode(focusedNodeId);
+    if (node) {
+      setCenter(node.position.x, node.position.y, { duration: 400 });
+    }
+  }, [focusedNodeId, getNode, setCenter]);
 
   const handleConfirmCreateDept = () => {
     if (!newDeptName.trim()) return;

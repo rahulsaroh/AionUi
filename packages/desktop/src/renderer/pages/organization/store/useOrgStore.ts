@@ -80,6 +80,7 @@ type OrgStoreState = {
   selectedDepartmentId: string | null;
   selectedTeamId: string | null;
   selectedProjectId: string | null;
+  focusedNodeId: string | null;
   isSimulating: boolean;
   simulationStep: number;
   simulationMessage: string;
@@ -115,6 +116,7 @@ function createInitialState(): OrgStoreState {
     selectedDepartmentId: null,
     selectedTeamId: null,
     selectedProjectId: null,
+    focusedNodeId: null,
     isSimulating: false,
     simulationStep: 0,
     simulationMessage: '',
@@ -176,22 +178,43 @@ export function useOrgStore() {
   }, []);
 
   const setSelectedDepartment = useCallback((departmentId: string | null) => {
-    globalState = { ...globalState, selectedDepartmentId: departmentId, selectedTeamId: null, selectedProjectId: null };
+    globalState = {
+      ...globalState,
+      selectedDepartmentId: departmentId,
+      selectedTeamId: null,
+      selectedProjectId: null,
+      focusedNodeId: departmentId,
+    };
     notify();
   }, []);
 
   const setSelectedTeam = useCallback((teamId: string | null) => {
-    globalState = { ...globalState, selectedTeamId: teamId, selectedProjectId: null };
+    globalState = { ...globalState, selectedTeamId: teamId, selectedProjectId: null, focusedNodeId: teamId };
     notify();
   }, []);
 
   const setSelectedProject = useCallback((projectId: string | null) => {
-    globalState = { ...globalState, selectedProjectId: projectId };
+    globalState = {
+      ...globalState,
+      selectedProjectId: projectId,
+      focusedNodeId: projectId ? `project-${projectId}` : null,
+    };
     notify();
   }, []);
 
   const clearOrgSelection = useCallback(() => {
-    globalState = { ...globalState, selectedDepartmentId: null, selectedTeamId: null, selectedProjectId: null };
+    globalState = {
+      ...globalState,
+      selectedDepartmentId: null,
+      selectedTeamId: null,
+      selectedProjectId: null,
+      focusedNodeId: null,
+    };
+    notify();
+  }, []);
+
+  const setFocusedNode = useCallback((nodeId: string | null) => {
+    globalState = { ...globalState, focusedNodeId: nodeId };
     notify();
   }, []);
 
@@ -461,6 +484,7 @@ export function useOrgStore() {
     setSelectedDepartment,
     setSelectedTeam,
     setSelectedProject,
+    setFocusedNode,
     clearOrgSelection,
     resetToDefault,
     addDepartment,
