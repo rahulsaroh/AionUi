@@ -43,6 +43,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 获取拖拽文件/目录的绝对路径 / Get absolute path of dragged file/directory
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  // Native folder picker (directory selection). Falls back to a typed/pasted path
+  // when the native dialog is unavailable; returns the chosen absolute path(s).
+  selectDirectory: (options?: { defaultPath?: string }) =>
+    ipcRenderer
+      .invoke(
+        ADAPTER_BRIDGE_EVENT_KEY,
+        JSON.stringify({
+          name: 'show-open',
+          data: {
+            defaultPath: options?.defaultPath,
+            properties: ['openDirectory', 'createDirectory'],
+          },
+        })
+      )
+      .then((res: unknown) => {
+        const parsed = res as { filePaths?: string[] };
+        return parsed.filePaths;
+      })
+      .catch((error) => {
+        console.error('selectDirectory error:', error);
+        throw error;
+      }),
   // Feedback: collect and compress recent log files
   collectFeedbackLogs: () => ipcRenderer.invoke('feedback:collect-logs'),
   // Feedback: capture screenshot of the current window

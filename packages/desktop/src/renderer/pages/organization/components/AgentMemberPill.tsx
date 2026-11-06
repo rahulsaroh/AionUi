@@ -48,15 +48,9 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
     <div className='flex flex-col gap-2px text-11px'>
       <span className='font-bold text-t-primary'>{member.name}</span>
       <span className='text-t-secondary'>{member.title || member.role}</span>
-      {isShared && (
-        <span className='text-indigo-400 font-mono'>
-          🔗 Shared across {sharedCount} departments/teams
-        </span>
-      )}
+      {isShared && <span className='text-indigo-400 font-mono'>🔗 Shared across {sharedCount} departments/teams</span>}
       {isBusyElsewhere && (
-        <span className='text-emerald-400 font-semibold'>
-          Busy working in [{member.busyInDepartmentName}]
-        </span>
+        <span className='text-emerald-400 font-semibold'>Busy working in [{member.busyInDepartmentName}]</span>
       )}
       <span className='text-t-tertiary text-10px capitalize'>Status: {theme.label}</span>
     </div>
@@ -78,7 +72,11 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
         style={{
           borderColor: isHighlighted ? '#818CF8' : theme.borderColor,
           backgroundColor: isHighlighted ? 'rgba(99, 102, 241, 0.18)' : theme.backgroundColor,
-          boxShadow: isHighlighted ? '0 0 12px rgba(129, 140, 248, 0.4)' : theme.boxShadow !== 'none' ? theme.boxShadow : undefined,
+          boxShadow: isHighlighted
+            ? '0 0 12px rgba(129, 140, 248, 0.4)'
+            : theme.boxShadow !== 'none'
+              ? theme.boxShadow
+              : undefined,
           opacity: theme.opacity,
           transition: 'all 0.3s ease',
         }}
@@ -89,9 +87,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
         {/* Avatar with subtle dual-ring border for shared members */}
         <div
           className={`relative rounded-full flex items-center justify-center shrink-0 ${
-            isShared
-              ? 'ring-2 ring-indigo-500/50 ring-offset-1 ring-offset-[var(--color-bg-2)]'
-              : ''
+            isShared ? 'ring-2 ring-indigo-500/50 ring-offset-1 ring-offset-[var(--color-bg-2)]' : ''
           }`}
         >
           <Avatar size={16} shape='circle' className='bg-slate-700 text-white'>

@@ -21,10 +21,7 @@ export interface TeamNodeData {
   onSelectNode?: (nodeId: string, nodeType: 'team') => void;
 }
 
-export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
-  data,
-  selected = false,
-}) => {
+export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({ data, selected = false }) => {
   const { team, departmentName = '', orientation = 'TB', sharedCountsMap = {}, onSelectNode } = data;
   const { nodeStatuses, setHoveredCanonicalAgentId, setSelectedCanonicalAgentId } = useOrgStore();
 
@@ -80,9 +77,7 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
         <div className='flex items-center justify-between px-8px py-4px rounded-6px bg-blue-500/10 border border-blue-500/20 text-10px'>
           <div className='flex items-center gap-5px truncate min-w-0'>
             <Workbench size={12} theme='outline' className='text-blue-400 shrink-0' />
-            <span className='text-blue-300 font-semibold truncate'>
-              {team.teamLeadAgent.name}
-            </span>
+            <span className='text-blue-300 font-semibold truncate'>{team.teamLeadAgent.name}</span>
           </div>
           <span className='text-blue-400/80 text-9px font-mono shrink-0'>
             HR: {team.hrCoordinatorAgent.name.split(' ')[0]}

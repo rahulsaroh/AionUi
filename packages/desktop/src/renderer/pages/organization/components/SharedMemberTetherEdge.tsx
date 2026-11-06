@@ -30,13 +30,7 @@ export const SharedMemberTetherEdge: React.FC<EdgeProps> = ({
   return (
     <g className='shared-tether-edge'>
       {/* Outer subtle glow */}
-      <path
-        d={edgePath}
-        fill='none'
-        stroke='rgba(148, 163, 184, 0.25)'
-        strokeWidth={6}
-        strokeLinecap='round'
-      />
+      <path d={edgePath} fill='none' stroke='rgba(148, 163, 184, 0.25)' strokeWidth={6} strokeLinecap='round' />
       {/* Dotted tether line */}
       <BaseEdge
         id={id}

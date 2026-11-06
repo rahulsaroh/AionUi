@@ -19,10 +19,7 @@ export interface RootCeoNodeData {
   onSelectNode?: (nodeId: string, nodeType: 'ceo') => void;
 }
 
-export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({
-  data,
-  selected = false,
-}) => {
+export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({ data, selected = false }) => {
   const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode } = data;
   const { nodeStatuses, isSimulating } = useOrgStore();
 
@@ -48,9 +45,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
             👑
           </span>
           <div className='flex flex-col'>
-            <span className='font-bold text-15px leading-tight tracking-wide text-amber-200'>
-              Root Executive HQ
-            </span>
+            <span className='font-bold text-15px leading-tight tracking-wide text-amber-200'>Root Executive HQ</span>
             <span className='text-11px text-t-tertiary font-mono'>Chief Executive Command</span>
           </div>
         </div>
@@ -77,9 +72,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
               CEO
             </span>
             <div className='flex flex-col min-w-0'>
-              <span className='text-13px font-semibold text-t-primary truncate'>
-                {rootCeo.ceoAgent.name}
-              </span>
+              <span className='text-13px font-semibold text-t-primary truncate'>{rootCeo.ceoAgent.name}</span>
               <span className='text-11px text-t-secondary truncate'>
                 {rootCeo.ceoAgent.title || 'Aion CLI Executive Orchestrator'}
               </span>
@@ -119,10 +112,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
       {/* Global Status Ticker */}
       <div className='px-12px py-6px bg-fill-1 border-t border-[var(--color-border-2)] text-10px font-mono text-t-secondary flex items-center justify-between'>
         <div className='flex items-center gap-6px truncate'>
-          <span
-            className='size-7px rounded-full shrink-0'
-            style={{ backgroundColor: theme.borderColor }}
-          />
+          <span className='size-7px rounded-full shrink-0' style={{ backgroundColor: theme.borderColor }} />
           <span className='truncate'>
             {isSimulating ? 'Autonomous delegation in flight' : 'Ready for executive directives'}
           </span>

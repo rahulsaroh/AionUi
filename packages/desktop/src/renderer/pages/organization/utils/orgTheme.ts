@@ -113,8 +113,13 @@ export function computeLifecycleStatus(
   lastActiveAt: number | null | undefined,
   currentStatus?: OrgNodeStatus
 ): OrgNodeStatus {
-  // If explicitly working, in standby, or queued next, that overrides idle calculation
-  if (currentStatus === 'working' || currentStatus === 'department_standby' || currentStatus === 'queued_next') {
+  // If explicitly working, in standby, queued next, or recently finished, that overrides idle calculation
+  if (
+    currentStatus === 'working' ||
+    currentStatus === 'department_standby' ||
+    currentStatus === 'queued_next' ||
+    currentStatus === 'recently_finished'
+  ) {
     return currentStatus;
   }
 

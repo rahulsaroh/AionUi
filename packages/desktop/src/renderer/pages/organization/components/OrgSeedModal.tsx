@@ -64,7 +64,8 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
     >
       <div className='flex flex-col gap-10px'>
         <div className='text-12px text-t-secondary'>
-          Configure or export the complete corporate hierarchy (Root CEO, Departments, Sub-Teams, Leaders, and Specialists).
+          Configure or export the complete corporate hierarchy (Root CEO, Departments, Sub-Teams, Leaders, and
+          Specialists).
         </div>
         <Input.TextArea rows={14} value={jsonContent} onChange={setJsonContent} className='font-mono text-11px' />
         <div className='flex justify-between items-center text-11px text-t-tertiary'>

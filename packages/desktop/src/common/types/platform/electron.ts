@@ -15,6 +15,8 @@ export interface ElectronBridgeAPI {
   on: (callback: (event: { value: string }) => void) => void;
   // 获取拖拽文件/目录的绝对路径 / Get absolute path for dragged file/directory
   getPathForFile?: (file: File) => string;
+  // Native folder picker / 原生文件夹选择器
+  selectDirectory?: (options?: { defaultPath?: string }) => Promise<string[] | undefined>;
   // Feedback log collection / 收集反馈日志
   collectFeedbackLogs?: () => Promise<{ filename: string; data: number[] } | null>;
   // Feedback screenshot capture / 反馈截图

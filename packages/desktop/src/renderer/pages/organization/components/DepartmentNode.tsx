@@ -16,31 +16,39 @@ import {
   Workbench,
   Play,
   Plus,
+  Edit,
+  FolderPlus,
 } from '@icon-park/react';
+import { useTranslation } from 'react-i18next';
 import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
 import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
 
-export interface DepartmentNodeData {
+export type DepartmentNodeData = {
   department: OrgDepartmentNode;
   isCollapsed?: boolean;
   orientation?: 'TB' | 'LR';
   onToggleCollapse?: (deptId: string) => void;
   onAddSubTeam?: (deptId: string) => void;
+  onAddProject?: (deptId: string) => void;
+  onEditDepartment?: (deptId: string) => void;
   onRunTask?: (dept: OrgDepartmentNode) => void;
   onSelectNode?: (nodeId: string, nodeType: 'department') => void;
-}
+};
 
 export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boolean }> = ({
   data,
   selected = false,
 }) => {
+  const { t } = useTranslation();
   const {
     department,
     isCollapsed = false,
     orientation = 'TB',
     onToggleCollapse,
     onAddSubTeam,
+    onAddProject,
+    onEditDepartment,
     onRunTask,
     onSelectNode,
   } = data;
@@ -71,7 +79,6 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
         className='!bg-primary !w-10px !h-10px !border-2 !border-[var(--color-bg-2)] hover:!scale-125 transition-transform'
       />
 
-      {/* Header */}
       <div className='p-12px pb-8px bg-fill-1 border-b border-[var(--color-border-2)] flex items-center justify-between'>
         <div className='flex items-center gap-8px min-w-0'>
           <span className='size-28px rounded-8px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
@@ -98,15 +105,12 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
         </Tag>
       </div>
 
-      {/* Department CEO Leader Badge */}
       <div className='p-10px flex flex-col gap-8px bg-[var(--color-bg-2)]'>
         <div className='flex items-center justify-between px-8px py-5px rounded-8px bg-purple-500/10 border border-purple-500/20 text-11px'>
           <div className='flex items-center gap-6px truncate'>
             <Workbench size={14} theme='outline' className='text-purple-400 shrink-0' />
             <div className='flex flex-col truncate'>
-              <span className='text-purple-300 font-semibold truncate'>
-                {department.departmentCeoAgent.name}
-              </span>
+              <span className='text-purple-300 font-semibold truncate'>{department.departmentCeoAgent.name}</span>
               <span className='text-purple-400/80 text-9px'>
                 {department.departmentCeoAgent.title || 'Department Head / CEO'}
               </span>
@@ -117,7 +121,6 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
           </span>
         </div>
 
-        {/* Linked Org Projects Pills */}
         {department.linkedProjects.length > 0 && (
           <div className='flex flex-col gap-3px'>
             <span className='text-9px font-semibold uppercase tracking-wider text-t-tertiary'>
@@ -128,6 +131,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
                 <div
                   key={p.id}
                   className='flex items-center gap-4px px-6px py-2px rounded bg-fill-2 text-9px text-t-secondary font-mono border border-[var(--color-border-2)]'
+                  title={p.path || p.name}
                 >
                   <FolderClose size={10} theme='outline' className='text-amber-400' />
                   <span className='truncate max-w-100px'>{p.name}</span>
@@ -137,21 +141,22 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
           </div>
         )}
 
-        {/* Cron Schedule Badge */}
         {department.cronSchedule && (
           <div className='flex items-center justify-between px-8px py-3px rounded bg-cyan-500/10 border border-cyan-500/20 text-10px text-cyan-300'>
             <div className='flex items-center gap-5px truncate'>
               <AlarmClock size={12} theme='outline' className='text-cyan-400 shrink-0' />
               <span className='font-mono text-9px truncate'>{department.cronSchedule.schedule}</span>
             </div>
-            <span className='text-9px truncate text-cyan-400/80 max-w-120px' title={department.cronSchedule.taskDirective}>
+            <span
+              className='text-9px truncate text-cyan-400/80 max-w-120px'
+              title={department.cronSchedule.taskDirective}
+            >
               Active Cron
             </span>
           </div>
         )}
       </div>
 
-      {/* Footer Micro Status Bar */}
       <div className='px-10px py-5px bg-fill-1 border-t border-[var(--color-border-2)] text-10px font-mono text-t-secondary flex items-center justify-between'>
         <span className='truncate text-9px'>
           {hasChildren ? `${department.teams.length} Specialized Teams` : 'Standalone Department'}
@@ -171,7 +176,6 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
         )}
       </div>
 
-      {/* Hover Quick Actions */}
       <div className='absolute top-2 right-2 opacity-0 group-hover/dept:opacity-100 transition-opacity flex items-center gap-4px bg-[var(--color-bg-1)]/95 backdrop-blur-sm p-3px rounded-6px shadow-md border border-[var(--color-border-2)] z-10'>
         <Tooltip content='Dispatch Directive' position='top'>
           <Button
@@ -185,7 +189,29 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
             }}
           />
         </Tooltip>
-        <Tooltip content='Add Sub-Team' position='top'>
+        <Tooltip content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })} position='top'>
+          <Button
+            size='mini'
+            className='!px-5px !h-22px'
+            icon={<Edit size={11} theme='outline' />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditDepartment?.(department.id);
+            }}
+          />
+        </Tooltip>
+        <Tooltip content={t('team.organization.addProject', { defaultValue: 'Add Project' })} position='top'>
+          <Button
+            size='mini'
+            className='!px-5px !h-22px'
+            icon={<FolderPlus size={11} theme='outline' />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddProject?.(department.id);
+            }}
+          />
+        </Tooltip>
+        <Tooltip content={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })} position='top'>
           <Button
             size='mini'
             className='!px-5px !h-22px'
