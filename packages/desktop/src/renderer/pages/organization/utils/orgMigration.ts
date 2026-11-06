@@ -31,7 +31,7 @@ import type {
 } from '@/types/organization';
 import { normalizeOrgProject } from './orgCoherence';
 
-export const ORG_STORAGE_VERSION = 2;
+export const ORG_STORAGE_VERSION = 3;
 export const ORG_STORAGE_VERSION_KEY = 'aionui:org-storage-version';
 
 export interface OrgMigrationReport {

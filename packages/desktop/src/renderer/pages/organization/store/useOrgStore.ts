@@ -87,10 +87,12 @@ type OrgStoreState = {
 };
 
 function createInitialState(): OrgStoreState {
-  const rawHierarchy = loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
-  const rawProjects = loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
-  const rawConversations = loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
   const storedVersion = loadStored(STORAGE_KEYS.VERSION, () => 0);
+  // Force clean slate on version bump: discard old seeded data
+  const useDefaults = storedVersion < ORG_STORAGE_VERSION;
+  const rawHierarchy = useDefaults ? createDefaultOrgHierarchy() : loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
+  const rawProjects = useDefaults ? createDefaultOrgProjects() : loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
+  const rawConversations = useDefaults ? createDefaultOrgConversations() : loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
   const migration = migrateOrgStorageV2(rawHierarchy, rawProjects, rawConversations, storedVersion);
   if (migration.migrated) {
     try {
