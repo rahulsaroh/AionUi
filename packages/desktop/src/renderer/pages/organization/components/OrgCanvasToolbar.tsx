@@ -106,10 +106,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
             </Button>
           </Tooltip>
 
-          <Tooltip
-            content='Reset & Load default 5-department corporate hierarchy with pre-seeded teams'
-            position='bottom'
-          >
+          <Tooltip content='Clear organization data and return to a blank canvas' position='bottom'>
             <Button
               size='small'
               type='secondary'
@@ -120,7 +117,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               }}
               className='text-12px'
             >
-              Reset Default Org
+              Reset to Blank Canvas
             </Button>
           </Tooltip>
         </div>

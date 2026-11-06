@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Tooltip, Tag, Modal, Input, Message } from '@arco-design/web-react';
+import { Tooltip, Modal, Input, Message } from '@arco-design/web-react';
 import {
   NetworkTree,
   AlarmClock,
@@ -503,17 +503,21 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         </button>
       </div>
 
-      <div className='px-12px py-4px flex items-center gap-4px flex-wrap text-11px'>
+      <div className='px-8px py-4px flex items-center gap-4px flex-wrap'>
         {(['all', 'active', 'dormant', 'shared'] as const).map((filter) => (
-          <Tag
+          <button
             key={filter}
-            size='small'
-            color={activeFilter === filter ? 'arcoblue' : undefined}
-            className='cursor-pointer capitalize text-10px font-medium px-6px py-0.5px rounded-full'
+            type='button'
             onClick={() => setActiveFilter(filter)}
+            className={classNames(
+              'px-8px py-2px rounded-6px text-11px font-medium capitalize cursor-pointer border-none transition-colors',
+              activeFilter === filter
+                ? 'bg-primary/12 text-primary'
+                : 'bg-transparent text-t-tertiary hover:text-t-primary hover:bg-fill-2'
+            )}
           >
             {filter}
-          </Tag>
+          </button>
         ))}
       </div>
 

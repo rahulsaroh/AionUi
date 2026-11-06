@@ -71,6 +71,11 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     }
   }, [initialDirective, visible]);
 
+  const teamProjectForSelectedTeam = useMemo(() => {
+    if (selectedNodeType !== 'team' || !selectedNodeId) return undefined;
+    return projects.find((p) => p.teamIds.includes(selectedNodeId))?.id;
+  }, [projects, selectedNodeType, selectedNodeId]);
+
   if (!visible || !selectedNodeId) return null;
 
   let nodeTitle = 'Executive Node';
@@ -152,11 +157,6 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       c.targetNodeId === selectedNodeId ||
       (selectedNodeType === 'ceo' && c.type === 'ceo_directive')
   );
-
-  const teamProjectForSelectedTeam = useMemo(() => {
-    if (selectedNodeType !== 'team' || !selectedNodeId) return undefined;
-    return projects.find((p) => p.teamIds.includes(selectedNodeId))?.id;
-  }, [projects, selectedNodeType, selectedNodeId]);
 
   const handleChangeFolder = async () => {
     if (!selectedNodeId || !selectedNodeType) return;
