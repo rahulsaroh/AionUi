@@ -42,7 +42,7 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
   const handleResetDefault = () => {
     resetToDefault();
     setJsonContent(JSON.stringify(createDefaultOrgHierarchy(), null, 2));
-    Message.success('Reset to 5-Department Corporate Hierarchy!');
+    Message.success('Reset to Clean Slate (Root CEO only)!');
     onClose();
   };
 
@@ -70,7 +70,7 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
         <Input.TextArea rows={14} value={jsonContent} onChange={setJsonContent} className='font-mono text-11px' />
         <div className='flex justify-between items-center text-11px text-t-tertiary'>
           <Button size='small' type='secondary' icon={<Refresh size={12} />} onClick={handleResetDefault}>
-            Reset to Default Pre-Seeded Org
+            Reset to Clean Slate (Root CEO only)
           </Button>
           <span>Valid JSON format</span>
         </div>

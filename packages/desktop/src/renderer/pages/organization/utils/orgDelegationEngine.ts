@@ -5,7 +5,8 @@
  */
 
 import { ipcBridge } from '@/common';
-import type { OrgHierarchy, OrgAgentMember, OrgNodeStatus } from '@/types/organization';
+import type { OrgHierarchy, OrgAgentMember, OrgNodeStatus, OrgDepartmentNode, OrgTeamNode } from '@/types/organization';
+import { createDepartmentShell, createTeamShell } from './orgCoherence';
 
 export interface DelegationStepLog {
   id: string;
@@ -27,6 +28,8 @@ export interface DelegationExecutionResult {
   finalSynthesis: string;
   involvedDepartmentIds: string[];
   involvedTeamIds: string[];
+  createdDepartments?: OrgDepartmentNode[];
+  createdTeams?: Array<{ departmentId: string; team: OrgTeamNode }>;
 }
 
 export interface AgentExecutionOptions {
@@ -171,19 +174,6 @@ export class OrgDelegationEngine {
       return fullLog;
     };
 
-    // Resolve target department / team
-    let targetDept = targetDeptId ? this.hierarchy.departments.find((d) => d.id === targetDeptId) : undefined;
-    let targetTeam = targetTeamId
-      ? this.hierarchy.departments.flatMap((d) => d.teams).find((t) => t.id === targetTeamId)
-      : undefined;
-
-    if (targetTeam && !targetDept) {
-      targetDept = this.hierarchy.departments.find((d) => d.teams.some((t) => t.id === targetTeamId));
-    }
-    if (targetTeam && targetDept && !targetDept.teams.some((t) => t.id === targetTeamId)) {
-      targetTeam = undefined;
-    }
-
     // Step 1: User -> Root CEO
     addLog({
       depth: 1,
@@ -197,46 +187,227 @@ export class OrgDelegationEngine {
 
     this.updateNodeStatus?.('root-ceo', 'working');
 
-    // Route by keyword if not explicitly targeted
-    if (!targetDept && !targetTeam) {
-      const lower = userPrompt.toLowerCase();
-      if (
-        lower.includes('video') ||
-        lower.includes('youtube') ||
-        lower.includes('stoic') ||
-        lower.includes('channel')
-      ) {
-        targetDept = this.hierarchy.departments.find((d) => d.id === 'dept-youtube');
-      } else if (
-        lower.includes('coach') ||
-        lower.includes('health') ||
-        lower.includes('diet') ||
-        lower.includes('vitality') ||
-        lower.includes('wealth')
-      ) {
-        targetDept = this.hierarchy.departments.find((d) => d.id === 'dept-coaches');
-      } else if (
-        lower.includes('social') ||
-        lower.includes('tweet') ||
-        lower.includes('post') ||
-        lower.includes('distribution')
-      ) {
-        targetDept = this.hierarchy.departments.find((d) => d.id === 'dept-social');
-      } else if (lower.includes('product') || lower.includes('seo') || lower.includes('stripe')) {
-        targetDept = this.hierarchy.departments.find((d) => d.id === 'dept-digital-product');
-      } else {
-        targetDept =
-          this.hierarchy.departments.find((d) => d.id === 'dept-app-builder') || this.hierarchy.departments[0];
-      }
-    }
+    // -------------------------------------------------------------
+    // Intent check A: Direct Department Creation Request
+    // -------------------------------------------------------------
+    const deptCreationMatch = userPrompt.match(
+      /(?:create|add|new|setup|set up|start|instantiate|build)\s+(?:a\s+|an\s+)?department(?:\s+(?:called|named|for))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
+    );
+    if (deptCreationMatch && deptCreationMatch[1]?.trim()) {
+      const deptName = deptCreationMatch[1].trim().replace(/^["']|["']$/g, '');
+      const newDept = createDepartmentShell(deptName);
 
-    if (!targetDept) {
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: 'Executive Operations',
+        toRole: 'Chief of Staff',
+        message: `Instantiating new department "${deptName}" with dedicated Department Head.`,
+        status: 'working',
+      });
+
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: 'User / Executive Board',
+        toRole: 'User',
+        message: `Department "${deptName}" successfully instantiated. Ready for team configurations and project assignments.`,
+        status: 'completed',
+      });
+
+      this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
       return {
-        success: false,
+        success: true,
         directiveId,
         userPrompt,
         logs,
-        finalSynthesis: 'No valid department found to handle the executive directive.',
+        finalSynthesis: `Global Organization CEO: I have established the "${deptName}" department with a dedicated Department Head. You can now configure sub-teams, bind workspaces, or issue directives to this department.`,
+        involvedDepartmentIds: [newDept.id],
+        involvedTeamIds: [],
+        createdDepartments: [newDept],
+      };
+    }
+
+    // -------------------------------------------------------------
+    // Intent check B: Direct Team Creation Request
+    // -------------------------------------------------------------
+    const teamCreationMatch = userPrompt.match(
+      /(?:create|add|new|setup|set up)\s+(?:a\s+|an\s+)?team(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']\s+|\s+)?(?:in|under|for|to)\s+(?:department\s+)?[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
+    );
+
+    let explicitTeamName: string | null = null;
+    let explicitDeptTarget: OrgDepartmentNode | undefined;
+
+    if (teamCreationMatch) {
+      explicitTeamName = teamCreationMatch[1]?.trim()?.replace(/^["']|["']$/g, '') || null;
+      const deptTargetName =
+        teamCreationMatch[2]
+          ?.trim()
+          ?.replace(/^["']|["']$/g, '')
+          .toLowerCase() || '';
+      explicitDeptTarget = this.hierarchy.departments.find(
+        (d) =>
+          d.id.toLowerCase() === deptTargetName ||
+          d.name.toLowerCase().includes(deptTargetName) ||
+          deptTargetName.includes(d.name.toLowerCase())
+      );
+    } else {
+      // Shorter format: "Create team Mobile" when targetDeptId is given or only 1 department exists
+      const shortTeamMatch = userPrompt.match(
+        /(?:create|add|new)\s+(?:a\s+|an\s+)?team(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
+      );
+      if (shortTeamMatch && shortTeamMatch[1]?.trim()) {
+        explicitTeamName = shortTeamMatch[1].trim().replace(/^["']|["']$/g, '');
+        explicitDeptTarget =
+          (targetDeptId ? this.hierarchy.departments.find((d) => d.id === targetDeptId) : undefined) ||
+          (this.hierarchy.departments.length === 1 ? this.hierarchy.departments[0] : undefined);
+      }
+    }
+
+    if (explicitTeamName && explicitDeptTarget) {
+      const newTeam = createTeamShell(explicitDeptTarget.id, explicitTeamName);
+
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: explicitDeptTarget.departmentCeoAgent.name,
+        toRole: 'Department CEO',
+        message: `Directing creation of Sub-Team "${explicitTeamName}" under ${explicitDeptTarget.name}.`,
+        status: 'working',
+      });
+
+      addLog({
+        depth: 2,
+        fromName: explicitDeptTarget.departmentCeoAgent.name,
+        fromRole: 'Department CEO',
+        toName: 'User / Executive Board',
+        toRole: 'User',
+        message: `Sub-Team "${explicitTeamName}" created with dedicated Team Lead and HR Coordinator.`,
+        status: 'completed',
+      });
+
+      this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
+      return {
+        success: true,
+        directiveId,
+        userPrompt,
+        logs,
+        finalSynthesis: `Global Organization CEO: Created sub-team "${explicitTeamName}" under the "${explicitDeptTarget.name}" department. Equipped with a Team Lead and HR Coordinator.`,
+        involvedDepartmentIds: [explicitDeptTarget.id],
+        involvedTeamIds: [newTeam.id],
+        createdTeams: [{ departmentId: explicitDeptTarget.id, team: newTeam }],
+      };
+    }
+
+    // Resolve target department / team
+    let targetDept = targetDeptId ? this.hierarchy.departments.find((d) => d.id === targetDeptId) : undefined;
+    let targetTeam = targetTeamId
+      ? this.hierarchy.departments.flatMap((d) => d.teams).find((t) => t.id === targetTeamId)
+      : undefined;
+
+    if (targetTeam && !targetDept) {
+      targetDept = this.hierarchy.departments.find((d) => d.teams.some((t) => t.id === targetTeamId));
+    }
+    if (targetTeam && targetDept && !targetDept.teams.some((t) => t.id === targetTeamId)) {
+      targetTeam = undefined;
+    }
+
+    // Dynamic keyword matching if not explicitly targeted
+    if (!targetDept && !targetTeam && this.hierarchy.departments.length > 0) {
+      const lower = userPrompt.toLowerCase();
+      targetDept = this.hierarchy.departments.find(
+        (d) => lower.includes(d.name.toLowerCase()) || (d.description && lower.includes(d.description.toLowerCase()))
+      );
+      if (!targetDept) {
+        if (
+          lower.includes('video') ||
+          lower.includes('youtube') ||
+          lower.includes('media') ||
+          lower.includes('channel')
+        ) {
+          targetDept = this.hierarchy.departments.find((d) => /video|youtube|media|channel/i.test(d.name));
+        } else if (
+          lower.includes('social') ||
+          lower.includes('tweet') ||
+          lower.includes('post') ||
+          lower.includes('marketing')
+        ) {
+          targetDept = this.hierarchy.departments.find((d) => /social|marketing|growth/i.test(d.name));
+        } else if (
+          lower.includes('coach') ||
+          lower.includes('health') ||
+          lower.includes('life') ||
+          lower.includes('hr')
+        ) {
+          targetDept = this.hierarchy.departments.find((d) => /coach|people|hr|health/i.test(d.name));
+        } else if (
+          lower.includes('app') ||
+          lower.includes('software') ||
+          lower.includes('engineer') ||
+          lower.includes('dev') ||
+          lower.includes('code')
+        ) {
+          targetDept = this.hierarchy.departments.find((d) => /app|software|engineer|tech/i.test(d.name));
+        }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Direct Root CEO level execution (No departments or HQ directive)
+    // -------------------------------------------------------------
+    if (!targetDept) {
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: rootCeo.chiefOfStaffAgent?.name || 'Chief of Staff',
+        toRole: 'Executive Operations',
+        message: `Analyzing executive mandate at Global HQ level: "${userPrompt}"`,
+        status: 'working',
+      });
+
+      let ceoSynthesis = '';
+      if (!this.simulationMode) {
+        try {
+          ceoSynthesis = await this.runOrgAgentStep({
+            agent: rootCeo.ceoAgent,
+            systemPrompt:
+              'You are the Global Organization CEO. Direct strategic planning, department structuring, and organizational leadership.',
+            userDirective: userPrompt,
+            workspacePath: rootCeo.workspacePath || '',
+            onStreamUpdate: (text) => this.onAgentStream?.(text),
+          });
+        } catch {
+          ceoSynthesis = `Executive strategic roadmap formulated by ${rootCeo.ceoAgent.name}.`;
+        }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        ceoSynthesis = `Global Organization CEO: Executive directive acknowledged for "${userPrompt}". I have evaluated the organizational requirements. You can instruct me to instantiate departments (e.g. 'Create department Engineering') or use the '+ Add Department' button on the canvas to begin building the team structure.`;
+      }
+
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: 'User / Executive Board',
+        toRole: 'User',
+        message: ceoSynthesis,
+        status: 'completed',
+      });
+
+      this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
+      return {
+        success: true,
+        directiveId,
+        userPrompt,
+        logs,
+        finalSynthesis: ceoSynthesis,
         involvedDepartmentIds: [],
         involvedTeamIds: [],
       };
@@ -265,12 +436,23 @@ export class OrgDelegationEngine {
       targetTeam = targetDept.teams[0];
     }
     if (!targetTeam) {
+      addLog({
+        depth: 2,
+        fromName: targetDept.departmentCeoAgent.name,
+        fromRole: 'Department CEO',
+        toName: rootCeo.ceoAgent.name,
+        toRole: 'Root CEO',
+        message: `Department ${targetDept.name} received mandate but has no sub-teams configured. Ready to create team on instruction.`,
+        status: 'completed',
+      });
+      this.updateNodeStatus?.(targetDept.id, 'recently_finished');
+
       return {
-        success: false,
+        success: true,
         directiveId,
         userPrompt,
         logs,
-        finalSynthesis: `Department ${targetDept.name} has no teams configured.`,
+        finalSynthesis: `Department ${targetDept.name} received the mandate "${userPrompt}". To begin execution, add a team (e.g. 'Create team Core in ${targetDept.name}' or click + Add Team).`,
         involvedDepartmentIds: [targetDept.id],
         involvedTeamIds: [],
       };
@@ -306,8 +488,7 @@ export class OrgDelegationEngine {
     this.updateNodeStatus?.(targetTeam.hrCoordinatorAgent.id, 'department_standby');
     this.updateNodeStatus?.(targetTeam.id, 'department_standby');
 
-    // Specialist execution — real backend agent calls inside the bound workspacePath
-    // Sequential await is intentional: each agent's output may inform the next
+    // Specialist execution
     const specialistOutputs: string[] = [];
     for (let i = 0; i < Math.min(targetTeam.specialistMembers.length, 3); i++) {
       const spec = targetTeam.specialistMembers[i];

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -90,13 +90,23 @@ function createInitialState(): OrgStoreState {
   const storedVersion = loadStored(STORAGE_KEYS.VERSION, () => 0);
   // Force clean slate on version bump: discard old seeded data
   const useDefaults = storedVersion < ORG_STORAGE_VERSION;
-  const rawHierarchy = useDefaults ? createDefaultOrgHierarchy() : loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
-  const rawProjects = useDefaults ? createDefaultOrgProjects() : loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
-  const rawConversations = useDefaults ? createDefaultOrgConversations() : loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
+  const rawHierarchy = useDefaults
+    ? createDefaultOrgHierarchy()
+    : loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
+  const rawProjects = useDefaults
+    ? createDefaultOrgProjects()
+    : loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
+  const rawConversations = useDefaults
+    ? createDefaultOrgConversations()
+    : loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
   const migration = migrateOrgStorageV2(rawHierarchy, rawProjects, rawConversations, storedVersion);
-  if (migration.migrated) {
+  if (useDefaults || migration.migrated) {
     try {
       localStorage.setItem(STORAGE_KEYS.VERSION, String(ORG_STORAGE_VERSION));
+      localStorage.setItem(STORAGE_KEYS.HIERARCHY, JSON.stringify(rawHierarchy));
+      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(rawProjects));
+      localStorage.setItem(STORAGE_KEYS.CONVERSATIONS, JSON.stringify(rawConversations));
+      localStorage.setItem(STORAGE_KEYS.CRON_JOBS, JSON.stringify([]));
     } catch {}
   }
   const reconciled = reconcileProjectsWithHierarchy(migration.hierarchy, migration.projects);
@@ -358,114 +368,122 @@ export function useOrgStore() {
     notify();
   }, []);
 
-  // Interactive CEO Delegation Simulation (Phase 7)
+  // Interactive CEO Delegation Simulation
   const runSimulation = useCallback(async () => {
     if (globalState.isSimulating) return;
 
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    if (globalState.hierarchy.departments.length === 0) {
+      globalState = {
+        ...globalState,
+        isSimulating: true,
+        simulationStep: 1,
+        simulationMessage: 'Step 1/3: Root CEO receives high-level strategic directive at Global Executive HQ...',
+        nodeStatuses: {
+          'root-ceo': 'working',
+        },
+      };
+      notify();
+
+      await delay(1600);
+
+      globalState = {
+        ...globalState,
+        simulationStep: 2,
+        simulationMessage: 'Step 2/3: Root CEO evaluates organizational topology and formulates department roadmap...',
+        nodeStatuses: {
+          'root-ceo': 'working',
+        },
+      };
+      notify();
+
+      await delay(1800);
+
+      globalState = {
+        ...globalState,
+        simulationStep: 3,
+        simulationMessage:
+          'Step 3/3: Strategic plan established! Ready for department instantiation via chat or + Add Department.',
+        nodeStatuses: {
+          'root-ceo': 'recently_finished',
+        },
+      };
+      notify();
+
+      await delay(2000);
+
+      globalState = {
+        ...globalState,
+        isSimulating: false,
+        simulationStep: 0,
+        simulationMessage: '',
+        nodeStatuses: {},
+      };
+      notify();
+      return;
+    }
+
+    const firstDept = globalState.hierarchy.departments[0];
+    const firstTeam = firstDept?.teams?.[0];
+
     globalState = {
       ...globalState,
       isSimulating: true,
       simulationStep: 1,
-      simulationMessage:
-        'Step 1/6: Root CEO receives high-level directive: "Deploy Mobile Biometrics & Video Pipeline"...',
+      simulationMessage: 'Step 1/4: Root CEO receives high-level directive...',
       nodeStatuses: {
         'root-ceo': 'working',
+      },
+    };
+    notify();
+
+    await delay(1600);
+
+    globalState = {
+      ...globalState,
+      simulationStep: 2,
+      simulationMessage: `Step 2/4: Root CEO delegates to ${firstDept.name}. Department Head begins sprint planning...`,
+      nodeStatuses: {
+        'root-ceo': 'department_standby',
+        [firstDept.id]: 'working',
+        [firstDept.departmentCeoAgent.id]: 'working',
       },
     };
     notify();
 
     await delay(1800);
 
-    globalState = {
-      ...globalState,
-      simulationStep: 2,
-      simulationMessage:
-        'Step 2/6: Root CEO delegates to App Builder Department. CEO transitions to Standby (Amber), Dept CEO wakes up (Emerald)...',
-      nodeStatuses: {
-        'root-ceo': 'department_standby',
-        'dept-app-builder': 'working',
-        'agent-head-apps': 'working',
-      },
-    };
-    notify();
+    if (firstTeam) {
+      globalState = {
+        ...globalState,
+        simulationStep: 3,
+        simulationMessage: `Step 3/4: ${firstDept.name} delegates sprint deliverables to ${firstTeam.name}...`,
+        nodeStatuses: {
+          'root-ceo': 'department_standby',
+          [firstDept.id]: 'department_standby',
+          [firstTeam.id]: 'working',
+        },
+      };
+      notify();
 
-    await delay(2000);
-
-    globalState = {
-      ...globalState,
-      simulationStep: 3,
-      simulationMessage:
-        'Step 3/6: Department CEO delegates to Team Manager & HR. Team in Standby (Amber), UI/UX Specialist working (Emerald), Backend queued next (Steel Cyan)...',
-      nodeStatuses: {
-        'root-ceo': 'department_standby',
-        'dept-app-builder': 'department_standby',
-        'team-aionui': 'department_standby',
-        'lead-aionui': 'department_standby',
-        'hr-aionui': 'department_standby',
-        'spec-uiux-1': 'working',
-        'spec-be-1': 'queued_next',
-      },
-    };
-    notify();
-
-    await delay(2200);
+      await delay(2000);
+    }
 
     globalState = {
       ...globalState,
       simulationStep: 4,
       simulationMessage:
-        'Step 4/6: UI/UX Specialist finished (Muted Teal-Mint). Backend Integration now actively working (Soft Sage Emerald)...',
-      nodeStatuses: {
-        'root-ceo': 'department_standby',
-        'dept-app-builder': 'department_standby',
-        'team-aionui': 'department_standby',
-        'spec-uiux-1': 'recently_finished',
-        'spec-be-1': 'working',
-      },
-    };
-    notify();
-
-    await delay(2200);
-
-    globalState = {
-      ...globalState,
-      simulationStep: 5,
-      simulationMessage:
-        'Step 5/6: Shared Visual Designer working in YouTube Automation; Social Media pill displays "Busy in YouTube Dept" with Emerald ring...',
-      nodeStatuses: {
-        'root-ceo': 'department_standby',
-        'dept-app-builder': 'department_standby',
-        'team-aionui': 'department_standby',
-        'spec-uiux-1': 'recently_finished',
-        'spec-be-1': 'recently_finished',
-        'dept-youtube': 'working',
-        'spec-vis-shared': 'working',
-        'team-dormant-vitality': 'dormant',
-      },
-    };
-    notify();
-
-    await delay(2400);
-
-    globalState = {
-      ...globalState,
-      simulationStep: 6,
-      simulationMessage:
-        'Step 6/6: Deliverables verified and synthesized! Executive report delivered back up to Root CEO.',
+        'Step 4/4: Deliverables verified and synthesized! Executive report delivered back up to Root CEO.',
       nodeStatuses: {
         'root-ceo': 'working',
-        'dept-app-builder': 'recently_finished',
-        'team-aionui': 'recently_finished',
-        'spec-uiux-1': 'recently_finished',
-        'spec-be-1': 'recently_finished',
-        'spec-vis-shared': 'recently_finished',
+        [firstDept.id]: 'recently_finished',
+        ...(firstTeam ? { [firstTeam.id]: 'recently_finished' } : {}),
       },
     };
     notify();
 
-    await delay(2200);
+    await delay(2000);
 
     globalState = {
       ...globalState,

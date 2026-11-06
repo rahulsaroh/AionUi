@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -423,7 +423,11 @@ const CanvasInner: React.FC = () => {
         selectedNodeId={selectedNodeId}
         selectedNodeType={selectedNodeType}
         visible={isInspectorOpen}
-        onClose={() => setIsInspectorOpen(false)}
+        initialDirective={dispatchCeoPrompt}
+        onClose={() => {
+          setIsInspectorOpen(false);
+          setDispatchCeoPrompt('');
+        }}
         onOpenConversation={(convId) => {
           setIsInspectorOpen(false);
           void navigate(`/conversation/${convId}`);

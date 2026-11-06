@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -25,6 +25,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
+import { OrgDelegationEngine } from '@/renderer/pages/organization/utils/orgDelegationEngine';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '@/renderer/pages/organization/utils/orgTheme';
 import { createDepartmentShell, createTeamShell } from '@/renderer/pages/organization/utils/orgCoherence';
 import type { OrgConversation, OrgNodeStatus, OrgProject, OrgDepartmentNode, OrgTeamNode } from '@/types/organization';
@@ -52,6 +53,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     conversations,
     cronJobs,
     nodeStatuses,
+    updateNodeStatus,
     addOrgConversation,
     addDepartment,
     addSubTeam,
@@ -155,24 +157,46 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setCeoChatModalVisible(true);
   };
 
-  const handleConfirmSendToCeo = () => {
+  const handleConfirmSendToCeo = async () => {
     if (!ceoPrompt.trim()) return;
     const prompt = ceoPrompt.trim();
     setCeoPrompt('');
     setCeoChatModalVisible(false);
+
+    const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, updateNodeStatus);
+    const result = await engine.executeDirective(prompt, undefined, undefined, undefined, true);
+
+    if (result.createdDepartments && result.createdDepartments.length > 0) {
+      for (const dept of result.createdDepartments) {
+        addDepartment(dept);
+      }
+    }
+    if (result.createdTeams && result.createdTeams.length > 0) {
+      for (const { departmentId, team } of result.createdTeams) {
+        addSubTeam(departmentId, team);
+      }
+    }
+
     addOrgConversation({
       id: `conv-ceo-${Date.now()}`,
       title: `Directive to Root CEO: ${prompt.slice(0, 35)}...`,
       type: 'ceo_directive',
       sourceNodeId: 'root-ceo',
-      targetNodeId: 'dept-app-builder',
+      targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
       timestamp: Date.now(),
-      summary: `Direct user instruction to Root CEO: ${prompt}`,
+      summary: result.finalSynthesis,
       messages: [
-        { id: `msg-${Date.now()}`, sender: 'Executive User', role: 'user', content: prompt, timestamp: Date.now() },
+        { id: `msg-${Date.now()}-1`, sender: 'Executive User', role: 'user', content: prompt, timestamp: Date.now() },
+        {
+          id: `msg-${Date.now()}-2`,
+          sender: hierarchy.rootCeo.ceoAgent.name,
+          role: 'ceo',
+          content: result.finalSynthesis,
+          timestamp: Date.now(),
+        },
       ],
     });
-    Message.success('Executive directive sent to Root CEO! Check 2D Canvas for live cascading glow.');
+    Message.success('Executive directive processed by Root CEO!');
     void navigate('/organization');
   };
 

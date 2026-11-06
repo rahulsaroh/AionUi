@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -33,6 +33,7 @@ type OrgInspectorDrawerProps = {
   onEditDepartment?: (departmentId: string) => void;
   onEditProject?: (project: OrgProject) => void;
   onSetFolder?: (nodeId: string, nodeType: 'ceo' | 'department' | 'team') => void;
+  initialDirective?: string;
 };
 
 export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
@@ -44,6 +45,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   onEditDepartment,
   onEditProject,
   onSetFolder,
+  initialDirective,
 }) => {
   const {
     hierarchy,
@@ -54,11 +56,20 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     updateNodeStatus,
     updateDepartment,
     updateTeamNode,
+    addDepartment,
+    addSubTeam,
   } = useOrgStore();
   const [activeTab, setActiveTab] = useState<'conversations' | 'terminal' | 'members'>('conversations');
   const [directiveInput, setDirectiveInput] = useState('');
+  const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (initialDirective && visible) {
+      setDirectiveInput(initialDirective);
+    }
+  }, [initialDirective, visible]);
 
   if (!visible || !selectedNodeId) return null;
 
@@ -206,6 +217,16 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
         teamProjectForSelectedTeam,
         true // useRealExecution
       );
+      if (result.createdDepartments && result.createdDepartments.length > 0) {
+        for (const dept of result.createdDepartments) {
+          addDepartment(dept);
+        }
+      }
+      if (result.createdTeams && result.createdTeams.length > 0) {
+        for (const { departmentId, team } of result.createdTeams) {
+          addSubTeam(departmentId, team);
+        }
+      }
       if (result.success) {
         Message.success('Executive directive executed successfully!');
         addOrgConversation({
@@ -213,15 +234,21 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           title: `Directive: ${prompt.slice(0, 45)}...`,
           type: selectedNodeType === 'ceo' ? 'ceo_directive' : 'dept_handoff',
           sourceNodeId: selectedNodeId,
-          targetNodeId: result.involvedDepartmentIds[0] || 'dept-app-builder',
+          targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
           timestamp: Date.now(),
           summary: result.finalSynthesis,
           messages: [
-            { id: `msg-${Date.now()}-1`, sender: leaderName, role: 'lead', content: prompt, timestamp: Date.now() },
+            {
+              id: `msg-${Date.now()}-1`,
+              sender: 'Executive User',
+              role: 'user',
+              content: prompt,
+              timestamp: Date.now(),
+            },
             {
               id: `msg-${Date.now()}-2`,
-              sender: 'Org Delegation Engine',
-              role: 'system',
+              sender: leaderName,
+              role: selectedNodeType === 'ceo' ? 'ceo' : 'lead',
               content: result.finalSynthesis,
               timestamp: Date.now(),
             },
@@ -326,7 +353,11 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
             value={directiveInput}
             onChange={setDirectiveInput}
             onPressEnter={() => void handleDispatchDirective()}
-            placeholder={`Dispatch directive to ${leaderName}...`}
+            placeholder={
+              selectedNodeType === 'ceo'
+                ? "Ask Root CEO, plan structure, or type 'Create department Engineering'..."
+                : `Dispatch directive to ${leaderName}...`
+            }
             disabled={isExecuting}
             className='!rounded-8px text-12px'
           />
@@ -416,23 +447,41 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                   No historical organization threads for this node yet.
                 </div>
               ) : (
-                nodeConversations.map((conv) => (
-                  <div
-                    key={conv.id}
-                    onClick={() => onOpenConversation?.(conv.id)}
-                    className='p-10px rounded-8px bg-fill-1 hover:bg-fill-2 border border-[var(--color-border-2)] cursor-pointer transition-colors flex flex-col gap-4px'
-                  >
-                    <div className='flex items-center justify-between'>
-                      <span className='text-12px font-semibold text-t-primary truncate'>{conv.title}</span>
-                      <span className='text-10px font-mono text-t-tertiary shrink-0'>
-                        {new Date(conv.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                nodeConversations.map((conv) => {
+                  const isExpanded = expandedConvId === conv.id;
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => setExpandedConvId(isExpanded ? null : conv.id)}
+                      className='p-10px rounded-8px bg-fill-1 hover:bg-fill-2 border border-[var(--color-border-2)] cursor-pointer transition-colors flex flex-col gap-6px'
+                    >
+                      <div className='flex items-center justify-between'>
+                        <span className='text-12px font-semibold text-t-primary truncate'>{conv.title}</span>
+                        <span className='text-10px font-mono text-t-tertiary shrink-0'>
+                          {new Date(conv.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {conv.summary ? (
+                        <span className='text-11px text-t-secondary line-clamp-2'>{conv.summary}</span>
+                      ) : null}
+                      {isExpanded && conv.messages && conv.messages.length > 0 && (
+                        <div className='flex flex-col gap-6px pt-6px mt-4px border-t border-[var(--color-border-2)]'>
+                          {conv.messages.map((m) => (
+                            <div key={m.id} className='flex flex-col gap-2px text-11px bg-fill-2 p-6px rounded-6px'>
+                              <div className='flex items-center justify-between font-semibold text-t-primary'>
+                                <span>{m.sender}</span>
+                                <span className='text-9px text-t-tertiary font-mono'>
+                                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <span className='text-t-secondary whitespace-pre-wrap leading-relaxed'>{m.content}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    {conv.summary ? (
-                      <span className='text-11px text-t-secondary line-clamp-2'>{conv.summary}</span>
-                    ) : null}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </Tabs.TabPane>

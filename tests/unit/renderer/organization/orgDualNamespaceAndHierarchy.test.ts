@@ -17,9 +17,10 @@ import {
   getOrgNodeStyle,
 } from '@/renderer/pages/organization/utils/orgTheme';
 import { OrgDelegationEngine } from '@/renderer/pages/organization/utils/orgDelegationEngine';
-import { MAX_DELEGATION_DEPTH } from '@/types/organization';
+import { createDepartmentShell, createTeamShell } from '@/renderer/pages/organization/utils/orgCoherence';
+import { MAX_DELEGATION_DEPTH, type OrgHierarchy } from '@/types/organization';
 
-describe('Corporate Hierarchy Data Model & Pre-Seed (Phase 2 & Phase 7)', () => {
+describe('Corporate Hierarchy Data Model & Clean Slate Pre-Seed', () => {
   const hierarchy = createDefaultOrgHierarchy();
 
   it('initializes Root CEO at the top level with null parentId', () => {
@@ -30,68 +31,11 @@ describe('Corporate Hierarchy Data Model & Pre-Seed (Phase 2 & Phase 7)', () => 
     expect(hierarchy.rootCeo.chiefOfStaffAgent?.role).toBe('chief_of_staff');
   });
 
-  it('pre-populates all 5 mandatory corporate departments with dedicated leaders', () => {
-    expect(hierarchy.departments.length).toBe(0);
-
-    const deptNames = hierarchy.departments.map((d) => d.name);
-    expect(deptNames).toContain('App Builder Department');
-    expect(deptNames).toContain('YouTube Automation Department');
-    expect(deptNames).toContain('Digital Product Department');
-    expect(deptNames).toContain('Personal & Life Coaches Department');
-    expect(deptNames).toContain('Social Media Department');
-
-    hierarchy.departments.forEach((dept) => {
-      expect(dept.departmentCeoAgent).toBeDefined();
-      expect(dept.departmentCeoAgent.role).toBe('department_head');
-      expect(dept.parentDepartmentId).toBe('root-ceo');
-    });
-  });
-
-  it('pre-populates App Builder Department teams and specialist roles', () => {
-    const appDept = hierarchy.departments.find((d) => d.id === 'dept-app-builder')!;
-    const teamNames = appDept.teams.map((t) => t.name);
-    expect(teamNames).toContain('AionUi Core Team');
-    expect(teamNames).toContain('Gym Mentor App Team');
-    expect(teamNames).toContain('Finance Management App Team');
-    expect(teamNames).toContain('Time Management App Team');
-
-    const aionUiTeam = appDept.teams.find((t) => t.id === 'team-aionui')!;
-    expect(aionUiTeam.teamLeadAgent).toBeDefined();
-    expect(aionUiTeam.hrCoordinatorAgent).toBeDefined();
-    expect(aionUiTeam.specialistMembers.some((s) => s.name === 'UI/UX Specialist')).toBe(true);
-    expect(aionUiTeam.specialistMembers.some((s) => s.name === 'Backend Integration')).toBe(true);
-    expect(aionUiTeam.specialistMembers.some((s) => s.name === 'QA Tester')).toBe(true);
-  });
-
-  it('pre-populates YouTube Automation Department teams and specialist roles', () => {
-    const ytDept = hierarchy.departments.find((d) => d.id === 'dept-youtube')!;
-    const teamNames = ytDept.teams.map((t) => t.name);
-    expect(teamNames).toContain('Weekly Tech News Team');
-    expect(teamNames).toContain('Stoic Channel Team');
-    expect(teamNames).toContain('Child Animated Videos Team');
-  });
-
-  it('tracks shared cross-department specialists by canonicalAgentId (Phase 6)', () => {
-    const allSpecialists = hierarchy.departments.flatMap((d) => d.teams.flatMap((t) => t.specialistMembers));
-
-    const visualDesigners = allSpecialists.filter((s) => s.canonicalAgentId === 'canonical-visual-designer');
-    expect(visualDesigners.length).toBeGreaterThanOrEqual(2);
-
-    const financeManagers = allSpecialists.filter((s) => s.canonicalAgentId === 'canonical-finance-mgr');
-    expect(financeManagers.length).toBeGreaterThanOrEqual(2);
-
-    const physicalCoaches = allSpecialists.filter((s) => s.canonicalAgentId === 'canonical-physical-coach');
-    expect(physicalCoaches.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('includes a dormant branch unused for > 7 days (Phase 5 & 7)', () => {
-    const coachesDept = hierarchy.departments.find((d) => d.id === 'dept-coaches')!;
-    const dormantTeam = coachesDept.teams.find((t) => t.id === 'team-dormant-vitality')!;
-    expect(dormantTeam).toBeDefined();
-    expect(dormantTeam.status).toBe('dormant');
-    expect(dormantTeam.lastActiveAt).not.toBeNull();
-    const elapsed = Date.now() - (dormantTeam.lastActiveAt || 0);
-    expect(elapsed).toBeGreaterThan(7 * 24 * 3600 * 1000);
+  it('starts with a clean slate: 0 pre-seeded departments, teams, projects, or cron jobs', () => {
+    expect(hierarchy.departments).toHaveLength(0);
+    expect(createDefaultOrgProjects()).toHaveLength(0);
+    expect(createDefaultOrgConversations()).toHaveLength(0);
+    expect(createDefaultOrgCronJobs()).toHaveLength(0);
   });
 });
 
@@ -134,55 +78,87 @@ describe('Eye-Friendly Palette & Lifecycle Glow System (Phase 5)', () => {
   });
 });
 
-describe('Cascading Top-Down Delegation Engine (Phase 3)', () => {
-  const hierarchy = createDefaultOrgHierarchy();
+describe('Root CEO Directives & Interactive Creation Engine', () => {
+  const cleanHierarchy = createDefaultOrgHierarchy();
 
-  it('cascades user directive down from Root CEO to Dept CEO to Team Manager and Specialists', async () => {
-    const engine = new OrgDelegationEngine(hierarchy);
-    const result = await engine.executeDirective('Deploy biometric authentication for mobile app', 'dept-app-builder');
+  it('handles executive directives directly at Root CEO level when no departments exist', async () => {
+    const engine = new OrgDelegationEngine(cleanHierarchy);
+    const result = await engine.executeDirective('Formulate organizational plan for consumer app launch');
 
-    expect(result.success).toBe(false);
-    expect(result.involvedDepartmentIds).toContain('dept-app-builder');
-    expect(result.logs.length).toBeGreaterThanOrEqual(5);
+    expect(result.success).toBe(true);
+    expect(result.finalSynthesis).toContain('Global Organization CEO');
+    expect(result.logs.length).toBeGreaterThanOrEqual(1);
+    expect(result.logs[0].fromRole).toBe('User');
+    expect(result.logs[0].toRole).toBe('Root CEO');
+  });
+
+  it('automatically recognizes and instantiates a department from chat directive', async () => {
+    const engine = new OrgDelegationEngine(cleanHierarchy);
+    const result = await engine.executeDirective('Create department Mobile Development');
+
+    expect(result.success).toBe(true);
+    expect(result.createdDepartments).toBeDefined();
+    expect(result.createdDepartments).toHaveLength(1);
+    expect(result.createdDepartments![0].name).toBe('Mobile Development');
+    expect(result.createdDepartments![0].departmentCeoAgent).toBeDefined();
+    expect(result.createdDepartments![0].departmentCeoAgent.role).toBe('department_head');
+  });
+
+  it('automatically recognizes and instantiates a team under a department from chat directive', async () => {
+    const testDept = createDepartmentShell('Engineering');
+    const hierarchyWithDept: OrgHierarchy = {
+      ...cleanHierarchy,
+      departments: [testDept],
+    };
+
+    const engine = new OrgDelegationEngine(hierarchyWithDept);
+    const result = await engine.executeDirective('Create team iOS in department Engineering');
+
+    expect(result.success).toBe(true);
+    expect(result.createdTeams).toBeDefined();
+    expect(result.createdTeams).toHaveLength(1);
+    expect(result.createdTeams![0].departmentId).toBe(testDept.id);
+    expect(result.createdTeams![0].team.name).toBe('iOS');
+    expect(result.createdTeams![0].team.teamLeadAgent).toBeDefined();
+    expect(result.createdTeams![0].team.hrCoordinatorAgent).toBeDefined();
+  });
+
+  it('cascades user directive down from Root CEO to Dept CEO and Team Lead when teams exist', async () => {
+    const testDept = createDepartmentShell('Software');
+    const testTeam = createTeamShell(testDept.id, 'Frontend');
+    testTeam.specialistMembers = [
+      {
+        id: 'spec-1',
+        name: 'UI Specialist',
+        role: 'specialist',
+        canonicalAgentId: 'canonical-uiux',
+        assignedTeamIds: [testTeam.id],
+        status: 'idle',
+      },
+    ];
+    testDept.teams = [testTeam];
+
+    const hierarchyWithTeam: OrgHierarchy = {
+      ...cleanHierarchy,
+      departments: [testDept],
+    };
+
+    const engine = new OrgDelegationEngine(hierarchyWithTeam);
+    const result = await engine.executeDirective('Implement dark mode across application', testDept.id);
+
+    expect(result.success).toBe(true);
+    expect(result.involvedDepartmentIds).toContain(testDept.id);
+    expect(result.involvedTeamIds).toContain(testTeam.id);
+    expect(result.logs.length).toBeGreaterThanOrEqual(4);
 
     // Verify chain of command in logs
     expect(result.logs[0].fromRole).toBe('User');
     expect(result.logs[1].toRole).toBe('Department CEO');
     expect(result.logs[2].toRole).toBe('Team CEO / Manager');
-    expect(result.logs[result.logs.length - 1].toRole).toBe('Root CEO');
 
     // Verify max depth constraint
     result.logs.forEach((log) => {
       expect(log.depth).toBeLessThanOrEqual(MAX_DELEGATION_DEPTH);
     });
-  });
-
-  it('automatically routes specialized YouTube keywords to YouTube Automation Department', async () => {
-    const engine = new OrgDelegationEngine(hierarchy);
-    const result = await engine.executeDirective('Produce a stoic channel philosophical video about Marcus Aurelius');
-
-    expect(result.success).toBe(false);
-    expect(result.involvedDepartmentIds).toContain('dept-youtube');
-  });
-});
-
-describe('Isolated Projects & Automations Pre-Seed', () => {
-  it('creates default org projects with proper department links', () => {
-    const projects = createDefaultOrgProjects();
-    expect(projects.length).toBe(0);
-    const projectNames = projects.map((p) => p.name);
-    expect(projectNames).toHaveLength(0);
-  });
-
-  it('creates default org cron jobs', () => {
-    const cron = createDefaultOrgCronJobs();
-    expect(cron.length).toBe(0);
-    expect(cron[0].cronExpression).toBe('0 2 * * *');
-  });
-
-  it('creates default org conversations', () => {
-    const convs = createDefaultOrgConversations();
-    expect(convs.length).toBe(0);
-    expect(convs[0].type).toBe('ceo_directive');
   });
 });
