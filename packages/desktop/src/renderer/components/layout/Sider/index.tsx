@@ -10,7 +10,6 @@ import { useThemeContext } from '@renderer/hooks/context/ThemeContext';
 import { SiderToolbar, SiderSearchEntry, SiderScheduledEntry, SiderAssistantEntry, SiderPrimaryNav } from './SiderNav';
 import SiderFooter from './SiderFooter';
 import TeamSiderSection from './TeamSiderSection';
-import ScopeSegmentedToggle from './ScopeSegmentedToggle';
 import OrganizationSiderContent from './OrganizationSiderContent';
 import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
 import siderStyles from './Sider.module.css';
@@ -191,13 +190,6 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
           </Suspense>
         ) : (
           <div className='size-full flex flex-col gap-2px'>
-            {/* Top segmented switcher: Workplace vs Organization */}
-            <ScopeSegmentedToggle
-              collapsed={collapsed}
-              siderTooltipProps={siderTooltipProps}
-              onSessionClick={onSessionClick}
-            />
-
             {activeScope === 'organization' ? (
               <div className={classNames('flex-1 min-h-0 overflow-y-auto', siderStyles.scrollArea)}>
                 <OrganizationSiderContent

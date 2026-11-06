@@ -84,12 +84,27 @@ type OrgStoreState = {
   isSimulating: boolean;
   simulationStep: number;
   simulationMessage: string;
+  orgViewMode: 'chat' | 'canvas';
+  selectedConversationId: string | null;
 };
 
 function createInitialState(): OrgStoreState {
   const storedVersion = loadStored(STORAGE_KEYS.VERSION, () => 0);
   // Force blank canvas on version bump: discard persisted org data
   const useDefaults = storedVersion < ORG_STORAGE_VERSION;
+  if (useDefaults && storedVersion > 0) {
+    try {
+      const backup = {
+        version: storedVersion,
+        hierarchy: localStorage.getItem(STORAGE_KEYS.HIERARCHY),
+        projects: localStorage.getItem(STORAGE_KEYS.PROJECTS),
+        conversations: localStorage.getItem(STORAGE_KEYS.CONVERSATIONS),
+        cronJobs: localStorage.getItem(STORAGE_KEYS.CRON_JOBS),
+        ts: Date.now(),
+      };
+      localStorage.setItem('aionui:org-backup-' + backup.ts, JSON.stringify(backup));
+    } catch {}
+  }
   const rawHierarchy = useDefaults
     ? createDefaultOrgHierarchy()
     : loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
@@ -132,6 +147,8 @@ function createInitialState(): OrgStoreState {
     isSimulating: false,
     simulationStep: 0,
     simulationMessage: '',
+    orgViewMode: 'chat',
+    selectedConversationId: null,
   };
 }
 
@@ -230,6 +247,16 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const setOrgViewMode = useCallback((mode: 'chat' | 'canvas') => {
+    globalState = { ...globalState, orgViewMode: mode };
+    notify();
+  }, []);
+
+  const setSelectedConversationId = useCallback((id: string | null) => {
+    globalState = { ...globalState, selectedConversationId: id };
+    notify();
+  }, []);
+
   const resetToDefault = useCallback(() => {
     const defHierarchy = createDefaultOrgHierarchy();
     const defProjects = createDefaultOrgProjects();
@@ -267,6 +294,33 @@ export function useOrgStore() {
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
     notify();
   }, []);
+
+  const removeDepartment = useCallback((departmentId: string): boolean => {
+    const dept = globalState.hierarchy.departments.find((d) => d.id === departmentId);
+    if (!dept) return false;
+    const hasTeams = dept.teams.length > 0;
+    const hasProjects = globalState.projects.some((p) => p.departmentId === departmentId);
+    const hasAutomations = globalState.cronJobs.some(
+      (c) => (c as { orgDepartmentId?: string }).orgDepartmentId === departmentId
+    );
+    if (hasTeams || hasProjects || hasAutomations) return false;
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      departments: globalState.hierarchy.departments.filter((d) => d.id !== departmentId),
+      lastUpdated: Date.now(),
+    };
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+    return true;
+  }, []);
+
+  const archiveDepartment = useCallback(
+    (departmentId: string): boolean => {
+      return removeDepartment(departmentId);
+    },
+    [removeDepartment]
+  );
 
   const updateDepartment = useCallback((departmentId: string, patch: Partial<OrgDepartmentNode>) => {
     const nextHierarchy = syncHierarchyProjectReferences(
@@ -508,6 +562,8 @@ export function useOrgStore() {
     clearOrgSelection,
     resetToDefault,
     addDepartment,
+    removeDepartment,
+    archiveDepartment,
     updateDepartment,
     addSubTeam,
     updateTeamNode,
@@ -518,5 +574,7 @@ export function useOrgStore() {
     deleteOrgProject,
     toggleCronJob,
     runSimulation,
+    setOrgViewMode,
+    setSelectedConversationId,
   };
 }

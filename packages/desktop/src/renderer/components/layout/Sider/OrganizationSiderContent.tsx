@@ -6,32 +6,40 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Tooltip, Modal, Input, Message } from '@arco-design/web-react';
-import {
-  NetworkTree,
-  AlarmClock,
-  Plus,
-  Right,
-  Down,
-  FolderClose,
-  Edit,
-  User,
-  FolderPlus,
-  Close,
-  Robot,
-  LinkOne,
-} from '@icon-park/react';
-import classNames from 'classnames';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
 import { OrgDelegationEngine } from '@/renderer/pages/organization/utils/orgDelegationEngine';
-import { ORG_THEME_PALETTE, computeLifecycleStatus } from '@/renderer/pages/organization/utils/orgTheme';
+import { computeLifecycleStatus } from '@/renderer/pages/organization/utils/orgTheme';
 import { createDepartmentShell, createTeamShell } from '@/renderer/pages/organization/utils/orgCoherence';
-import type { OrgConversation, OrgNodeStatus, OrgProject, OrgDepartmentNode, OrgTeamNode } from '@/types/organization';
+import type {
+  OrgConversation,
+  OrgNodeStatus,
+  OrgProject,
+  OrgDepartmentNode,
+  OrgTeamNode,
+  OrgAgentMember,
+} from '@/types/organization';
 import OrgProjectModal from '@/renderer/pages/organization/components/OrgProjectModal';
 import OrgDepartmentModal from '@/renderer/pages/organization/components/OrgDepartmentModal';
 import OrgEntityEditModal from '@/renderer/pages/organization/components/OrgEntityEditModal';
+
+import SiderModeToggle from './SiderModeToggle';
+import SiderCommandCard from './SiderCommandCard';
+import SiderNavRow from './SiderNavRow';
+import SiderSearchInput from './SiderSearchInput';
+import SiderFilterSegment from './SiderFilterSegment';
+import SiderBreadcrumb from './SiderBreadcrumb';
+import SiderSectionLabel from './SiderSectionLabel';
+import SiderDepartmentHeader from './SiderDepartmentHeader';
+import SiderSubSectionLabel from './SiderSubSectionLabel';
+import SiderTeamRow from './SiderTeamRow';
+import SiderProjectRow from './SiderProjectRow';
+import SiderChatRow from './SiderChatRow';
+import SiderEmptyState from './SiderEmptyState';
+
+import { NetworkTree, AlarmClock, Robot } from '@icon-park/react';
 
 type OrganizationSiderContentProps = {
   collapsed: boolean;
@@ -64,6 +72,10 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setSelectedTeam,
     setSelectedProject,
     clearOrgSelection,
+    orgViewMode,
+    setOrgViewMode,
+    selectedConversationId,
+    setSelectedConversationId,
   } = useOrgStore();
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'dormant' | 'shared'>('all');
@@ -72,8 +84,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const [ceoChatModalVisible, setCeoChatModalVisible] = useState(false);
-  const [ceoPrompt, setCeoPrompt] = useState('');
   const [targetDeptIdForTeam, setTargetDeptIdForTeam] = useState<string | null>(null);
   const [newSubTeamName, setNewSubTeamName] = useState('');
   const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
@@ -87,7 +97,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
   const [editEntity, setEditEntity] = useState<{
     type: 'department' | 'team' | 'member' | 'project';
-    data: any;
+    data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject | null;
     context: { departmentId?: string; teamId?: string };
   } | null>(null);
 
@@ -233,8 +243,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     if (!query) return hierarchy.departments;
     return hierarchy.departments.filter((dept) => {
       if (dept.name.toLowerCase().includes(query)) return true;
-      const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
-      if (deptTeams.some((t) => t.name.toLowerCase().includes(query))) return true;
+      const deptTeams = allTeams.filter((teamItem) => teamItem.departmentId === dept.id);
+      if (deptTeams.some((teamItem) => teamItem.name.toLowerCase().includes(query))) return true;
       const deptProjects = projects.filter((p) => p.departmentId === dept.id);
       return deptProjects.some((p) => p.name.toLowerCase().includes(query));
     });
@@ -248,7 +258,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   }, [hierarchy.departments, selectedDepartmentId, allTeams]);
 
   const selectedTeam = useMemo(
-    () => teamsInSelectedDept.find((t) => t.id === selectedTeamId),
+    () => teamsInSelectedDept.find((teamItem) => teamItem.id === selectedTeamId),
     [teamsInSelectedDept, selectedTeamId]
   );
 
@@ -271,7 +281,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const breadcrumb = useMemo(() => {
     const parts: Array<{ label: string; id: string | null; type: 'dept' | 'team' | 'project' }> = [];
     if (selectedProject) {
-      const team = teamsInSelectedDept.find((t) => t.id === selectedProject.teamIds?.[0]);
+      const team = teamsInSelectedDept.find((teamItem) => teamItem.id === selectedProject.teamIds?.[0]);
       const dept = team ? hierarchy.departments.find((d) => d.id === team.departmentId) : selectedDepartment;
       if (dept) parts.push({ label: dept.name, id: dept.id, type: 'dept' });
       if (team) parts.push({ label: team.name, id: team.id, type: 'team' });
@@ -294,12 +304,12 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   // Returns a short label for the chat row badge: team name or agent role
   const chatBadgeLabel = (conv: OrgConversation): string => {
     if (conv.teamId) {
-      const team = allTeams.find((t) => t.id === conv.teamId);
+      const team = allTeams.find((teamItem) => teamItem.id === conv.teamId);
       if (team) return team.name;
     }
     if (conv.agentId) {
       const agent = allTeams
-        .flatMap((t) => [...t.specialistMembers, t.teamLeadAgent, t.hrCoordinatorAgent])
+        .flatMap((teamItem) => [...teamItem.specialistMembers, teamItem.teamLeadAgent, teamItem.hrCoordinatorAgent])
         .find((a) => a.id === conv.agentId);
       if (agent) return agent.name;
     }
@@ -332,7 +342,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const handleOpenEntityEdit = (
     type: 'department' | 'team' | 'member' | 'project',
-    data: any,
+    data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject,
     context: { departmentId?: string; teamId?: string }
   ) => {
     setEditEntity({ type, data, context });
@@ -365,214 +375,159 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   if (collapsed) {
     return (
       <div className='flex flex-col gap-4px items-center px-4px'>
-        <Tooltip {...siderTooltipProps} content='👑 Talk to Root CEO' position='right'>
-          <button
-            type='button'
-            onClick={handleOpenCeoChat}
-            className='size-32px rounded-8px flex items-center justify-center bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 cursor-pointer border-none transition-colors'
-          >
-            👑
-          </button>
+        <Tooltip {...siderTooltipProps} content='Talk to Root CEO' position='right'>
+          <SiderCommandCard onClick={handleOpenCeoChat} />
         </Tooltip>
-        <Tooltip {...siderTooltipProps} content='🗺️ 2D Org-Chart Canvas' position='right'>
-          <button
-            type='button'
+        <Tooltip {...siderTooltipProps} content='2D Org-Chart Canvas' position='right'>
+          <SiderNavRow
+            icon={<NetworkTree size={16} theme='outline' fill='currentColor' />}
+            label=''
+            selected={isCanvasActive}
             onClick={() => {
               onSessionClick?.();
               void navigate('/organization');
             }}
-            className={classNames(
-              'size-32px rounded-8px flex items-center justify-center cursor-pointer border-none transition-colors',
-              isCanvasActive ? 'bg-primary text-white font-bold' : 'bg-transparent text-t-primary hover:bg-fill-2'
-            )}
-          >
-            <NetworkTree size={16} theme='outline' fill='currentColor' />
-          </button>
+          />
         </Tooltip>
-        <Tooltip {...siderTooltipProps} content='⏱️ Org Automations' position='right'>
-          <button
-            type='button'
+        <Tooltip {...siderTooltipProps} content='Org Automations' position='right'>
+          <SiderNavRow
+            icon={<AlarmClock size={16} theme='outline' fill='currentColor' className='text-cyan-400' />}
+            label=''
             onClick={() => {
               onSessionClick?.();
               void navigate('/scheduled');
             }}
-            className='size-32px rounded-8px flex items-center justify-center bg-transparent text-t-primary hover:bg-fill-2 cursor-pointer border-none transition-colors'
-          >
-            <AlarmClock size={16} theme='outline' fill='currentColor' />
-          </button>
+          />
         </Tooltip>
       </div>
     );
   }
 
+  // Filter options with counts
+  const filterOptions = useMemo(() => {
+    let activeCount = 0;
+    let dormantCount = 0;
+    let sharedCount = 0;
+
+    allTeams.forEach((team) => {
+      const status = teamStatus(team);
+      if (status !== 'dormant') activeCount++;
+      if (status === 'dormant') dormantCount++;
+      if (team.specialistMembers.some((m) => m.assignedTeamIds.length > 1)) sharedCount++;
+    });
+
+    projects.forEach((proj) => {
+      if (proj.status !== 'dormant') activeCount++;
+      if (proj.status === 'dormant') dormantCount++;
+      if (proj.teamIds.length > 1) sharedCount++;
+    });
+
+    return [
+      {
+        key: 'all' as const,
+        label: t('team.organization.filterAll', { defaultValue: 'All' }),
+        count: hierarchy.departments.length,
+      },
+      {
+        key: 'active' as const,
+        label: t('team.organization.filterActive', { defaultValue: 'Active' }),
+        count: activeCount,
+      },
+      {
+        key: 'dormant' as const,
+        label: t('team.organization.filterDormant', { defaultValue: 'Dormant' }),
+        count: dormantCount,
+      },
+      {
+        key: 'shared' as const,
+        label: t('team.organization.filterShared', { defaultValue: 'Shared' }),
+        count: sharedCount,
+      },
+    ];
+  }, [hierarchy.departments, allTeams, projects, t]);
+
   return (
-    <div className='flex flex-col gap-4px select-none'>
-      {/* Breadcrumb header */}
-      <div className='px-12px py-4px bg-fill-2 border-b border-[var(--color-border-2)] flex items-center justify-between min-h-28px'>
-        <div className='flex items-center gap-3px overflow-hidden'>
-          <span className='text-10px text-t-tertiary font-mono'>🏢 All Depts</span>
-          {breadcrumb.map((part, idx) => (
-            <span key={part.id} className='flex items-center gap-3px overflow-hidden'>
-              <span className='text-t-tertiary text-9px shrink-0 opacity-60'>›</span>
-              <button
-                type='button'
-                className='p-2px truncate hover:bg-fill-2 hover:text-primary transition-colors rounded-3px'
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (part.type === 'dept') handleSelectDept(part.id!);
-                  if (part.type === 'team') handleSelectTeam(part.id!);
-                  if (part.type === 'project') handleSelectProject(part.id!);
-                }}
-              >
-                <span className='text-11px text-t-secondary truncate' title={part.label}>
-                  {part.label}
-                </span>
-              </button>
-            </span>
-          ))}
-          {breadcrumb.length > 0 && (
-            <button
-              type='button'
-              className='p-1px text-t-tertiary hover:text-t-danger transition-colors'
-              onClick={clearOrgSelection}
-              title='Clear Filter'
-            >
-              <Close size={12} theme='outline' />
-            </button>
-          )}
+    <div className='flex flex-col h-full overflow-hidden'>
+      <div className='flex-1 overflow-y-auto custom-scrollbar'>
+        {/* Mode Switcher */}
+        <SiderModeToggle collapsed={collapsed} siderTooltipProps={siderTooltipProps} onSessionClick={onSessionClick} />
+
+        {/* Primary Actions */}
+        <div className='px-8px mb-2px flex flex-col gap-2px'>
+          <SiderCommandCard onClick={handleOpenCeoChat} shortcut='⌘K' selected={ceoChatModalVisible} />
+          <SiderNavRow
+            icon={<NetworkTree size={16} theme='outline' fill='currentColor' />}
+            label={t('team.organization.canvas', { defaultValue: '2D Org-Chart Canvas' })}
+            selected={isCanvasActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/organization');
+            }}
+          />
+          <SiderNavRow
+            icon={<AlarmClock size={16} theme='outline' fill='currentColor' className='text-cyan-400' />}
+            label={t('team.organization.automations', { defaultValue: 'Org Automations' })}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/scheduled');
+            }}
+            badgeCount={cronJobs.length}
+          />
         </div>
-        <span className='text-9px font-mono text-t-tertiary shrink-0'>
-          {breadcrumb.length ? 'Drill-down active' : 'All organization'}
-        </span>
-      </div>
 
-      <div className='px-8px mb-2px flex items-center gap-6px'>
-        <button
-          type='button'
-          onClick={handleOpenCeoChat}
-          className='flex-1 h-34px flex items-center gap-8px px-10px rounded-8px bg-gradient-to-r from-amber-500/15 via-primary/10 to-emerald-500/15 hover:from-amber-500/25 hover:to-emerald-500/25 border border-amber-500/30 text-amber-200 cursor-pointer transition-all shadow-sm group'
-        >
-          <span className='text-14px leading-none group-hover:scale-110 transition-transform'>👑</span>
-          <span className='font-semibold text-12px tracking-wide truncate'>Talk to Root CEO</span>
-        </button>
-        <Tooltip content={t('team.organization.addDepartment', { defaultValue: 'Add Department' })} position='top'>
-          <button
-            type='button'
-            onClick={() => setCreateDeptModalVisible(true)}
-            className='size-34px rounded-8px flex items-center justify-center bg-fill-2 hover:bg-fill-3 text-t-primary border border-[var(--color-border-2)] cursor-pointer'
-          >
-            <Plus size={14} />
-          </button>
-        </Tooltip>
-      </div>
-
-      <div className='px-8px mb-2px'>
-        <button
-          type='button'
-          onClick={() => {
-            onSessionClick?.();
-            void navigate('/organization');
-          }}
-          className={classNames(
-            'w-full h-32px flex items-center gap-8px px-10px rounded-8px cursor-pointer border-none transition-all',
-            isCanvasActive
-              ? 'bg-fill-3 text-primary font-semibold ring-1 ring-primary/20'
-              : 'bg-transparent text-t-primary hover:bg-fill-2'
-          )}
-        >
-          <span className='text-13px'>🗺️</span>
-          <span className='text-12px font-medium truncate'>2D Org-Chart Canvas</span>
-          <span className='ms-auto text-9px font-mono text-t-tertiary px-4px py-0.5px rounded bg-fill-2'>Live</span>
-        </button>
-      </div>
-
-      <div className='px-8px mb-4px'>
-        <button
-          type='button'
-          onClick={() => {
-            onSessionClick?.();
-            void navigate('/scheduled');
-          }}
-          className='w-full h-30px flex items-center gap-8px px-10px rounded-8px bg-transparent text-t-secondary hover:text-t-primary hover:bg-fill-2 cursor-pointer border-none transition-all'
-        >
-          <AlarmClock size={14} theme='outline' fill='currentColor' className='text-cyan-400' />
-          <span className='text-12px font-medium truncate'>Org Automations</span>
-          <span className='ms-auto text-9px font-mono text-cyan-300 px-5px py-0.5px rounded bg-cyan-500/10 border border-cyan-500/20'>
-            {cronJobs.length} active
-          </span>
-        </button>
-      </div>
-
-      <div className='px-8px py-4px flex items-center gap-4px flex-wrap'>
-        {(['all', 'active', 'dormant', 'shared'] as const).map((filter) => (
-          <button
-            key={filter}
-            type='button'
-            onClick={() => setActiveFilter(filter)}
-            className={classNames(
-              'px-8px py-2px rounded-6px text-11px font-medium capitalize cursor-pointer border-none transition-colors',
-              activeFilter === filter
-                ? 'bg-primary/12 text-primary'
-                : 'bg-transparent text-t-tertiary hover:text-t-primary hover:bg-fill-2'
-            )}
-          >
-            {filter}
-          </button>
-        ))}
-      </div>
-
-      <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
-
-      {/* Departments Section */}
-      <div className='flex flex-col'>
-        <div
-          className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer'
-          onClick={() => toggleSection('departments')}
-        >
-          <div className='flex items-center gap-6px'>
-            <span className='text-11px font-semibold uppercase tracking-wider'>
-              Departments ({filteredDepartments.length})
-            </span>
-            {collapsedSections.has('departments') ? (
-              <Right size={11} theme='outline' />
-            ) : (
-              <Down size={11} theme='outline' />
-            )}
-          </div>
+        {/* Search and Filters */}
+        <div className='px-8px mb-4px flex flex-col gap-2px'>
+          <SiderSearchInput value={searchQuery} onChange={setSearchQuery} siderTooltipProps={siderTooltipProps} />
+          <SiderFilterSegment
+            activeFilter={activeFilter}
+            onChange={setActiveFilter}
+            options={filterOptions}
+            siderTooltipProps={siderTooltipProps}
+          />
         </div>
+
+        <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
+
+        {/* Breadcrumb */}
+        <SiderBreadcrumb
+          parts={breadcrumb}
+          onSelect={(part) => {
+            if (!part.id) {
+              clearOrgSelection();
+              return;
+            }
+            if (part.type === 'dept') handleSelectDept(part.id);
+            if (part.type === 'team') handleSelectTeam(part.id);
+            if (part.type === 'project') handleSelectProject(part.id);
+          }}
+          onClear={clearOrgSelection}
+          siderTooltipProps={siderTooltipProps}
+        />
+
+        {/* Departments Section */}
+        <SiderSectionLabel
+          label={t('team.organization.departments', { defaultValue: 'Departments' })}
+          count={filteredDepartments.length}
+          collapsed={collapsedSections.has('departments')}
+          onToggle={() => toggleSection('departments')}
+        />
 
         {!collapsedSections.has('departments') && (
-          <div className='flex flex-col gap-2px px-6px mt-2px'>
-            <Input
-              allowClear
-              className='w-full h-26px text-10px'
-              placeholder={t('team.organization.searchPlaceholder', {
-                defaultValue: 'Search departments, teams, projects...',
-              })}
-              value={searchQuery}
-              onChange={setSearchQuery}
-            />
+          <div className='flex flex-col gap-2px px-6px mt-2px flex-1 min-h-0'>
             {filteredDepartments.length === 0 ? (
-              <div className='px-12px py-16px text-center text-11px text-t-tertiary'>
-                {searchQuery
-                  ? t('team.organization.noSearchResults', {
-                      defaultValue: 'No departments, teams, or projects match your search.',
-                    })
-                  : t('team.organization.noDepartments', { defaultValue: 'No departments found.' })}
-              </div>
+              <SiderEmptyState hasSearchQuery={!!searchQuery} />
             ) : (
               filteredDepartments.map((dept) => {
                 const status = deptStatus(dept);
-                const theme = ORG_THEME_PALETTE[status];
                 const isSelected = selectedDepartmentId === dept.id;
                 const isDeptExpanded = !collapsedDepts.has(dept.id);
-                const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
+                const deptTeams = allTeams.filter((teamItem) => teamItem.departmentId === dept.id);
                 const deptProjects = projects.filter((p) => p.departmentId === dept.id);
                 const subTab = deptSubTabs[dept.id] ?? 'teams';
 
                 const sharedCanonicalIds = new Set<string>();
-                deptTeams.forEach((t) =>
-                  t.specialistMembers.forEach((m) => {
+                deptTeams.forEach((teamItem) =>
+                  teamItem.specialistMembers.forEach((m) => {
                     if (m.assignedTeamIds.length > 1) sharedCanonicalIds.add(m.canonicalAgentId);
                   })
                 );
@@ -593,146 +548,39 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                 });
 
                 return (
-                  <div
-                    key={dept.id}
-                    className='flex flex-col rounded-8px overflow-hidden mb-4px border border-[var(--color-border-2)] bg-[var(--color-bg-2)]'
-                  >
-                    {/* Department header */}
-                    <div
-                      role='button'
-                      tabIndex={0}
-                      onClick={(e) => {
+                  <div key={dept.id} className='flex flex-col'>
+                    <SiderDepartmentHeader
+                      department={dept}
+                      status={status}
+                      isSelected={isSelected}
+                      isExpanded={isDeptExpanded}
+                      teamsCount={deptTeams.length}
+                      projectsCount={deptProjects.length}
+                      subTab={subTab}
+                      onSelect={() => handleSelectDept(dept.id)}
+                      onToggleExpand={() => toggleDept(dept.id)}
+                      onToggleSubTab={(tab) => setDeptSubTab(dept.id, tab)}
+                      onEdit={(e) => {
                         e.stopPropagation();
-                        handleSelectDept(dept.id);
+                        handleOpenEntityEdit('department', dept, { departmentId: dept.id });
                       }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleSelectDept(dept.id);
-                        }
+                      onSetFolder={(e) => {
+                        e.stopPropagation();
+                        handleOpenEntityEdit('department', dept, { departmentId: dept.id });
                       }}
-                      className={classNames(
-                        'group flex items-center justify-between px-8px py-5px rounded-6px cursor-pointer transition-colors text-12px',
-                        isSelected
-                          ? 'bg-primary/10 text-t-primary border border-primary/20'
-                          : 'hover:bg-fill-3 text-t-primary'
-                      )}
-                    >
-                      <div className='flex items-center gap-6px min-w-0'>
-                        <span
-                          className='size-4px rounded-full shrink-0 opacity-60'
-                          style={{ backgroundColor: theme.borderColor }}
-                        />
-                        <span className='font-semibold truncate' title={dept.name}>
-                          {dept.name}
-                        </span>
-                      </div>
-                      <div className='flex items-center gap-3px shrink-0'>
-                        {/* Sub-tab pills (segmented control) */}
-                        <div className='flex rounded-4px border border-[var(--color-border-2)] bg-fill-1 shrink-0'>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeptSubTab(dept.id, 'teams');
-                            }}
-                            className={classNames(
-                              'px-5px py-1px text-9px transition-colors shrink-0 rounded-l-4px',
-                              subTab === 'teams'
-                                ? 'bg-fill-3 text-t-primary'
-                                : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
-                            )}
-                          >
-                            {t('team.organization.teamsTab', { defaultValue: 'Teams' })}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeptSubTab(dept.id, 'projects');
-                            }}
-                            className={classNames(
-                              'px-5px py-1px text-9px transition-colors shrink-0 rounded-r-4px',
-                              subTab === 'projects'
-                                ? 'bg-fill-3 text-t-primary'
-                                : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
-                            )}
-                          >
-                            {t('team.organization.project', { defaultValue: 'Projects' })}
-                          </button>
-                        </div>
-                        <Tooltip
-                          content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
-                          position='top'
-                        >
-                          <span
-                            role='button'
-                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity ml-2px'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEntityEdit('department', dept, { departmentId: dept.id });
-                            }}
-                          >
-                            <Edit size={11} theme='outline' />
-                          </span>
-                        </Tooltip>
-                        <Tooltip content='Set Folder' position='top'>
-                          <span
-                            role='button'
-                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-amber-400 hover:bg-amber-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEntityEdit('department', dept, { departmentId: dept.id });
-                            }}
-                          >
-                            <LinkOne size={11} theme='outline' />
-                          </span>
-                        </Tooltip>
-                        <Tooltip
-                          content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
-                          position='top'
-                        >
-                          <span
-                            role='button'
-                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openProjectModal(dept.id);
-                            }}
-                          >
-                            <FolderPlus size={11} theme='outline' />
-                          </span>
-                        </Tooltip>
-                        <Tooltip
-                          content={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
-                          position='top'
-                        >
-                          <span
-                            role='button'
-                            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTargetDeptIdForTeam(dept.id);
-                            }}
-                          >
-                            <Plus size={11} theme='outline' />
-                          </span>
-                        </Tooltip>
-                        {deptTeams.length > 0 ? (
-                          <span
-                            className='text-t-tertiary'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleDept(dept.id);
-                            }}
-                            role='button'
-                          >
-                            {isDeptExpanded ? <Down size={10} theme='outline' /> : <Right size={10} theme='outline' />}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
+                      onAddProject={(e) => {
+                        e.stopPropagation();
+                        openProjectModal(dept.id);
+                      }}
+                      onAddTeam={(e) => {
+                        e.stopPropagation();
+                        setTargetDeptIdForTeam(dept.id);
+                      }}
+                      siderTooltipProps={siderTooltipProps}
+                    />
 
                     {isDeptExpanded && (
-                      <div className='flex flex-col gap-1px pl-20px pr-4px py-2px border-l border-slate-700/40 ml-12px'>
+                      <div className='flex flex-col gap-1px pl-16px pr-4px py-2px border-l border-[var(--color-border-2)]/40 ml-10px animate-expand'>
                         {subTab === 'teams' ? (
                           <>
                             {/* PM pinned at top */}
@@ -750,80 +598,49 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                   <span className='font-medium truncate' title={dept.pmAgent.name}>
                                     {dept.pmAgent.name}
                                   </span>
-                                  <span className='text-8px text-t-tertiary font-mono'>
+                                  <span className='text-8px text-t-tertiary'>
                                     {t('team.organization.pm', { defaultValue: 'PM' })}
                                   </span>
                                 </div>
-                                <span className='text-9px text-amber-400 font-mono'>
+                                <span className='text-9px text-amber-400'>
                                   {t('team.organization.pinned', { defaultValue: 'Pinned' })}
                                 </span>
                               </div>
                             )}
                             {/* Teams list */}
+                            <SiderSubSectionLabel
+                              label={t('team.organization.teams', { defaultValue: 'Teams' })}
+                              count={filteredTeams.length}
+                            />
                             <div className='flex flex-col gap-0.5px'>
                               {filteredTeams.length === 0 ? (
-                                <div className='px-6px py-4px text-10px text-t-tertiary italic'>
+                                <div className='px-6px py-4px text-10px text-t-tertiary'>
                                   {activeFilter === 'all'
                                     ? t('team.organization.noTeams', {
                                         defaultValue: 'No teams in this department yet.',
                                       })
-                                    : 'No matching teams.'}
+                                    : t('team.organization.noMatchingTeams', { defaultValue: 'No matching teams.' })}
                                 </div>
                               ) : (
                                 filteredTeams.map((team) => {
                                   const tStatus = teamStatus(team);
-                                  const tTheme = ORG_THEME_PALETTE[tStatus];
                                   const isTeamSelected = selectedTeamId === team.id;
                                   return (
-                                    <div
+                                    <SiderTeamRow
                                       key={team.id}
-                                      role='button'
-                                      tabIndex={0}
-                                      onClick={(e) => {
+                                      team={team}
+                                      status={tStatus}
+                                      isSelected={isTeamSelected}
+                                      onSelect={() => handleSelectTeam(team.id)}
+                                      onEdit={(e) => {
                                         e.stopPropagation();
-                                        handleSelectTeam(team.id);
+                                        handleOpenEntityEdit('team', team, {
+                                          departmentId: dept.id,
+                                          teamId: team.id,
+                                        });
                                       }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          e.preventDefault();
-                                          handleSelectTeam(team.id);
-                                        }
-                                      }}
-                                      className={classNames(
-                                        'flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px',
-                                        isTeamSelected
-                                          ? 'bg-primary/10 text-t-primary border border-primary/20'
-                                          : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary'
-                                      )}
-                                    >
-                                      <div className='flex items-center gap-5px truncate min-w-0'>
-                                        <User size={11} theme='outline' className='text-primary shrink-0' />
-                                        <span className='truncate' title={team.name}>
-                                          {team.name}
-                                        </span>
-                                      </div>
-                                      <div className='flex items-center gap-3px shrink-0'>
-                                        <Tooltip content='Edit Team' position='top'>
-                                          <span
-                                            role='button'
-                                            className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenEntityEdit('team', team, {
-                                                departmentId: dept.id,
-                                                teamId: team.id,
-                                              });
-                                            }}
-                                          >
-                                            <Edit size={10} theme='outline' />
-                                          </span>
-                                        </Tooltip>
-                                        <span
-                                          className='size-4px rounded-full shrink-0 opacity-60'
-                                          style={{ backgroundColor: tTheme.borderColor }}
-                                        />
-                                      </div>
-                                    </div>
+                                      siderTooltipProps={siderTooltipProps}
+                                    />
                                   );
                                 })
                               )}
@@ -832,146 +649,72 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                         ) : (
                           <>
                             {/* Projects list with chats nested underneath */}
+                            <SiderSubSectionLabel
+                              label={t('team.organization.projects', { defaultValue: 'Projects' })}
+                              count={filteredProjects.length}
+                            />
                             <div className='flex flex-col gap-1px'>
                               {filteredProjects.length === 0 ? (
-                                <div className='px-6px py-4px text-10px text-t-tertiary italic'>
+                                <div className='px-6px py-4px text-10px text-t-tertiary'>
                                   {activeFilter === 'all'
                                     ? t('team.organization.noProjects', {
                                         defaultValue: 'No projects in this department.',
                                       })
-                                    : 'No matching projects.'}
+                                    : t('team.organization.noMatchingProjects', {
+                                        defaultValue: 'No matching projects.',
+                                      })}
                                 </div>
                               ) : (
                                 filteredProjects.map((proj) => {
                                   const chats = projectConversationsMap.get(proj.id) ?? [];
                                   const isProjectSelected = selectedProjectId === proj.id;
-                                  const statusColor =
-                                    proj.status === 'active'
-                                      ? 'emerald'
-                                      : proj.status === 'dormant'
-                                        ? 'gray'
-                                        : 'purple';
                                   return (
                                     <div key={proj.id} className='flex flex-col'>
                                       {/* Project row */}
-                                      <div
-                                        role='button'
-                                        tabIndex={0}
-                                        onClick={(e) => {
+                                      <SiderProjectRow
+                                        project={proj}
+                                        isSelected={isProjectSelected}
+                                        onSelect={() => handleSelectProject(proj.id)}
+                                        onEdit={(e) => {
                                           e.stopPropagation();
-                                          handleSelectProject(proj.id);
+                                          handleOpenEntityEdit('project', proj, {
+                                            departmentId: proj.departmentId,
+                                            teamId: proj.teamIds?.[0],
+                                          });
                                         }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter' || e.key === ' ') {
-                                            e.preventDefault();
-                                            handleSelectProject(proj.id);
-                                          }
+                                        onNewChat={(e) => {
+                                          e.stopPropagation();
+                                          handleNewChat(dept.id, proj);
                                         }}
-                                        className={classNames(
-                                          'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary',
-                                          isProjectSelected
-                                            ? 'bg-primary/10 border border-primary/20'
-                                            : 'hover:bg-fill-2'
-                                        )}
-                                      >
-                                        <div className='flex items-center gap-6px truncate min-w-0'>
-                                          <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
-                                          <span className='truncate font-medium' title={proj.name}>
-                                            {proj.name}
-                                          </span>
-                                        </div>
-                                        <div className='flex items-center gap-3px shrink-0'>
-                                          <Tag size='small' color={statusColor} className='text-9px'>
-                                            {proj.status}
-                                          </Tag>
-                                          <Tooltip content='Edit Project' position='top'>
-                                            <span
-                                              role='button'
-                                              className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleOpenEntityEdit('project', proj, {
-                                                  departmentId: proj.departmentId,
-                                                  teamId: proj.teamIds?.[0],
-                                                });
-                                              }}
-                                            >
-                                              <Edit size={10} theme='outline' />
-                                            </span>
-                                          </Tooltip>
-                                        </div>
-                                      </div>
+                                        siderTooltipProps={siderTooltipProps}
+                                      />
                                       {/* Chats nested under project */}
-                                      <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-slate-700/20 ml-12px'>
-                                        {chats.length === 0 ? (
-                                          <div className='px-6px py-2px text-9px text-t-tertiary italic'>
-                                            {t('team.organization.noChats', { defaultValue: 'No chats yet.' })}
-                                          </div>
-                                        ) : (
-                                          chats.map((conv) => {
+                                      {chats.length > 0 && (
+                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {chats.map((conv) => {
                                             const isChatSelected = selectedChatId === conv.id;
                                             return (
-                                              <div
+                                              <SiderChatRow
                                                 key={conv.id}
-                                                role='button'
-                                                tabIndex={0}
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
+                                                conversation={conv}
+                                                isSelected={isChatSelected}
+                                                badge={chatBadgeLabel(conv)}
+                                                relativeTime={formatChatTime(conv.timestamp)}
+                                                onSelect={() => {
                                                   setSelectedChatId(conv.id);
                                                   onSessionClick?.();
                                                   void navigate('/organization');
                                                 }}
-                                                onKeyDown={(e) => {
-                                                  if (e.key === 'Enter' || e.key === ' ') {
-                                                    e.preventDefault();
-                                                    setSelectedChatId(conv.id);
-                                                    onSessionClick?.();
-                                                    void navigate('/organization');
-                                                  }
-                                                }}
-                                                className={classNames(
-                                                  'p-3px rounded-4px cursor-pointer transition-colors flex flex-col gap-1px text-10px border border-transparent',
-                                                  isChatSelected
-                                                    ? 'bg-primary/10 border-primary/30 text-t-primary'
-                                                    : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary hover:border-[var(--color-border-2)]'
-                                                )}
-                                              >
-                                                <div className='flex items-center justify-between gap-4px'>
-                                                  <span
-                                                    className='font-semibold text-t-primary truncate'
-                                                    title={conv.title}
-                                                  >
-                                                    {conv.title}
-                                                  </span>
-                                                  <span className='text-8px text-t-tertiary font-mono'>
-                                                    {formatChatTime(conv.timestamp)}
-                                                  </span>
-                                                </div>
-                                                {conv.summary ? (
-                                                  <span className='text-9px text-t-secondary truncate'>
-                                                    {conv.summary}
-                                                  </span>
-                                                ) : null}
-                                                {chatBadgeLabel(conv) ? (
-                                                  <span className='text-8px text-t-tertiary font-mono tracking-tight'>
-                                                    {chatBadgeLabel(conv)}
-                                                  </span>
-                                                ) : null}
-                                              </div>
+                                              />
                                             );
-                                          })
-                                        )}
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleNewChat(dept.id, proj);
-                                          }}
-                                          className='px-6px py-1px text-9px text-t-tertiary hover:text-t-primary hover:bg-fill-2 rounded cursor-pointer flex items-center gap-2px'
-                                        >
-                                          <Plus size={10} />
-                                          <span>{t('team.organization.newChat', { defaultValue: 'New chat' })}</span>
-                                        </button>
-                                      </div>
+                                          })}
+                                        </div>
+                                      )}
+                                      {chats.length === 0 && (
+                                        <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {t('team.organization.noChats', { defaultValue: 'No chats' })}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })
@@ -987,19 +730,28 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             )}
           </div>
         )}
+
+        <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
       </div>
 
-      <div className='h-1px bg-[var(--color-border-2)] mx-10px my-4px' />
-
+      {/* Modals */}
       <Modal
-        title='👑 Directive Command to Root CEO'
+        title={t('team.organization.ceoDirectiveTitle', { defaultValue: 'Directive Command to Root CEO' })}
         visible={ceoChatModalVisible}
         onOk={handleConfirmSendToCeo}
         onCancel={() => setCeoChatModalVisible(false)}
-        okText='Dispatch Directive'
+        okText={t('team.organization.dispatchDirective', { defaultValue: 'Dispatch Directive' })}
         okButtonProps={{ disabled: !ceoPrompt.trim() }}
       >
-        <Input.TextArea rows={3} value={ceoPrompt} onChange={setCeoPrompt} autoFocus />
+        <Input.TextArea
+          rows={3}
+          value={ceoPrompt}
+          onChange={setCeoPrompt}
+          autoFocus
+          placeholder={t('team.organization.directivePlaceholder', {
+            defaultValue: 'Enter your executive directive...',
+          })}
+        />
       </Modal>
       <Modal
         title={t('team.organization.addDepartment', { defaultValue: 'Add Department' })}

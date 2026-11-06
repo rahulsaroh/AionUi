@@ -51,3 +51,126 @@
 :global(.group):hover .pinnedTextSlot {
   padding-inline-end: 18px;
 }
+
+/* ============ Organization Sider Custom Scrollbar ============ */
+.customScrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-3) transparent;
+}
+
+.customScrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.customScrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.customScrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-3);
+  border-radius: 3px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.customScrollbar:hover::-webkit-scrollbar-thumb {
+  opacity: 1;
+}
+
+.customScrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-border-4);
+}
+
+/* Scroll fade shadows */
+.customScrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Expand/collapse animations */
+@keyframes siderExpand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+@keyframes siderCollapse {
+  from {
+    opacity: 1;
+    max-height: 500px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+  }
+}
+
+.animate-expand {
+  animation: siderExpand 180ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.animate-collapse {
+  animation: siderCollapse 150ms cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-expand,
+  .animate-collapse {
+    animation: none;
+  }
+}
+
+/* Focus visible ring for keyboard navigation */
+.focus-visible-ring:focus-visible {
+  outline: none;
+  ring: 2px;
+  ring-color: var(--primary);
+  ring-offset: 2px;
+  ring-offset-color: var(--color-bg-base);
+}
+
+/* Status dot tooltip positioning */
+.status-dot {
+  position: relative;
+}
+
+.status-dot:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  font-size: 10px;
+  background: var(--color-bg-popup);
+  color: var(--text-primary);
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  margin-bottom: 4px;
+}
+
+/* Breadcrumb button focus */
+.breadcrumb-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary);
+  border-radius: 3px;
+}
+
+/* Section header sticky */
+.section-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-bg-base);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-border-2);
+}

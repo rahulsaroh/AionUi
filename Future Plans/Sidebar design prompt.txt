@@ -1,0 +1,59 @@
+TASK: Redesign the visual design of the Organization sidebar in AionUi so it looks like polished enterprise software (Linear / VS Code Explorer quality). This is a UI/styling refactor ONLY.
+
+Files in scope:
+- packages/desktop/src/renderer/components/layout/Sider/OrganizationSiderContent.tsx
+- packages/desktop/src/renderer/components/layout/Sider/ScopeSegmentedToggle.tsx
+- Any child components they render (department block, project row, team row, chat row, filter bar). Extracting small presentational components in the same folder is allowed.
+
+Out of scope: data model, store logic, routing, drag-and-drop behavior, the localStorage key aionui:org-ui, the 2D Org Canvas. No new dependencies. Deliver as ONE focused commit with a clear message.
+
+STEP 0 - READ FIRST (summarize in 5 lines before editing):
+- Read AGENTS.md and follow it strictly (no raw HTML interactive elements such as <button>, and also no <div role="button"> workarounds).
+- Study existing reusable components (SiderItem, SiderPrimaryNav, Arco Button/Input/Tag/Tooltip) and the UnoCSS semantic tokens (bg-fill-*, text-t-*, var(--color-*), primary) and reuse them. Do not hardcode colors; both dark and light themes must work.
+
+ROOT-CAUSE PROBLEMS TO FIX:
+1. Raw <button> elements (the "+ New chat" bars and the "Teams | Projects" sub-tabs) render with the browser default white `buttonface` background in Electron. This causes the harsh white bars. Replace ALL of them with compliant components (Arco Button type="text"/"secondary" or the existing Sider item components), styled via tokens.
+2. Emojis (crown, map, briefcase, office, clock) clash with the monochrome icon system. Replace every emoji with @icon-park/react icons at consistent sizes (14px nav/rows, 16px headers). Suggested: Workplace=Laptop or ApplicationTwo, Organization=NetworkTree or Peoples, Canvas=NetworkTree, Automations=AlarmClock, Root CEO=Crown (muted gold).
+3. "Talk to Root CEO" uses a loud rainbow gradient. Replace it with a calm command card: subtle primary tint background (about 8%, hover about 14%), crown icon, 13px medium label, optional muted secondary text. Show a keyboard-shortcut badge ONLY if that shortcut already exists in the app; do not invent one.
+4. Every department is a heavy bordered card. Replace with a flat collapsible tree.
+5. "active" is a boxed chip on every project row. Replace with a status dot.
+6. Metadata text is tiny, low-contrast monospace. Use the app UI font with text-t-tertiary.
+7. Empty states ("No chats yet") plus a New chat bar waste about 60px per project.
+8. Search is undersized with no icon; filters look like loose tags; no hover, selected or focus states.
+
+DESIGN SPEC:
+
+Tokens (map onto existing theme tokens):
+- Spacing scale 4/8/12/16. Row height 32px (department header 36px). Sidebar horizontal padding 8px. Row radius 6px, containers 8px.
+- Type: row title 13px/500, secondary 12px/400, section labels 11px uppercase with 0.04em letter spacing in text-t-tertiary. No monospace.
+- Selected = tint (primary at about 12%) + 2px primary bar on the left edge. Hover = subtle fill (bg-fill-2). Keyboard focus = visible 2px primary ring (keyboard only).
+- WCAG AA contrast for primary and secondary text in both themes.
+
+Layout, top to bottom:
+1. Mode switcher (ScopeSegmentedToggle): slim segmented pill, 28-32px. Container bg-fill-2, p-3px, rd-8px, 1px border. Active item gets bg-[var(--color-bg-2)], primary text, semibold, shadow-xs. Inactive gets text-t-secondary with hover fill. Icons from IconPark. Fully keyboard accessible, no raw <button>.
+2. Primary actions: "Talk to Root CEO" command card (see above), then "2D Org-Chart Canvas" and "Org Automations" as standard 32px nav rows matching SiderItem. Right-aligned muted badges ("Live", "2 active") using subtle tokens (bg-fill-2 text-t-tertiary).
+3. Search and filters: Arco Input 28px high, rd-6px, with a Search icon prefix (13px, text-t-tertiary), placeholder "Search departments, teams, projects...". Below it, ONE segmented filter (All / Active / Dormant / Shared) with count badges and a smooth active indicator. Replaces the loose Tag components.
+4. Drilldown breadcrumb: when a department or team is selected, show a compact breadcrumb with a one-click "Clear". Hidden otherwise.
+5. Section label "DEPARTMENTS - 5".
+6. Department = collapsible tree section, no card:
+   - Header row: rotating chevron, IconPark icon, FULL name with ellipsis and tooltip on overflow, muted count. On hover show quick actions (+ Project, + Team, Edit/"...") as icon buttons.
+   - Inside: two small uppercase sub-section labels "TEAMS - n" and "PROJECTS - n". If the Teams/Projects switching logic must remain, render it as an underlined 12px text tab bar, NOT pills.
+   - Each child level is indented 16px with a delicate 1px vertical guide line (border-l, var(--color-border-2) at low opacity).
+7. Team row: small icon, name with ellipsis.
+8. Project row: folder icon, name, 6px status dot (green = active, amber = idle, grey = dormant) with tooltip text. No "active" chip. A ghost "+" icon button (Arco text Button, tooltip "New chat") appears on the right on hover/focus only (always visible on touch or narrow widths).
+9. Chat row: chat icon, one-line title with ellipsis, right-aligned muted relative time, optional 10px muted agent/team tag. Selected chat uses the selected style above.
+10. Empty state: no persistent "No chats yet" block and no persistent New chat bar. An expanded project with no chats shows at most one muted 12px "No chats" line at 24px height.
+11. Settings pinned at the bottom with a 1px top border.
+
+MOTION AND POLISH:
+- Expand/collapse: height + opacity, 150-200ms ease; respect prefers-reduced-motion.
+- Thin custom scrollbar visible on hover; top/bottom fade shadow when scrollable; section headers sticky if simple.
+- Persist expand/collapse via the existing aionui:org-ui mechanism, unchanged.
+
+ACCESSIBILITY:
+- Use tree / treeitem / group roles with aria-expanded; arrow-key navigation if cheap; aria-label on every icon-only button; minimum 24px hit targets.
+
+VERIFY:
+- Run `bunx tsc --noEmit`, `bun run lint:fix`, `bun run format`, `bun run test`. Fix everything.
+- Run the app, expand all 5 departments, and check: long names truncate with tooltip, hover/selected/focus states, collapse animation, dark AND light theme, sidebar widths of about 260px and about 400px, no white default-button backgrounds anywhere.
+- Produce before/after screenshots and list any decision that deviates from this spec.

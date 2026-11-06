@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Button, Tooltip } from '@arco-design/web-react';
-import { FullScreen, Plus, NetworkTree, Lightning, Refresh, Upload, FolderPlus } from '@icon-park/react';
+import { FullScreen, Plus, NetworkTree, Lightning, Refresh, Upload, FolderPlus, MessageOne } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { useOrgStore } from '../store/useOrgStore';
 
@@ -32,11 +32,25 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
   onOpenSeedModal,
 }) => {
   const { t } = useTranslation();
-  const { runSimulation, isSimulating, simulationStep, simulationMessage, resetToDefault } = useOrgStore();
+  const { runSimulation, isSimulating, simulationStep, simulationMessage, resetToDefault, setOrgViewMode } =
+    useOrgStore();
 
   return (
     <div className='absolute top-16px left-16px z-20 flex flex-col gap-8px select-none pointer-events-auto'>
       <div className='flex flex-wrap items-center gap-6px bg-[var(--color-bg-2)]/95 backdrop-blur-md px-12px py-8px rounded-12px border border-solid border-[var(--color-border-2)] shadow-xl max-w-[calc(100vw-260px)]'>
+        {/* Back to Chat button */}
+        <Button
+          size='small'
+          type='primary'
+          icon={<MessageOne size={13} theme='outline' />}
+          onClick={() => setOrgViewMode('chat')}
+          className='text-12px font-medium'
+        >
+          💬 Chat View
+        </Button>
+
+        <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
+
         {/* View controls */}
         <div className='flex items-center gap-6px pr-8px border-r border-[var(--color-border-2)]'>
           <span className='size-22px rounded-6px bg-primary/10 text-primary flex items-center justify-center'>
@@ -102,7 +116,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               icon={<Lightning size={13} theme='outline' />}
               onClick={() => void runSimulation()}
             >
-              {isSimulating ? `Step ${simulationStep}/6...` : '⚡ Simulate CEO Delegation'}
+              {isSimulating ? `Step ${simulationStep}/6...` : 'Demo animation (mock)'}
             </Button>
           </Tooltip>
 
@@ -112,6 +126,12 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               type='secondary'
               icon={<Refresh size={13} />}
               onClick={() => {
+                if (
+                  !window.confirm(
+                    'Reset organization to default? A JSON backup will be saved to localStorage (aionui:org-backup-<ts>).'
+                  )
+                )
+                  return;
                 resetToDefault();
                 setTimeout(onFitView, 100);
               }}

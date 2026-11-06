@@ -71,6 +71,8 @@ const CanvasInner: React.FC = () => {
     updateDepartment,
     updateTeamNode,
     projects,
+    setOrgViewMode,
+    setSelectedConversationId,
   } = useOrgStore();
 
   const navigate = useNavigate();
@@ -95,8 +97,6 @@ const CanvasInner: React.FC = () => {
     context: { departmentId?: string; teamId?: string };
   } | null>(null);
 
-  const [dispatchCeoModalVisible, setDispatchCeoModalVisible] = useState(false);
-  const [dispatchCeoPrompt, setDispatchCeoPrompt] = useState('');
   const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
   const [newDeptName, setNewDeptName] = useState('');
 
@@ -153,14 +153,13 @@ const CanvasInner: React.FC = () => {
 
   const handleDispatchToCeo = useCallback(
     (_rootCeo: RootCEO) => {
-      setSelectedNodeId('root-ceo');
-      setSelectedNodeType('ceo');
       setSelectedDepartment(null);
       setSelectedTeam(null);
       setSelectedProject(null);
-      setDispatchCeoModalVisible(true);
+      setSelectedConversationId(null);
+      setOrgViewMode('chat');
     },
-    [setSelectedDepartment, setSelectedTeam, setSelectedProject]
+    [setSelectedDepartment, setSelectedTeam, setSelectedProject, setSelectedConversationId, setOrgViewMode]
   );
 
   const openProjectModal = useCallback((departmentId?: string, teamId?: string, project: OrgProject | null = null) => {
@@ -423,11 +422,7 @@ const CanvasInner: React.FC = () => {
         selectedNodeId={selectedNodeId}
         selectedNodeType={selectedNodeType}
         visible={isInspectorOpen}
-        initialDirective={dispatchCeoPrompt}
-        onClose={() => {
-          setIsInspectorOpen(false);
-          setDispatchCeoPrompt('');
-        }}
+        onClose={() => setIsInspectorOpen(false)}
         onOpenConversation={(convId) => {
           setIsInspectorOpen(false);
           void navigate(`/conversation/${convId}`);
@@ -472,26 +467,6 @@ const CanvasInner: React.FC = () => {
             {t('team.organization.departmentName', { defaultValue: 'Department name' })}
           </span>
           <Input value={newDeptName} onChange={setNewDeptName} onPressEnter={handleConfirmCreateDept} autoFocus />
-        </div>
-      </Modal>
-
-      <Modal
-        title='👑 Executive Directive to Root CEO'
-        visible={dispatchCeoModalVisible}
-        onOk={() => {
-          if (!dispatchCeoPrompt.trim()) return;
-          setIsInspectorOpen(true);
-          setDispatchCeoModalVisible(false);
-        }}
-        onCancel={() => setDispatchCeoModalVisible(false)}
-        okText='Open Inspector & Dispatch'
-        okButtonProps={{ disabled: !dispatchCeoPrompt.trim() }}
-      >
-        <div className='flex flex-col gap-8px'>
-          <span className='text-12px text-t-secondary'>
-            Assign a high-level strategic goal to the Root Organization CEO:
-          </span>
-          <Input.TextArea rows={3} value={dispatchCeoPrompt} onChange={setDispatchCeoPrompt} autoFocus />
         </div>
       </Modal>
     </div>

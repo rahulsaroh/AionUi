@@ -42,6 +42,8 @@ export interface AgentExecutionOptions {
 
 type UpdateNodeStatus = (nodeId: string, status: OrgNodeStatus) => void;
 
+export const MAX_DELEGATION_DEPTH = 6;
+
 export class OrgDelegationEngine {
   private hierarchy: OrgHierarchy;
   private onStepCallback?: (log: DelegationStepLog) => void;
@@ -74,6 +76,10 @@ export class OrgDelegationEngine {
    * Runs inside the agent's bound `workspacePath` as the working directory.
    */
   private async runOrgAgentStep(opts: AgentExecutionOptions): Promise<string> {
+    if (!opts.workspacePath) {
+      throw new Error('runOrgAgentStep: empty workspacePath is not allowed');
+    }
+
     if (this.simulationMode) {
       await new Promise((resolve) => setTimeout(resolve, 1200));
       return `[Simulated] ${opts.agent.name} executed: "${opts.userDirective.slice(0, 60)}..." in ${opts.workspacePath || 'workspace'}`;
@@ -82,6 +88,7 @@ export class OrgDelegationEngine {
     const convId = `org-agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const collectedText: string[] = [];
     let finished = false;
+    let lastActivity = Date.now();
 
     const unsubscribe = ipcBridge.conversation.responseStream.on((msg: unknown) => {
       const m = msg as { conversation_id?: string; data?: unknown; status?: string };
@@ -102,36 +109,36 @@ export class OrgDelegationEngine {
       if (m.status === 'finish') {
         finished = true;
       }
+      lastActivity = Date.now();
     });
 
     try {
-      try {
-        await ipcBridge.conversation.create.invoke({
-          type: 'acp',
-          id: convId,
-          name: `Org: ${opts.agent.name}`,
-          assistant: { id: opts.agent.canonicalAgentId || opts.agent.id },
-          extra: { workspace: opts.workspacePath, custom_workspace: true },
-        });
-      } catch {
-        // Conversation may already exist or creation may be unsupported; proceed to send.
-      }
+      await ipcBridge.conversation.create.invoke({
+        type: 'acp',
+        id: convId,
+        name: `Org: ${opts.agent.name}`,
+        assistant: { id: opts.agent.canonicalAgentId || opts.agent.id },
+        extra: { workspace: opts.workspacePath, custom_workspace: true },
+      });
 
       await ipcBridge.conversation.sendMessage.invoke({
         conversation_id: convId,
         input: opts.userDirective,
       });
 
-      // Wait for stream finish or 8s timeout
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => resolve(), 8000);
-        const check = setInterval(() => {
+      // Wait for stream finish or 120s inactivity timeout
+      await new Promise<void>((resolve, reject) => {
+        const inactivityCheck = setInterval(() => {
           if (finished) {
-            clearTimeout(timer);
-            clearInterval(check);
+            clearInterval(inactivityCheck);
             resolve();
+            return;
           }
-        }, 100);
+          if (Date.now() - lastActivity > 120000) {
+            clearInterval(inactivityCheck);
+            reject(new Error('Org agent step timed out: no stream activity for 120s'));
+          }
+        }, 500);
       });
     } catch (err) {
       console.error('[OrgDelegationEngine] agent execution error:', err);
