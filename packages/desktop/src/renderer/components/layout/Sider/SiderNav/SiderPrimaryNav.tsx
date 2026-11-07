@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { FolderClose, MessageOne, NetworkTree, Peoples } from '@icon-park/react';
 import classNames from 'classnames';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -140,21 +140,22 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
         const IconComp = tab.icon;
         return (
           <Tooltip key={tab.id} {...siderTooltipProps} content={`${tab.label} (${tab.shortcut})`} position='top'>
-            <button
-              type='button'
+            <Button
+              type='text'
+              size='mini'
               data-testid={`sider-tab-${tab.id}`}
               className={classNames(
-                'flex-1 flex items-center justify-center gap-4px py-5px px-4px rounded-6px text-12px font-medium transition-all cursor-pointer border-none bg-transparent',
+                '!flex-1 !h-full !py-4px !px-4px flex items-center justify-center gap-4px rounded-6px text-12px font-medium transition-all cursor-pointer border-none',
                 tab.isActive
-                  ? 'bg-[var(--color-bg-2)] text-primary shadow-sm font-semibold'
-                  : 'text-t-secondary hover:text-t-primary hover:bg-fill-2'
+                  ? '!bg-[var(--color-bg-2)] !text-primary shadow-sm !font-semibold'
+                  : '!bg-transparent !text-t-secondary hover:!text-t-primary hover:!bg-fill-2'
               )}
               onClick={tab.onClick}
             >
               <IconComp theme='outline' size={14} fill='currentColor' className='shrink-0' />
               <span className='truncate text-11px'>{tab.label}</span>
               {tab.badge && <span className='size-5px rounded-full bg-cyan-400 shrink-0' />}
-            </button>
+            </Button>
           </Tooltip>
         );
       })}

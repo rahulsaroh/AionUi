@@ -29,22 +29,14 @@ export const SiderChatRow: React.FC<SiderChatRowProps> = ({
 
   return (
     <div
-      role='button'
-      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
       className={classNames(
-        'p-3px rounded-4px cursor-pointer transition-colors flex flex-col gap-1px text-11px border border-transparent',
+        'p-3px rounded-4px cursor-pointer transition-colors flex flex-col gap-1px text-11px border border-transparent select-none',
         isSelected
-          ? 'bg-primary/10 border-primary/30 text-t-primary'
+          ? 'bg-[rgba(var(--primary-6),0.10)] border-[rgba(var(--primary-6),0.25)] text-t-primary'
           : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary hover:border-[var(--color-border-2)]'
       )}
     >

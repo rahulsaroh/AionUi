@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import classNames from 'classnames';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -44,21 +44,22 @@ export const SiderModeToggle: React.FC<SiderModeToggleProps> = ({ collapsed, sid
 
   if (collapsed) {
     return (
-      <div className='flex flex-col gap-2px w-full px-4px mb-6px'>
+      <div className='flex flex-col gap-2px w-full px-4px mb-6px shrink-0'>
         {tabs.map((tab) => (
           <Tooltip key={tab.id} {...siderTooltipProps} content={tab.label} position='right'>
-            <button
-              type='button'
+            <Button
+              type='text'
+              size='small'
               className={classNames(
-                'w-full h-32px flex items-center justify-center rounded-8px cursor-pointer border-none transition-all',
+                '!w-full !h-32px !p-0 flex items-center justify-center rounded-8px border-none transition-all',
                 activeScope === tab.id
-                  ? 'bg-[var(--color-bg-2)] text-primary shadow-sm font-bold ring-1 ring-primary/30'
-                  : 'bg-transparent text-t-secondary hover:bg-fill-2 hover:text-t-primary'
+                  ? '!bg-[var(--color-bg-2)] !text-primary shadow-sm !font-bold'
+                  : '!bg-transparent !text-t-secondary hover:!bg-fill-2 hover:!text-t-primary'
               )}
               onClick={() => handleSelectScope(tab.id)}
             >
               <tab.icon theme='outline' size={16} fill='currentColor' className='block leading-none shrink-0' />
-            </button>
+            </Button>
           </Tooltip>
         ))}
       </div>
@@ -66,24 +67,28 @@ export const SiderModeToggle: React.FC<SiderModeToggleProps> = ({ collapsed, sid
   }
 
   return (
-    <div className='mx-8px mb-8px p-2px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center select-none shadow-sm'>
-      {tabs.map((tab) => (
-        <Tooltip key={tab.id} {...siderTooltipProps} content={tab.label} position='top'>
-          <button
-            type='button'
-            onClick={() => handleSelectScope(tab.id)}
-            className={classNames(
-              'flex-1 flex items-center justify-center gap-6px py-5px px-6px rounded-8px text-12px font-medium cursor-pointer border-none transition-all',
-              activeScope === tab.id
-                ? 'bg-[var(--color-bg-2)] text-primary shadow-sm font-semibold'
-                : 'bg-transparent text-t-secondary hover:text-t-primary hover:bg-fill-3'
-            )}
-          >
-            <tab.icon theme='outline' size={14} fill='currentColor' className='shrink-0' />
-            <span className='truncate text-11px'>{tab.label}</span>
-          </button>
-        </Tooltip>
-      ))}
+    <div className='mx-8px mt-4px mb-6px p-2px h-32px rounded-8px bg-fill-2 border border-[var(--color-border-2)] flex items-stretch select-none shrink-0'>
+      {tabs.map((tab) => {
+        const isActive = activeScope === tab.id;
+        return (
+          <Tooltip key={tab.id} {...siderTooltipProps} content={tab.label} position='top'>
+            <Button
+              type='text'
+              size='mini'
+              onClick={() => handleSelectScope(tab.id)}
+              className={classNames(
+                '!flex-1 !h-full !px-6px !py-0 flex items-center justify-center gap-6px rounded-6px text-12px border-none transition-all',
+                isActive
+                  ? '!bg-[var(--color-bg-2)] !text-primary shadow-xs !font-semibold'
+                  : '!bg-transparent !text-t-secondary hover:!text-t-primary hover:!bg-fill-3'
+              )}
+            >
+              <tab.icon theme='outline' size={14} fill='currentColor' className='shrink-0' />
+              <span className='truncate text-12px'>{tab.label}</span>
+            </Button>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 };

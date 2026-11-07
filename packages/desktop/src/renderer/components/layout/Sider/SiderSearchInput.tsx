@@ -33,15 +33,13 @@ export const SiderSearchInput: React.FC<SiderSearchInputProps> = ({
     >
       <Input
         allowClear
-        className='w-full h-28px text-12px rounded-6px'
+        className='w-full !h-28px text-12px rounded-6px bg-[var(--color-bg-2)] border border-[var(--color-border-2)]'
         placeholder={
           placeholder ??
           t('team.organization.searchPlaceholder', { defaultValue: 'Search departments, teams, projects...' })
         }
         value={value}
-        onChange={(e: React.ChangeEvent<HTMLInputElement> | string) =>
-          onChange(typeof e === 'string' ? e : e.target.value)
-        }
+        onChange={(val) => onChange(val)}
         prefix={
           <Search
             size={13}

@@ -105,15 +105,24 @@ function createInitialState(): OrgStoreState {
       localStorage.setItem('aionui:org-backup-' + backup.ts, JSON.stringify(backup));
     } catch {}
   }
-  const rawHierarchy = useDefaults
+  let rawHierarchy = useDefaults
     ? createDefaultOrgHierarchy()
     : loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
-  const rawProjects = useDefaults
+  if (!rawHierarchy?.departments || rawHierarchy.departments.length === 0) {
+    rawHierarchy = createDefaultOrgHierarchy();
+  }
+  let rawProjects = useDefaults
     ? createDefaultOrgProjects()
     : loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
-  const rawConversations = useDefaults
+  if (!rawProjects || rawProjects.length === 0) {
+    rawProjects = createDefaultOrgProjects();
+  }
+  let rawConversations = useDefaults
     ? createDefaultOrgConversations()
     : loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
+  if (!rawConversations || rawConversations.length === 0) {
+    rawConversations = createDefaultOrgConversations();
+  }
   const migration = migrateOrgStorageV2(rawHierarchy, rawProjects, rawConversations, storedVersion);
   if (useDefaults || migration.migrated) {
     try {

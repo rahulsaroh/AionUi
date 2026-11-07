@@ -6,7 +6,7 @@
 
 import React from 'react';
 import classNames from 'classnames';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 
@@ -35,32 +35,41 @@ export const SiderFilterSegment: React.FC<SiderFilterSegmentProps> = ({
 
   return (
     <div
-      className='flex items-center gap-1px w-full'
+      className='h-28px p-2px rounded-6px bg-fill-2 border border-[var(--color-border-2)] flex items-stretch gap-1px w-full select-none'
       role='group'
       aria-label={t('team.organization.filterAria', { defaultValue: 'Filter departments, teams, projects' })}
     >
-      {options.map((opt) => (
-        <Tooltip key={opt.key} {...siderTooltipProps} content={`${opt.label} (${opt.count})`} position='top'>
-          <button
-            type='button'
-            onClick={() => onChange(opt.key)}
-            className={classNames(
-              'flex-1 flex items-center justify-center gap-4px h-28px px-6px py-2px rounded-6px text-12px font-medium capitalize cursor-pointer border-none transition-all',
-              activeFilter === opt.key
-                ? 'bg-[var(--color-bg-2)] text-primary shadow-xs'
-                : 'bg-transparent text-t-secondary hover:text-t-primary hover:bg-fill-2'
-            )}
-            aria-pressed={activeFilter === opt.key}
-          >
-            {opt.label}
-            {opt.count > 0 && (
-              <span className='text-10px font-medium px-3px py-0.5px rounded bg-fill-2 text-t-tertiary border border-[var(--color-border-2)]'>
-                {opt.count}
-              </span>
-            )}
-          </button>
-        </Tooltip>
-      ))}
+      {options.map((opt) => {
+        const isSelected = activeFilter === opt.key;
+        return (
+          <Tooltip key={opt.key} {...siderTooltipProps} content={`${opt.label} (${opt.count})`} position='top'>
+            <Button
+              type='text'
+              size='mini'
+              onClick={() => onChange(opt.key)}
+              className={classNames(
+                '!flex-1 !h-full !px-2px !py-0 flex items-center justify-center gap-3px rounded-4px text-12px border-none transition-all leading-none',
+                isSelected
+                  ? '!bg-[var(--color-bg-2)] !text-primary shadow-xs !font-medium'
+                  : '!bg-transparent !text-t-secondary hover:!text-t-primary hover:!bg-fill-3'
+              )}
+              aria-pressed={isSelected}
+            >
+              <span className='capitalize text-12px leading-none truncate'>{opt.label}</span>
+              {opt.count > 0 && (
+                <span
+                  className={classNames(
+                    'text-10px leading-none font-normal px-3px py-0.5px rounded-full shrink-0',
+                    isSelected ? 'bg-fill-2 text-primary' : 'bg-fill-2 text-t-tertiary'
+                  )}
+                >
+                  {opt.count}
+                </span>
+              )}
+            </Button>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 };

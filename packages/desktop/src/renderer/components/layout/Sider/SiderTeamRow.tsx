@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { User, Edit } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -35,28 +35,20 @@ export const SiderTeamRow: React.FC<SiderTeamRowProps> = ({
 
   return (
     <div
-      role='button'
-      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
       className={classNames(
-        'flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px',
+        'group flex items-center justify-between px-6px py-3px rounded cursor-pointer transition-colors text-11px select-none',
         isSelected
-          ? 'bg-primary/10 text-t-primary border border-primary/20'
+          ? 'bg-[rgba(var(--primary-6),0.10)] text-t-primary border border-[rgba(var(--primary-6),0.20)]'
           : 'hover:bg-fill-2 text-t-secondary hover:text-t-primary'
       )}
     >
       <div className='flex items-center gap-5px truncate min-w-0'>
         <User size={11} theme='outline' className='text-primary shrink-0' />
-        <span className='truncate' title={team.name}>
+        <span className='truncate text-11px' title={team.name}>
           {team.name}
         </span>
       </div>
@@ -66,14 +58,15 @@ export const SiderTeamRow: React.FC<SiderTeamRowProps> = ({
           content={t('team.organization.editTeam', { defaultValue: 'Edit Team' })}
           position='top'
         >
-          <button
-            type='button'
-            className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-            onClick={onEdit}
+          <Button
+            type='text'
+            size='mini'
+            className='!size-16px !p-0 rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity border-none'
+            onClick={(e) => onEdit(e)}
             aria-label={t('team.organization.editTeam', { defaultValue: 'Edit Team' })}
           >
             <Edit size={10} theme='outline' />
-          </button>
+          </Button>
         </Tooltip>
         <span className='size-4px rounded-full shrink-0 opacity-60' style={{ backgroundColor: theme.borderColor }} />
       </div>

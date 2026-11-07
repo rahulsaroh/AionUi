@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { FolderClose, Edit, Plus } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -47,26 +47,18 @@ export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
 
   return (
     <div
-      role='button'
-      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
       className={classNames(
-        'flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary',
-        isSelected ? 'bg-primary/10 border border-primary/20' : 'hover:bg-fill-2'
+        'group flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary select-none',
+        isSelected ? 'bg-[rgba(var(--primary-6),0.10)] border border-[rgba(var(--primary-6),0.20)]' : 'hover:bg-fill-2'
       )}
     >
       <div className='flex items-center gap-6px truncate min-w-0'>
-        <FolderClose size={13} theme='outline' className='text-amber-400 shrink-0' />
-        <span className='truncate font-medium' title={project.name}>
+        <FolderClose size={13} theme='outline' className='text-amber-500 shrink-0' />
+        <span className='truncate font-medium text-12px' title={project.name}>
           {project.name}
         </span>
       </div>
@@ -84,28 +76,30 @@ export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
           content={t('team.organization.editProject', { defaultValue: 'Edit Project' })}
           position='top'
         >
-          <button
-            type='button'
-            className='size-16px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-            onClick={onEdit}
+          <Button
+            type='text'
+            size='mini'
+            className='!size-16px !p-0 rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity border-none'
+            onClick={(e) => onEdit(e)}
             aria-label={t('team.organization.editProject', { defaultValue: 'Edit Project' })}
           >
             <Edit size={10} theme='outline' />
-          </button>
+          </Button>
         </Tooltip>
         <Tooltip
           {...siderTooltipProps}
           content={t('team.organization.newChat', { defaultValue: 'New chat' })}
           position='top'
         >
-          <button
-            type='button'
-            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 transition-opacity'
-            onClick={onNewChat}
+          <Button
+            type='text'
+            size='mini'
+            className='!size-18px !p-0 rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 transition-opacity border-none'
+            onClick={(e) => onNewChat(e)}
             aria-label={t('team.organization.newChat', { defaultValue: 'New chat' })}
           >
             <Plus size={11} theme='outline' />
-          </button>
+          </Button>
         </Tooltip>
       </div>
     </div>

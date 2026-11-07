@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { Down, Right, Edit, LinkOne, FolderPlus, Plus, MoreOne } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -53,41 +53,24 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
 
   return (
     <div
-      role='button'
-      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
       className={classNames(
-        'group flex items-center justify-between px-8px py-5px rounded-6px cursor-pointer transition-colors text-12px',
-        isSelected ? 'bg-primary/10 text-t-primary border border-primary/20' : 'hover:bg-fill-3 text-t-primary'
+        'group flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px select-none min-h-28px',
+        isSelected
+          ? 'bg-[rgba(var(--primary-6),0.10)] text-t-primary border border-[rgba(var(--primary-6),0.25)]'
+          : 'hover:bg-fill-3 text-t-primary'
       )}
     >
-      <div className='flex items-center gap-6px min-w-0'>
+      <div className='flex items-center gap-5px min-w-0 flex-1 mr-4px'>
         {teamsCount > 0 && (
           <span
-            className={classNames(
-              'size-16px flex items-center justify-center shrink-0 transition-transform',
-              isExpanded ? 'rotate-90' : ''
-            )}
+            className='size-14px flex items-center justify-center shrink-0 cursor-pointer'
             onClick={(e) => {
               e.stopPropagation();
               onToggleExpand();
-            }}
-            role='button'
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onToggleExpand();
-              }
             }}
             aria-expanded={isExpanded}
             aria-label={
@@ -96,114 +79,144 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
                 : t('team.organization.expand', { defaultValue: 'Expand' })
             }
           >
-            {isExpanded ? <Down size={10} theme='outline' /> : <Right size={10} theme='outline' />}
+            <Right
+              size={10}
+              theme='outline'
+              className={classNames('shrink-0 transition-transform duration-200', isExpanded ? 'rotate-90' : '')}
+            />
           </span>
         )}
-        <span className='size-4px rounded-full shrink-0 opacity-60' style={{ backgroundColor: theme.borderColor }} />
-        <span className='font-semibold truncate' title={department.name}>
+        <span className='size-5px rounded-full shrink-0' style={{ backgroundColor: theme.borderColor }} />
+        <span className='font-semibold truncate text-12px text-t-primary' title={department.name}>
           {department.name}
         </span>
-        <span className='text-10px text-t-tertiary font-mono'>
-          {teamsCount} teams · {projectsCount} projects
+        <span className='text-10px text-t-tertiary whitespace-nowrap shrink-0'>
+          {teamsCount}t · {projectsCount}p
         </span>
       </div>
       <div className='flex items-center gap-2px shrink-0'>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.teamsTab', { defaultValue: 'Teams' })}
-          position='top'
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSubTab('teams');
-            }}
-            className={classNames(
-              'px-5px py-1px text-9px transition-colors shrink-0 rounded-l-6px',
-              subTab === 'teams' ? 'bg-fill-3 text-t-primary' : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
-            )}
-            aria-pressed={subTab === 'teams'}
+        <div className='flex items-center bg-fill-2 border border-[var(--color-border-2)] rounded-4px p-1px shrink-0'>
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.teamsTab', { defaultValue: 'Teams' })}
+            position='top'
           >
-            {t('team.organization.teamsTab', { defaultValue: 'Teams' })}
-          </button>
-        </Tooltip>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.projectsTab', { defaultValue: 'Projects' })}
-          position='top'
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSubTab('projects');
-            }}
-            className={classNames(
-              'px-5px py-1px text-9px transition-colors shrink-0 rounded-r-6px',
-              subTab === 'projects'
-                ? 'bg-fill-3 text-t-primary'
-                : 'text-t-tertiary hover:bg-fill-2 hover:text-t-primary'
-            )}
-            aria-pressed={subTab === 'projects'}
+            <Button
+              type='text'
+              size='mini'
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSubTab('teams');
+              }}
+              className={classNames(
+                '!px-5px !py-1px !h-18px text-10px transition-colors shrink-0 rounded-3px leading-none border-none',
+                subTab === 'teams'
+                  ? '!bg-[var(--color-bg-2)] !text-primary shadow-xs !font-medium'
+                  : '!text-t-tertiary hover:!text-t-primary'
+              )}
+              aria-pressed={subTab === 'teams'}
+            >
+              {t('team.organization.teamsTab', { defaultValue: 'Teams' })}
+            </Button>
+          </Tooltip>
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.projectsTab', { defaultValue: 'Projects' })}
+            position='top'
           >
-            {t('team.organization.projectsTab', { defaultValue: 'Projects' })}
-          </button>
-        </Tooltip>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
-          position='top'
-        >
-          <button
-            type='button'
-            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity ml-2px'
-            onClick={onEdit}
-            aria-label={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
+            <Button
+              type='text'
+              size='mini'
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSubTab('projects');
+              }}
+              className={classNames(
+                '!px-5px !py-1px !h-18px text-10px transition-colors shrink-0 rounded-3px leading-none border-none',
+                subTab === 'projects'
+                  ? '!bg-[var(--color-bg-2)] !text-primary shadow-xs !font-medium'
+                  : '!text-t-tertiary hover:!text-t-primary'
+              )}
+              aria-pressed={subTab === 'projects'}
+            >
+              {t('team.organization.projectsTab', { defaultValue: 'Projects' })}
+            </Button>
+          </Tooltip>
+        </div>
+        <div className='hidden group-hover:flex items-center gap-1px shrink-0'>
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
+            position='top'
           >
-            <Edit size={11} theme='outline' />
-          </button>
-        </Tooltip>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.setFolder', { defaultValue: 'Set Folder' })}
-          position='top'
-        >
-          <button
-            type='button'
-            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-amber-400 hover:bg-amber-500/20 opacity-0 group-hover:opacity-100 transition-opacity'
-            onClick={onSetFolder}
-            aria-label={t('team.organization.setFolder', { defaultValue: 'Set Folder' })}
+            <Button
+              type='text'
+              size='mini'
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(e);
+              }}
+              className='!p-2px !h-20px !w-20px flex items-center justify-center text-t-tertiary hover:text-t-primary transition-all shrink-0 border-none'
+              aria-label={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
+            >
+              <Edit size={12} theme='outline' />
+            </Button>
+          </Tooltip>
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.setFolder', { defaultValue: 'Set Folder' })}
+            position='top'
           >
-            <LinkOne size={11} theme='outline' />
-          </button>
-        </Tooltip>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
-          position='top'
-        >
-          <button
-            type='button'
-            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-            onClick={onAddProject}
-            aria-label={t('team.organization.addProject', { defaultValue: 'Add Project' })}
+            <Button
+              type='text'
+              size='mini'
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetFolder(e);
+              }}
+              className='!p-2px !h-20px !w-20px flex items-center justify-center text-t-tertiary hover:text-t-primary transition-all shrink-0 border-none'
+              aria-label={t('team.organization.setFolder', { defaultValue: 'Set Folder' })}
+            >
+              <LinkOne size={12} theme='outline' />
+            </Button>
+          </Tooltip>
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
+            position='top'
           >
-            <FolderPlus size={11} theme='outline' />
-          </button>
-        </Tooltip>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
-          position='top'
-        >
-          <button
-            type='button'
-            className='size-18px rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity'
-            onClick={onAddTeam}
-            aria-label={t('team.organization.addTeam', { defaultValue: 'Add Sub-Team' })}
+            <Button
+              type='text'
+              size='mini'
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddProject(e);
+              }}
+              className='!p-2px !h-20px !w-20px flex items-center justify-center text-t-tertiary hover:text-t-primary transition-all shrink-0 border-none'
+              aria-label={t('team.organization.addProject', { defaultValue: 'Add Project' })}
+            >
+              <FolderPlus size={12} theme='outline' />
+            </Button>
+          </Tooltip>
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.addTeam', { defaultValue: 'Add Team' })}
+            position='top'
           >
-            <Plus size={11} theme='outline' />
-          </button>
-        </Tooltip>
+            <Button
+              type='text'
+              size='mini'
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddTeam(e);
+              }}
+              className='!p-2px !h-20px !w-20px flex items-center justify-center text-t-tertiary hover:text-t-primary transition-all shrink-0 border-none'
+              aria-label={t('team.organization.addTeam', { defaultValue: 'Add Team' })}
+            >
+              <Plus size={12} theme='outline' />
+            </Button>
+          </Tooltip>
+        </div>
       </div>
     </div>
   );

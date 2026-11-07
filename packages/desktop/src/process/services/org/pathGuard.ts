@@ -1,4 +1,4 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 import fs from 'node:fs';
 
 export type ScopeCheckResult = { allowed: boolean; reason?: string; resolved: string };

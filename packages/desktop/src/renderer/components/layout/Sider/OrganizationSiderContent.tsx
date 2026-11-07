@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Tooltip, Modal, Input, Message } from '@arco-design/web-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +25,6 @@ import OrgProjectModal from '@/renderer/pages/organization/components/OrgProject
 import OrgDepartmentModal from '@/renderer/pages/organization/components/OrgDepartmentModal';
 import OrgEntityEditModal from '@/renderer/pages/organization/components/OrgEntityEditModal';
 
-import SiderModeToggle from './SiderModeToggle';
 import SiderCommandCard from './SiderCommandCard';
 import SiderNavRow from './SiderNavRow';
 import SiderSearchInput from './SiderSearchInput';
@@ -84,6 +83,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [ceoChatModalVisible, setCeoChatModalVisible] = useState(false);
+  const [ceoPrompt, setCeoPrompt] = useState('');
   const [targetDeptIdForTeam, setTargetDeptIdForTeam] = useState<string | null>(null);
   const [newSubTeamName, setNewSubTeamName] = useState('');
   const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
@@ -102,6 +103,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   } | null>(null);
 
   const isCanvasActive = location.pathname === '/organization';
+  const isAutomationsActive = location.pathname === '/scheduled';
 
   const toggleDept = (deptId: string) => {
     setCollapsedDepts((prev) => {
@@ -238,17 +240,62 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const allTeams = useMemo(() => hierarchy.departments.flatMap((d) => d.teams), [hierarchy.departments]);
 
+  const deptStatus = useCallback(
+    (dept: OrgDepartmentNode): OrgNodeStatus =>
+      computeLifecycleStatus(dept.lastActiveAt, nodeStatuses[dept.id] || dept.status),
+    [nodeStatuses]
+  );
+
+  const teamStatus = useCallback(
+    (team: OrgTeamNode): OrgNodeStatus =>
+      computeLifecycleStatus(team.lastActiveAt, nodeStatuses[team.id] || team.status),
+    [nodeStatuses]
+  );
+
   const query = searchQuery.trim().toLowerCase();
   const filteredDepartments = useMemo(() => {
-    if (!query) return hierarchy.departments;
-    return hierarchy.departments.filter((dept) => {
+    let list = hierarchy.departments;
+    if (activeFilter === 'active') {
+      list = list.filter((dept) => {
+        const dStatus = deptStatus(dept);
+        const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
+        const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+        return (
+          dStatus !== 'dormant' ||
+          deptTeams.some((t) => teamStatus(t) !== 'dormant') ||
+          deptProjects.some((p) => p.status !== 'dormant')
+        );
+      });
+    } else if (activeFilter === 'dormant') {
+      list = list.filter((dept) => {
+        const dStatus = deptStatus(dept);
+        const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
+        const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+        return (
+          dStatus === 'dormant' ||
+          deptTeams.some((t) => teamStatus(t) === 'dormant') ||
+          deptProjects.some((p) => p.status === 'dormant')
+        );
+      });
+    } else if (activeFilter === 'shared') {
+      list = list.filter((dept) => {
+        const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
+        const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+        const hasSharedMember = deptTeams.some((t) => t.specialistMembers.some((m) => m.assignedTeamIds.length > 1));
+        const hasSharedProject = deptProjects.some((p) => p.teamIds.length > 1);
+        return hasSharedMember || hasSharedProject;
+      });
+    }
+
+    if (!query) return list;
+    return list.filter((dept) => {
       if (dept.name.toLowerCase().includes(query)) return true;
       const deptTeams = allTeams.filter((teamItem) => teamItem.departmentId === dept.id);
       if (deptTeams.some((teamItem) => teamItem.name.toLowerCase().includes(query))) return true;
       const deptProjects = projects.filter((p) => p.departmentId === dept.id);
       return deptProjects.some((p) => p.name.toLowerCase().includes(query));
     });
-  }, [hierarchy.departments, allTeams, projects, query]);
+  }, [hierarchy.departments, allTeams, projects, activeFilter, deptStatus, teamStatus, query]);
 
   const teamsInSelectedDept = useMemo(() => {
     if (selectedDepartmentId) {
@@ -295,11 +342,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     }
     return parts;
   }, [selectedProject, selectedTeam, selectedDepartment, teamsInSelectedDept, hierarchy.departments]);
-
-  const deptStatus = (dept: OrgDepartmentNode): OrgNodeStatus =>
-    computeLifecycleStatus(dept.lastActiveAt, nodeStatuses[dept.id] || dept.status);
-  const teamStatus = (team: OrgTeamNode): OrgNodeStatus =>
-    computeLifecycleStatus(team.lastActiveAt, nodeStatuses[team.id] || team.status);
 
   // Returns a short label for the chat row badge: team name or agent role
   const chatBadgeLabel = (conv: OrgConversation): string => {
@@ -378,7 +420,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         <Tooltip {...siderTooltipProps} content='Talk to Root CEO' position='right'>
           <SiderCommandCard onClick={handleOpenCeoChat} />
         </Tooltip>
-        <Tooltip {...siderTooltipProps} content='2D Org-Chart Canvas' position='right'>
+        <Tooltip
+          {...siderTooltipProps}
+          content={t('team.organization.canvas', { defaultValue: 'Organization Canvas' })}
+          position='right'
+        >
           <SiderNavRow
             icon={<NetworkTree size={16} theme='outline' fill='currentColor' />}
             label=''
@@ -389,10 +435,15 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             }}
           />
         </Tooltip>
-        <Tooltip {...siderTooltipProps} content='Org Automations' position='right'>
+        <Tooltip
+          {...siderTooltipProps}
+          content={t('team.organization.automations', { defaultValue: 'Org Automations' })}
+          position='right'
+        >
           <SiderNavRow
-            icon={<AlarmClock size={16} theme='outline' fill='currentColor' className='text-cyan-400' />}
+            icon={<AlarmClock size={16} theme='outline' fill='currentColor' />}
             label=''
+            selected={isAutomationsActive}
             onClick={() => {
               onSessionClick?.();
               void navigate('/scheduled');
@@ -449,34 +500,33 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   return (
     <div className='flex flex-col h-full overflow-hidden'>
       <div className='flex-1 overflow-y-auto custom-scrollbar'>
-        {/* Mode Switcher */}
-        <SiderModeToggle collapsed={collapsed} siderTooltipProps={siderTooltipProps} onSessionClick={onSessionClick} />
-
         {/* Primary Actions */}
-        <div className='px-8px mb-2px flex flex-col gap-2px'>
-          <SiderCommandCard onClick={handleOpenCeoChat} shortcut='⌘K' selected={ceoChatModalVisible} />
+        <div className='px-8px mb-4px flex flex-col gap-2px'>
+          <SiderCommandCard onClick={handleOpenCeoChat} selected={ceoChatModalVisible} />
           <SiderNavRow
-            icon={<NetworkTree size={16} theme='outline' fill='currentColor' />}
-            label={t('team.organization.canvas', { defaultValue: '2D Org-Chart Canvas' })}
+            icon={<NetworkTree size={14} theme='outline' fill='currentColor' />}
+            label={t('team.organization.canvas', { defaultValue: 'Organization Canvas' })}
             selected={isCanvasActive}
+            badge='Live'
             onClick={() => {
               onSessionClick?.();
               void navigate('/organization');
             }}
           />
           <SiderNavRow
-            icon={<AlarmClock size={16} theme='outline' fill='currentColor' className='text-cyan-400' />}
+            icon={<AlarmClock size={14} theme='outline' fill='currentColor' />}
             label={t('team.organization.automations', { defaultValue: 'Org Automations' })}
+            selected={isAutomationsActive}
+            badgeCount={cronJobs.length}
             onClick={() => {
               onSessionClick?.();
               void navigate('/scheduled');
             }}
-            badgeCount={cronJobs.length}
           />
         </div>
 
         {/* Search and Filters */}
-        <div className='px-8px mb-4px flex flex-col gap-2px'>
+        <div className='px-8px mb-8px flex flex-col gap-6px'>
           <SiderSearchInput value={searchQuery} onChange={setSearchQuery} siderTooltipProps={siderTooltipProps} />
           <SiderFilterSegment
             activeFilter={activeFilter}

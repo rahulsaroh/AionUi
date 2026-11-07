@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { Tooltip } from '@arco-design/web-react';
+import { Button, Tooltip } from '@arco-design/web-react';
 import { Close, Right as ChevronRight } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -41,24 +41,26 @@ export const SiderBreadcrumb: React.FC<SiderBreadcrumbProps> = ({ parts, onSelec
           content={t('team.organization.allDepartments', { defaultValue: 'All Departments' })}
           position='bottom'
         >
-          <button
-            type='button'
-            className='p-2px text-t-tertiary hover:text-t-primary transition-colors rounded-3px shrink-0'
+          <Button
+            type='text'
+            size='mini'
+            className='!p-2px !h-auto text-t-tertiary hover:text-t-primary transition-colors rounded-3px shrink-0 leading-none'
             onClick={() => onSelect({ label: '', id: null, type: 'dept' })}
             aria-label={t('team.organization.allDepartments', { defaultValue: 'All Departments' })}
           >
             <span className='text-11px font-medium text-t-secondary'>
               {t('team.organization.allDepartmentsShort', { defaultValue: 'All' })}
             </span>
-          </button>
+          </Button>
         </Tooltip>
         {parts.map((part, idx) => (
           <span key={part.id ?? idx} className='flex items-center gap-3px shrink-0'>
             <ChevronRight size={10} theme='outline' className='text-t-tertiary shrink-0 opacity-60' />
-            <button
-              type='button'
+            <Button
+              type='text'
+              size='mini'
               className={classNames(
-                'p-2px truncate hover:bg-fill-2 hover:text-primary transition-colors rounded-3px breadcrumb-btn',
+                '!p-2px !h-auto truncate hover:bg-fill-2 hover:text-primary transition-colors rounded-3px breadcrumb-btn leading-none',
                 idx === parts.length - 1 ? 'font-medium text-t-primary' : 'text-t-secondary'
               )}
               onClick={(e) => {
@@ -68,7 +70,7 @@ export const SiderBreadcrumb: React.FC<SiderBreadcrumbProps> = ({ parts, onSelec
               title={part.label}
             >
               <span className='text-11px truncate max-w-[140px]'>{part.label}</span>
-            </button>
+            </Button>
           </span>
         ))}
       </div>
@@ -77,14 +79,15 @@ export const SiderBreadcrumb: React.FC<SiderBreadcrumbProps> = ({ parts, onSelec
         content={t('team.organization.clearFilter', { defaultValue: 'Clear filter' })}
         position='top'
       >
-        <button
-          type='button'
-          className='p-1px text-t-tertiary hover:text-t-danger transition-colors shrink-0'
+        <Button
+          type='text'
+          size='mini'
+          className='!p-1px !h-auto text-t-tertiary hover:text-t-danger transition-colors shrink-0 leading-none'
           onClick={onClear}
           aria-label={t('team.organization.clearFilter', { defaultValue: 'Clear filter' })}
         >
           <Close size={12} theme='outline' />
-        </button>
+        </Button>
       </Tooltip>
     </div>
   );

@@ -5,8 +5,10 @@
  */
 
 import React from 'react';
+import { Button } from '@arco-design/web-react';
 import { Crown } from '@icon-park/react';
 import classNames from 'classnames';
+import styles from './Sider.module.css';
 
 interface SiderCommandCardProps {
   onClick: () => void;
@@ -16,24 +18,29 @@ interface SiderCommandCardProps {
 
 export const SiderCommandCard: React.FC<SiderCommandCardProps> = ({ onClick, shortcut, selected = false }) => {
   return (
-    <button
-      type='button'
+    <Button
+      type='text'
       onClick={onClick}
       className={classNames(
-        'w-full h-34px flex items-center gap-8px px-10px rounded-8px cursor-pointer border-none transition-all',
-        'bg-primary/8 text-t-primary hover:bg-primary/14',
-        selected && 'bg-primary/14 border-l-2 border-primary',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-base)]'
+        '!w-full !h-34px !px-10px !py-0 flex items-center justify-start gap-8px text-left border-none cursor-pointer select-none',
+        styles.commandCard,
+        selected && styles.commandCardSelected
       )}
     >
-      <Crown size={16} theme='outline' fill='currentColor' className='shrink-0 text-amber-500' />
-      <span className='font-medium text-13px truncate'>Talk to Root CEO</span>
-      {shortcut && (
-        <span className='ms-auto text-10px font-medium px-3px py-0.5px rounded bg-fill-2 text-t-tertiary border border-[var(--color-border-2)]'>
+      <Crown
+        size={16}
+        theme='outline'
+        fill='currentColor'
+        className='shrink-0'
+        style={{ color: '#D97706', lineHeight: 0 }}
+      />
+      <span className='font-medium text-13px text-t-primary truncate leading-none'>Talk to Root CEO</span>
+      {Boolean(shortcut?.trim()) && (
+        <span className='ms-auto text-10px font-medium px-4px py-0.5px rounded bg-fill-2 text-t-secondary border border-[var(--color-border-2)] leading-tight shrink-0'>
           {shortcut}
         </span>
       )}
-    </button>
+    </Button>
   );
 };
 

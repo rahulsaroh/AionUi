@@ -174,3 +174,45 @@
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--color-border-2);
 }
+
+/* Command Card ("Talk to Root CEO") */
+.commandCard {
+  background-color: rgba(var(--primary-6), 0.08) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  transition: all 0.15s ease !important;
+}
+
+.commandCard:hover {
+  background-color: rgba(var(--primary-6), 0.14) !important;
+  color: var(--text-primary) !important;
+}
+
+.commandCardSelected {
+  background-color: rgba(var(--primary-6), 0.14) !important;
+  border-left: 2px solid rgb(var(--primary-6)) !important;
+  border-top-left-radius: 4px !important;
+  border-bottom-left-radius: 4px !important;
+}
+
+/* Nav Row ("Organization Canvas", "Org Automations") */
+.navRow {
+  background-color: transparent !important;
+  color: var(--text-primary) !important;
+  border-radius: 8px !important;
+  transition: all 0.15s ease !important;
+}
+
+.navRow:hover {
+  background-color: var(--color-fill-2) !important;
+  color: var(--text-primary) !important;
+}
+
+.navRowSelected {
+  background-color: rgba(var(--primary-6), 0.12) !important;
+  border-left: 2px solid rgb(var(--primary-6)) !important;
+  border-top-left-radius: 4px !important;
+  border-bottom-left-radius: 4px !important;
+  color: var(--text-primary) !important;
+}

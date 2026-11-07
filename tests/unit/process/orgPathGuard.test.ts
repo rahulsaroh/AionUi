@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { assertWithinScope } from '../../../packages/desktop/src/process/services/org/pathGuard';
 
 describe('assertWithinScope', () => {

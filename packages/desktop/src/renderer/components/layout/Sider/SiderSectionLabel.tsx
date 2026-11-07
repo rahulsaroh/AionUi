@@ -17,20 +17,12 @@ interface SiderSectionLabelProps {
 export const SiderSectionLabel: React.FC<SiderSectionLabelProps> = ({ label, count, collapsed, onToggle }) => {
   return (
     <div
-      className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer select-none'
+      className='flex items-center justify-between px-12px h-26px text-t-tertiary hover:text-t-primary cursor-pointer select-none transition-colors'
       onClick={onToggle}
-      role='button'
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onToggle();
-        }
-      }}
       aria-expanded={!collapsed}
     >
       <div className='flex items-center gap-6px'>
-        <span className='text-11px font-semibold uppercase tracking-wider'>
+        <span className='text-11px font-semibold uppercase tracking-wider text-t-secondary'>
           {label} ({count})
         </span>
         {collapsed ? <Right size={11} theme='outline' /> : <Down size={11} theme='outline' />}
