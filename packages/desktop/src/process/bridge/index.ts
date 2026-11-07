@@ -18,6 +18,7 @@ import { registerTeamworkHandlers } from '../services/teamwork/teamworkHandler';
 import { registerTeamScopingHandlers } from '../services/teamwork/teamScopingHandler';
 import { registerKnowledgeRepoBridge } from './knowledgeRepoBridge';
 import { registerGatewayBridge } from './gatewayBridge';
+import { registerOrgBridge } from './orgBridge';
 import { getGatewayService } from '../services/gateway';
 
 export type BridgeDependencies = Record<string, never>;
@@ -37,6 +38,7 @@ export function initAllBridges(_deps: BridgeDependencies = {}): void {
   registerTeamScopingHandlers();
   registerKnowledgeRepoBridge();
   registerGatewayBridge();
+  registerOrgBridge();
   void getGatewayService()
     .start()
     .catch((err) => {

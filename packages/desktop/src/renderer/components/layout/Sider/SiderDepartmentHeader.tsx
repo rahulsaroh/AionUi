@@ -24,10 +24,10 @@ interface SiderDepartmentHeaderProps {
   onSelect: () => void;
   onToggleExpand: () => void;
   onToggleSubTab: (tab: 'teams' | 'projects') => void;
-  onEdit: (e: React.MouseEvent) => void;
-  onSetFolder: (e: React.MouseEvent) => void;
-  onAddProject: (e: React.MouseEvent) => void;
-  onAddTeam: (e: React.MouseEvent) => void;
+  onEdit: (e?: React.MouseEvent | Event) => void;
+  onSetFolder: (e?: React.MouseEvent | Event) => void;
+  onAddProject: (e?: React.MouseEvent | Event) => void;
+  onAddTeam: (e?: React.MouseEvent | Event) => void;
   siderTooltipProps: SiderTooltipProps;
 }
 

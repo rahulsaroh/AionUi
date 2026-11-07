@@ -58,6 +58,10 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     updateTeamNode,
     addDepartment,
     addSubTeam,
+    addTeamMember,
+    upsertOrgProject,
+    setOrgViewMode,
+    setSelectedConversationId,
   } = useOrgStore();
   const [activeTab, setActiveTab] = useState<'conversations' | 'terminal' | 'members'>('conversations');
   const [directiveInput, setDirectiveInput] = useState('');
@@ -76,6 +80,28 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     return projects.find((p) => p.teamIds.includes(selectedNodeId))?.id;
   }, [projects, selectedNodeType, selectedNodeId]);
 
+  const handleStartDirectChat = useCallback(
+    (agent: { id: string; name: string; title?: string }) => {
+      const convId = `conv-direct-${agent.id}-${Date.now()}`;
+      addOrgConversation({
+        id: convId,
+        title: `Direct Chat: ${agent.name}`,
+        type: 'agent_direct',
+        sourceNodeId: selectedNodeId || 'root-ceo',
+        targetNodeId: selectedNodeId || 'root-ceo',
+        targetAgentId: agent.id,
+        targetAgentName: agent.name,
+        timestamp: Date.now(),
+        summary: `Direct 1:1 conversation with ${agent.name} (${agent.title || 'Specialist'})`,
+        messages: [],
+      });
+      setSelectedConversationId(convId);
+      setOrgViewMode('chat');
+      onClose();
+    },
+    [addOrgConversation, onClose, selectedNodeId, setOrgViewMode, setSelectedConversationId]
+  );
+
   if (!visible || !selectedNodeId) return null;
 
   let nodeTitle = 'Executive Node';
@@ -88,6 +114,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   let specialists: Array<{ id: string; name: string; title?: string }> = [];
   let linkedProjects: Array<{ id: string; name: string; path?: string }> = [];
   let editableDepartmentId: string | null = null;
+  let targetAgentMember: import('@/types/organization').OrgAgentMember | null = null;
 
   if (selectedNodeType === 'ceo' || selectedNodeId === 'root-ceo') {
     nodeTitle = hierarchy.rootCeo.name;
@@ -97,6 +124,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     leaderTitle = hierarchy.rootCeo.ceoAgent.title || 'CEO';
     leaderRole = 'Root CEO';
     nodeWorkspacePath = hierarchy.rootCeo.workspacePath ?? null;
+    targetAgentMember = hierarchy.rootCeo.ceoAgent;
     if (hierarchy.rootCeo.chiefOfStaffAgent) {
       specialists.push({
         id: hierarchy.rootCeo.chiefOfStaffAgent.id,
@@ -115,12 +143,20 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       leaderTitle = dept.departmentCeoAgent.title || 'Department Head';
       leaderRole = 'Department Head';
       nodeWorkspacePath = dept.workspacePath ?? null;
+      targetAgentMember = dept.departmentCeoAgent;
       linkedProjects = dept.linkedProjects;
       dept.teams.forEach((teamNode) => {
         specialists.push({
-          id: teamNode.id,
-          name: teamNode.name,
-          title: `Team Lead: ${teamNode.teamLeadAgent.name}`,
+          id: teamNode.teamLeadAgent.id,
+          name: teamNode.teamLeadAgent.name,
+          title: `Team Lead (${teamNode.name})`,
+        });
+        teamNode.specialistMembers.forEach((spec) => {
+          specialists.push({
+            id: spec.id,
+            name: spec.name,
+            title: spec.title || `${spec.role} (${teamNode.name})`,
+          });
         });
       });
     }
@@ -135,13 +171,21 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
         leaderTitle = teamNode.teamLeadAgent.title || 'Team Manager';
         leaderRole = 'Team Lead';
         nodeWorkspacePath = teamNode.workspacePath ?? null;
+        targetAgentMember = teamNode.teamLeadAgent;
         linkedProjects = projects
           .filter((project) => project.teamIds.includes(teamNode.id))
           .map((project) => ({ id: project.id, name: project.name, path: project.path }));
         if (linkedProjects.length === 0 && teamNode.linkedProjectName) {
           linkedProjects.push({ id: teamNode.linkedProjectId || teamNode.id, name: teamNode.linkedProjectName });
         }
-        specialists = teamNode.specialistMembers.map((s) => ({ id: s.id, name: s.name, title: s.title || s.role }));
+        specialists = [
+          {
+            id: teamNode.hrCoordinatorAgent.id,
+            name: teamNode.hrCoordinatorAgent.name,
+            title: 'HR & Workload Coordinator',
+          },
+          ...teamNode.specialistMembers.map((s) => ({ id: s.id, name: s.name, title: s.title || s.role })),
+        ];
         break;
       }
     }
@@ -225,6 +269,16 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       if (result.createdTeams && result.createdTeams.length > 0) {
         for (const { departmentId, team } of result.createdTeams) {
           addSubTeam(departmentId, team);
+        }
+      }
+      if (result.createdProjects && result.createdProjects.length > 0) {
+        for (const proj of result.createdProjects) {
+          upsertOrgProject(proj);
+        }
+      }
+      if (result.createdMembers && result.createdMembers.length > 0) {
+        for (const { teamId, member } of result.createdMembers) {
+          addTeamMember(teamId, member);
         }
       }
       if (result.success) {
@@ -399,6 +453,22 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           </div>
         </div>
 
+        <Button
+          type='outline'
+          size='small'
+          icon={<MessageOne size={13} theme='outline' />}
+          onClick={() => {
+            if (targetAgentMember) {
+              handleStartDirectChat(targetAgentMember);
+            } else {
+              handleStartDirectChat({ id: selectedNodeId, name: leaderName, title: leaderTitle });
+            }
+          }}
+          className='w-full !rounded-8px !text-12px !py-6px !font-medium'
+        >
+          Chat Directly with {leaderName}
+        </Button>
+
         {linkedProjects.length > 0 && (
           <div className='flex flex-col gap-6px'>
             <span className='text-10px font-semibold uppercase tracking-wider text-t-tertiary'>
@@ -449,6 +519,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
               ) : (
                 nodeConversations.map((conv) => {
                   const isExpanded = expandedConvId === conv.id;
+
                   return (
                     <div
                       key={conv.id}
@@ -521,13 +592,24 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
               {specialists.map((spec) => (
                 <div
                   key={spec.id}
-                  className='p-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-12px'
+                  className='p-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-12px hover:bg-fill-2 transition-colors'
                 >
                   <div className='flex items-center gap-8px min-w-0'>
                     <Robot size={14} theme='outline' className='text-primary shrink-0' />
-                    <span className='font-medium text-t-primary truncate'>{spec.name}</span>
+                    <div className='flex flex-col min-w-0'>
+                      <span className='font-medium text-t-primary truncate'>{spec.name}</span>
+                      <span className='text-10px text-t-tertiary truncate max-w-160px font-mono'>{spec.title}</span>
+                    </div>
                   </div>
-                  <span className='text-11px text-t-tertiary truncate max-w-160px font-mono'>{spec.title}</span>
+                  <Button
+                    size='mini'
+                    type='text'
+                    icon={<MessageOne size={12} theme='outline' />}
+                    onClick={() => handleStartDirectChat(spec)}
+                    className='!rounded-6px !text-11px'
+                  >
+                    Chat
+                  </Button>
                 </div>
               ))}
             </div>

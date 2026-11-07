@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import type { OrgAgentMember, OrgDepartmentNode, OrgProject, OrgTeamNode } from '@/types/organization';
 import { useOrgStore } from '../store/useOrgStore';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
+import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 
 type EditEntityType = 'department' | 'team' | 'member' | 'project';
 
@@ -44,6 +45,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const [memberRole, setMemberRole] = useState('');
   const [memberPrompt, setMemberPrompt] = useState('');
   const [memberMcp, setMemberMcp] = useState('');
+  const [modelId, setModelId] = useState('claude-3-7-sonnet');
   const [parentDeptId, setParentDeptId] = useState('');
   const [folderPath, setFolderPath] = useState('');
   const [buildCmd, setBuildCmd] = useState('');
@@ -51,6 +53,36 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const [projectDeptId, setProjectDeptId] = useState('');
   const [projectTeamId, setProjectTeamId] = useState('');
   const [projectStatus, setProjectStatus] = useState<'active' | 'dormant' | 'done'>('active');
+
+  const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
+
+  const configuredModelOptions = useMemo(() => {
+    const list: Array<{ label: string; value: string; group?: string }> = [];
+    for (const provider of providers ?? []) {
+      const models = getAvailableModels(provider);
+      for (const m of models) {
+        list.push({
+          label: formatModelLabel ? formatModelLabel(provider, m) : `${provider.name} - ${m}`,
+          value: m,
+          group: provider.name,
+        });
+      }
+    }
+    // Fallback standard options if no providers yet configured
+    if (list.length === 0) {
+      return [
+        { label: 'Claude 3.7 Sonnet', value: 'claude-3-7-sonnet' },
+        { label: 'Claude 3.5 Sonnet', value: 'claude-3-5-sonnet' },
+        { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku' },
+        { label: 'GPT-4o', value: 'gpt-4o' },
+        { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+        { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
+        { label: 'DeepSeek V3', value: 'deepseek-chat' },
+        { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
+      ];
+    }
+    return list;
+  }, [providers, getAvailableModels, formatModelLabel]);
 
   const departmentOptions = useMemo(
     () => hierarchy.departments.map((d) => ({ label: d.name, value: d.id })),
@@ -76,6 +108,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       setDescription(dept.description ?? '');
       setHeadName(dept.departmentCeoAgent.name);
       setHeadPrompt(dept.departmentCeoAgent.title ?? '');
+      setModelId(dept.departmentCeoAgent.model?.modelId ?? 'claude-3-7-sonnet');
       setParentDeptId(dept.parentDepartmentId ?? '');
       setFolderPath(dept.workspacePath ?? '');
     } else if (entity === 'team') {
@@ -84,6 +117,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       setDescription(team.description ?? '');
       setHeadName(team.teamLeadAgent.name);
       setHeadPrompt(team.teamLeadAgent.title ?? '');
+      setModelId(team.teamLeadAgent.model?.modelId ?? 'claude-3-7-sonnet');
       setHrName(team.hrCoordinatorAgent.name);
       setFolderPath(team.workspacePath ?? '');
     } else if (entity === 'member') {
@@ -91,6 +125,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       setMemberName(member.name);
       setMemberRole(member.title ?? member.role);
       setMemberPrompt(member.title ?? '');
+      setModelId(member.model?.modelId ?? 'claude-3-7-sonnet');
       setMemberMcp(member.assistant_backend ?? '');
     } else if (entity === 'project') {
       const project = data as OrgProject;
@@ -114,6 +149,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           ...dept.departmentCeoAgent,
           name: headName.trim() || dept.departmentCeoAgent.name,
           title: headPrompt.trim() || dept.departmentCeoAgent.title,
+          model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
         },
         parentDepartmentId: parentDeptId.trim() || null,
         workspacePath: folderPath.trim() || undefined,
@@ -134,6 +170,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           ...team.teamLeadAgent,
           name: headName.trim() || team.teamLeadAgent.name,
           title: headPrompt.trim() || team.teamLeadAgent.title,
+          model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
         },
         hrCoordinatorAgent: {
           ...team.hrCoordinatorAgent,
@@ -152,6 +189,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         name: memberName.trim(),
         title: memberPrompt.trim() || undefined,
         role: (memberRole.trim() || member.role) as OrgAgentMember['role'],
+        model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
         assistant_backend: memberMcp.trim() || undefined,
       });
       onSave?.();
@@ -188,6 +226,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     memberRole,
     memberPrompt,
     memberMcp,
+    modelId,
     parentDeptId,
     folderPath,
     buildCmd,
@@ -252,6 +291,19 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               <Input.TextArea value={headPrompt} onChange={setHeadPrompt} rows={2} />
             </div>
             <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Assigned AI Bot Model</span>
+              <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
+                <Select.Option value='claude-3-7-sonnet'>Claude 3.7 Sonnet</Select.Option>
+                <Select.Option value='claude-3-5-sonnet'>Claude 3.5 Sonnet</Select.Option>
+                <Select.Option value='claude-3-5-haiku'>Claude 3.5 Haiku</Select.Option>
+                <Select.Option value='gpt-4o'>GPT-4o</Select.Option>
+                <Select.Option value='gpt-4o-mini'>GPT-4o Mini</Select.Option>
+                <Select.Option value='gemini-2.0-flash'>Gemini 2.0 Flash</Select.Option>
+                <Select.Option value='deepseek-chat'>DeepSeek V3</Select.Option>
+                <Select.Option value='deepseek-reasoner'>DeepSeek R1</Select.Option>
+              </Select>
+            </div>
+            <div className='flex flex-col gap-4px'>
               <span className='text-12px text-t-secondary'>Parent Department</span>
               <Select value={parentDeptId} onChange={setParentDeptId} allowClear placeholder='Top-level (Root CEO)'>
                 {departmentOptions.map((opt) => (
@@ -314,6 +366,16 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               <Input.TextArea value={headPrompt} onChange={setHeadPrompt} rows={2} />
             </div>
             <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Assigned AI Bot Model (from App Settings)</span>
+              <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
+                {configuredModelOptions.map((opt) => (
+                  <Select.Option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+            <div className='flex flex-col gap-4px'>
               <span className='text-12px text-t-secondary'>HR Coordinator Name</span>
               <Input value={hrName} onChange={setHrName} />
             </div>
@@ -343,6 +405,16 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
             <div className='flex flex-col gap-4px'>
               <span className='text-12px text-t-secondary'>System Prompt</span>
               <Input.TextArea value={memberPrompt} onChange={setMemberPrompt} rows={2} />
+            </div>
+            <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Assigned AI Bot Model (from App Settings)</span>
+              <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
+                {configuredModelOptions.map((opt) => (
+                  <Select.Option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </Select.Option>
+                ))}
+              </Select>
             </div>
             <div className='flex flex-col gap-4px'>
               <span className='text-12px text-t-secondary'>MCP Tools / Backend</span>

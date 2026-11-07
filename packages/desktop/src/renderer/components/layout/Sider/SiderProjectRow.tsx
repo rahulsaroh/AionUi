@@ -16,8 +16,8 @@ interface SiderProjectRowProps {
   project: OrgProject;
   isSelected: boolean;
   onSelect: () => void;
-  onEdit: (e: React.MouseEvent) => void;
-  onNewChat: (e: React.MouseEvent) => void;
+  onEdit: (e?: React.MouseEvent | Event) => void;
+  onNewChat: (e?: React.MouseEvent | Event) => void;
   siderTooltipProps: SiderTooltipProps;
 }
 

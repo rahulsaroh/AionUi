@@ -38,6 +38,7 @@ import {
   loadOrgStorageVersion,
   saveOrgStorageVersion,
 } from '../utils/orgMigration';
+import { ipcBridge } from '@/common';
 
 const STORAGE_KEYS = {
   SCOPE: 'aionui:active-scope',
@@ -61,7 +62,9 @@ function loadStored<T>(key: string, fallback: () => T): T {
 
 function saveStored<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(key, serialized);
+    void ipcBridge.org.saveData(key, serialized).catch(() => {});
   } catch (e) {
     console.warn(`[useOrgStore] Failed to save key "${key}" to localStorage:`, e);
   }
@@ -108,19 +111,19 @@ function createInitialState(): OrgStoreState {
   let rawHierarchy = useDefaults
     ? createDefaultOrgHierarchy()
     : loadStored(STORAGE_KEYS.HIERARCHY, createDefaultOrgHierarchy);
-  if (!rawHierarchy?.departments || rawHierarchy.departments.length === 0) {
+  if (!rawHierarchy || !rawHierarchy.rootCeo) {
     rawHierarchy = createDefaultOrgHierarchy();
   }
   let rawProjects = useDefaults
     ? createDefaultOrgProjects()
     : loadStored(STORAGE_KEYS.PROJECTS, createDefaultOrgProjects);
-  if (!rawProjects || rawProjects.length === 0) {
+  if (!rawProjects) {
     rawProjects = createDefaultOrgProjects();
   }
   let rawConversations = useDefaults
     ? createDefaultOrgConversations()
     : loadStored(STORAGE_KEYS.CONVERSATIONS, createDefaultOrgConversations);
-  if (!rawConversations || rawConversations.length === 0) {
+  if (!rawConversations) {
     rawConversations = createDefaultOrgConversations();
   }
   const migration = migrateOrgStorageV2(rawHierarchy, rawProjects, rawConversations, storedVersion);
@@ -180,6 +183,64 @@ export function useOrgStore() {
 
   useEffect(() => {
     listeners.add(setState);
+
+    // Sync from persistent backend SQLite store on startup if available
+    const syncFromPersistentStore = async () => {
+      try {
+        const [hierRaw, projRaw, convRaw] = await Promise.all([
+          ipcBridge.org.loadData(STORAGE_KEYS.HIERARCHY),
+          ipcBridge.org.loadData(STORAGE_KEYS.PROJECTS),
+          ipcBridge.org.loadData(STORAGE_KEYS.CONVERSATIONS),
+        ]);
+        let changed = false;
+        let nextHierarchy = globalState.hierarchy;
+        let nextProjects = globalState.projects;
+        let nextConversations = globalState.conversations;
+
+        if (hierRaw) {
+          try {
+            const parsed = JSON.parse(hierRaw);
+            if (parsed?.rootCeo) {
+              nextHierarchy = parsed;
+              changed = true;
+            }
+          } catch {}
+        }
+        if (projRaw) {
+          try {
+            const parsed = JSON.parse(projRaw);
+            if (Array.isArray(parsed)) {
+              nextProjects = parsed;
+              changed = true;
+            }
+          } catch {}
+        }
+        if (convRaw) {
+          try {
+            const parsed = JSON.parse(convRaw);
+            if (Array.isArray(parsed)) {
+              nextConversations = parsed;
+              changed = true;
+            }
+          } catch {}
+        }
+
+        if (changed) {
+          globalState = {
+            ...globalState,
+            hierarchy: nextHierarchy,
+            projects: nextProjects,
+            conversations: nextConversations,
+          };
+          notify();
+        }
+      } catch (err) {
+        console.warn('[useOrgStore] Backend sync notice:', err);
+      }
+    };
+
+    void syncFromPersistentStore();
+
     return () => {
       listeners.delete(setState);
     };
@@ -373,6 +434,87 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const addTeamMember = useCallback((teamId: string, member: OrgAgentMember) => {
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      lastUpdated: Date.now(),
+      departments: globalState.hierarchy.departments.map((department) => ({
+        ...department,
+        teams: department.teams.map((team) =>
+          team.id === teamId
+            ? {
+                ...team,
+                specialistMembers: [...team.specialistMembers, member],
+              }
+            : team
+        ),
+      })),
+    };
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+  }, []);
+
+  const updateRootCeo = useCallback((patch: Partial<OrgHierarchy['rootCeo']>) => {
+    const nextHierarchy: OrgHierarchy = {
+      ...globalState.hierarchy,
+      lastUpdated: Date.now(),
+      rootCeo: {
+        ...globalState.hierarchy.rootCeo,
+        ...patch,
+      },
+    };
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+  }, []);
+
+  const updateAgentModel = useCallback((agentId: string, model: import('@/types/organization').OrgAgentModelConfig) => {
+    const currentHierarchy = globalState.hierarchy;
+    const isRootCeo =
+      currentHierarchy.rootCeo.ceoAgent.id === agentId || agentId === 'root-ceo' || agentId === 'agent-root-ceo';
+
+    const isChiefOfStaff = currentHierarchy.rootCeo.chiefOfStaffAgent?.id === agentId;
+
+    const nextHierarchy: OrgHierarchy = {
+      ...currentHierarchy,
+      lastUpdated: Date.now(),
+      rootCeo: {
+        ...currentHierarchy.rootCeo,
+        ceoAgent: isRootCeo ? { ...currentHierarchy.rootCeo.ceoAgent, model } : currentHierarchy.rootCeo.ceoAgent,
+        chiefOfStaffAgent:
+          isChiefOfStaff && currentHierarchy.rootCeo.chiefOfStaffAgent
+            ? { ...currentHierarchy.rootCeo.chiefOfStaffAgent, model }
+            : currentHierarchy.rootCeo.chiefOfStaffAgent,
+      },
+      departments: currentHierarchy.departments.map((dept) => {
+        const isDeptHead = dept.departmentCeoAgent.id === agentId;
+        const isPm = dept.pmAgent?.id === agentId;
+        return {
+          ...dept,
+          departmentCeoAgent: isDeptHead ? { ...dept.departmentCeoAgent, model } : dept.departmentCeoAgent,
+          pmAgent: isPm && dept.pmAgent ? { ...dept.pmAgent, model } : dept.pmAgent,
+          teams: dept.teams.map((team) => {
+            const isTeamLead = team.teamLeadAgent.id === agentId;
+            const isHr = team.hrCoordinatorAgent.id === agentId;
+            return {
+              ...team,
+              teamLeadAgent: isTeamLead ? { ...team.teamLeadAgent, model } : team.teamLeadAgent,
+              hrCoordinatorAgent: isHr ? { ...team.hrCoordinatorAgent, model } : team.hrCoordinatorAgent,
+              specialistMembers: team.specialistMembers.map((member) =>
+                member.id === agentId ? { ...member, model } : member
+              ),
+            };
+          }),
+        };
+      }),
+    };
+
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    notify();
+  }, []);
+
   const updateTeamMember = useCallback((teamId: string, memberId: string, patch: Partial<OrgAgentMember>) => {
     const nextHierarchy = {
       ...globalState.hierarchy,
@@ -424,11 +566,59 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const addOrgCronJob = useCallback((job: OrgCronJob) => {
+    const nextCron = [...globalState.cronJobs.filter((c) => c.id !== job.id), job];
+    globalState = { ...globalState, cronJobs: nextCron };
+    saveStored(STORAGE_KEYS.CRON_JOBS, nextCron);
+    notify();
+
+    void ipcBridge.cron.addJob
+      .invoke({
+        name: `Org: ${job.name}`,
+        description: `Department: ${job.departmentId}`,
+        schedule: {
+          kind: 'cron',
+          expr: job.cronExpression || '0 9 * * *',
+        },
+        prompt: job.taskDirective,
+        conversation_id: '',
+        conversation_title: `Org Scheduled: ${job.name}`,
+        created_by: 'user',
+        execution_mode: 'new_conversation',
+      })
+      .catch((err) => {
+        console.warn('[useOrgStore] Sync add cron job failed:', err);
+      });
+  }, []);
+
+  const removeOrgCronJob = useCallback((jobId: string) => {
+    const nextCron = globalState.cronJobs.filter((c) => c.id !== jobId);
+    globalState = { ...globalState, cronJobs: nextCron };
+    saveStored(STORAGE_KEYS.CRON_JOBS, nextCron);
+    notify();
+
+    void ipcBridge.cron.removeJob.invoke({ job_id: jobId }).catch((err) => {
+      console.warn('[useOrgStore] Sync remove cron job failed:', err);
+    });
+  }, []);
+
   const toggleCronJob = useCallback((jobId: string) => {
+    const target = globalState.cronJobs.find((c) => c.id === jobId);
     const nextCron = globalState.cronJobs.map((c) => (c.id === jobId ? { ...c, enabled: !c.enabled } : c));
     globalState = { ...globalState, cronJobs: nextCron };
     saveStored(STORAGE_KEYS.CRON_JOBS, nextCron);
     notify();
+
+    if (target) {
+      void ipcBridge.cron.updateJob
+        .invoke({
+          job_id: jobId,
+          updates: { enabled: !target.enabled },
+        })
+        .catch((err) => {
+          console.warn('[useOrgStore] Sync update cron job failed:', err);
+        });
+    }
   }, []);
 
   // Interactive CEO Delegation Simulation
@@ -576,11 +766,16 @@ export function useOrgStore() {
     updateDepartment,
     addSubTeam,
     updateTeamNode,
+    addTeamMember,
     updateTeamMember,
+    updateRootCeo,
+    updateAgentModel,
     addOrgConversation,
     addOrgProject,
     upsertOrgProject,
     deleteOrgProject,
+    addOrgCronJob,
+    removeOrgCronJob,
     toggleCronJob,
     runSimulation,
     setOrgViewMode,

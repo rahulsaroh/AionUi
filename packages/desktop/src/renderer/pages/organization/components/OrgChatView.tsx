@@ -18,12 +18,16 @@ import {
   Loading,
   Clear,
   MessageOne,
+  FolderOpen,
+  Close,
 } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
+import { ipcBridge } from '@/common';
 import { useOrgStore } from '../store/useOrgStore';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
-import type { OrgConversation, OrgConversationMessage } from '@/types/organization';
+import { OrgModelSelector } from './OrgModelSelector';
+import type { OrgConversation, OrgConversationMessage, OrgAgentModelConfig } from '@/types/organization';
 
 export const OrgChatView: React.FC = () => {
   const { t } = useTranslation();
@@ -36,7 +40,11 @@ export const OrgChatView: React.FC = () => {
     addOrgConversation,
     addDepartment,
     addSubTeam,
+    addOrgProject,
+    addTeamMember,
     updateNodeStatus,
+    updateAgentModel,
+    updateRootCeo,
   } = useOrgStore();
 
   const [inputPrompt, setInputPrompt] = useState('');
@@ -52,6 +60,66 @@ export const OrgChatView: React.FC = () => {
     // Default to the newest ceo_directive conversation if available
     return conversations.find((c) => c.type === 'ceo_directive');
   }, [conversations, selectedConversationId]);
+
+  // Specific agent target if this is a direct 1:1 chat
+  const activeTargetAgent = useMemo<import('@/types/organization').OrgAgentMember | undefined>(() => {
+    if (!activeConversation?.targetAgentId) return undefined;
+    const targetId = activeConversation.targetAgentId;
+    if (hierarchy.rootCeo.ceoAgent.id === targetId) return hierarchy.rootCeo.ceoAgent;
+    if (hierarchy.rootCeo.chiefOfStaffAgent?.id === targetId) return hierarchy.rootCeo.chiefOfStaffAgent;
+    for (const dept of hierarchy.departments) {
+      if (dept.departmentCeoAgent.id === targetId) return dept.departmentCeoAgent;
+      if (dept.pmAgent?.id === targetId) return dept.pmAgent;
+      for (const team of dept.teams) {
+        if (team.teamLeadAgent.id === targetId) return team.teamLeadAgent;
+        if (team.hrCoordinatorAgent.id === targetId) return team.hrCoordinatorAgent;
+        const spec = team.specialistMembers.find((m) => m.id === targetId);
+        if (spec) return spec;
+      }
+    }
+    return undefined;
+  }, [activeConversation?.targetAgentId, hierarchy]);
+
+  const currentTargetAgent = activeTargetAgent || hierarchy.rootCeo.ceoAgent;
+  const currentAgentModel: OrgAgentModelConfig | undefined = currentTargetAgent.model || {
+    modelId: 'claude-3-7-sonnet',
+    providerId: 'anthropic',
+  };
+
+  const activeWorkspacePath = useMemo(() => {
+    const raw = activeTargetAgent?.workspacePath || hierarchy.rootCeo.workspacePath;
+    return raw && raw !== 'workspace' ? raw : null;
+  }, [activeTargetAgent?.workspacePath, hierarchy.rootCeo.workspacePath]);
+
+  const handlePickWorkspaceFolder = useCallback(async () => {
+    try {
+      const files = await ipcBridge.dialog.showOpen.invoke({ properties: ['openDirectory', 'createDirectory'] });
+      if (files && files.length > 0 && files[0]) {
+        const picked = files[0];
+        updateRootCeo({ workspacePath: picked });
+        Message.success(`Organization workspace bound to: ${picked}`);
+      }
+    } catch (err) {
+      console.warn('Failed to open directory dialog:', err);
+    }
+  }, [updateRootCeo]);
+
+  const handleClearWorkspaceFolder = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      updateRootCeo({ workspacePath: null });
+      Message.info('Organization workspace unbound');
+    },
+    [updateRootCeo]
+  );
+
+  const handleSelectAgentModel = useCallback(
+    (newModel: OrgAgentModelConfig) => {
+      updateAgentModel(currentTargetAgent.id, newModel);
+      Message.success(`Model set to ${newModel.modelName || newModel.modelId} for ${currentTargetAgent.name}`);
+    },
+    [currentTargetAgent.id, currentTargetAgent.name, updateAgentModel]
+  );
 
   const messages = useMemo<OrgConversationMessage[]>(() => {
     return activeConversation?.messages ?? [];
@@ -69,8 +137,17 @@ export const OrgChatView: React.FC = () => {
     const prompt = inputPrompt.trim();
     setInputPrompt('');
     setIsExecuting(true);
-    setLiveStepText('Evaluating directive at Global Executive HQ...');
-    updateNodeStatus('root-ceo', 'working');
+
+    const isDirectAgent = activeConversation?.type === 'agent_direct' && !!activeTargetAgent;
+    const targetAgent = activeTargetAgent || hierarchy.rootCeo.ceoAgent;
+    const activeWorkspace = targetAgent.workspacePath || hierarchy.rootCeo.workspacePath || 'workspace';
+
+    setLiveStepText(
+      isDirectAgent
+        ? `Communicating with ${targetAgent.name} [Model: ${targetAgent.model?.modelId || 'standard'}]...`
+        : 'Evaluating directive at Global Executive HQ...'
+    );
+    updateNodeStatus(targetAgent.id, 'working');
 
     const userMessage: OrgConversationMessage = {
       id: `msg-${Date.now()}-u`,
@@ -80,17 +157,25 @@ export const OrgChatView: React.FC = () => {
       timestamp: Date.now(),
     };
 
-    const targetConvId = activeConversation?.id ?? `conv-ceo-${Date.now()}`;
-    const initialConvTitle = activeConversation?.title ?? `Directive: ${prompt.slice(0, 36)}...`;
+    const targetConvId =
+      activeConversation?.id ??
+      (isDirectAgent ? `conv-direct-${targetAgent.id}-${Date.now()}` : `conv-ceo-${Date.now()}`);
+    const initialConvTitle =
+      activeConversation?.title ??
+      (isDirectAgent ? `Chat with ${targetAgent.name}` : `Directive: ${prompt.slice(0, 36)}...`);
 
     // Optimistically update conversation with user message
     const existingMessages = activeConversation?.messages ?? [];
     const interimConversation: OrgConversation = {
       id: targetConvId,
       title: initialConvTitle,
-      type: 'ceo_directive',
-      sourceNodeId: 'root-ceo',
-      targetNodeId: 'root-ceo',
+      type: isDirectAgent ? 'agent_direct' : 'ceo_directive',
+      sourceNodeId: activeConversation?.sourceNodeId || 'root-ceo',
+      targetNodeId: activeConversation?.targetNodeId || 'root-ceo',
+      targetAgentId: targetAgent.id,
+      targetRole: targetAgent.role,
+      targetAgentName: targetAgent.name,
+      targetAgentModel: targetAgent.model,
       timestamp: Date.now(),
       summary: prompt,
       messages: [...existingMessages, userMessage],
@@ -102,46 +187,80 @@ export const OrgChatView: React.FC = () => {
       const engine = new OrgDelegationEngine(
         hierarchy,
         (step) => setLiveStepText(`${step.fromName} -> ${step.toName}: ${step.message}`),
-        undefined,
+        (streamText) => setLiveStepText(streamText.slice(-80)),
         updateNodeStatus
       );
 
-      const result = await engine.executeDirective(prompt, undefined, undefined, undefined, true);
+      if (isDirectAgent) {
+        const agentResponse = await engine.executeDirectMessage(targetAgent, prompt, activeWorkspace, true);
 
-      // Auto-instantiate any departments requested
-      if (result.createdDepartments && result.createdDepartments.length > 0) {
-        for (const dept of result.createdDepartments) {
-          addDepartment(dept);
+        const agentMessage: OrgConversationMessage = {
+          id: `msg-${Date.now()}-a`,
+          sender: targetAgent.name,
+          role: 'assistant',
+          content: agentResponse,
+          timestamp: Date.now(),
+        };
+
+        const finalConversation: OrgConversation = {
+          ...interimConversation,
+          summary: agentResponse.slice(0, 80),
+          messages: [...existingMessages, userMessage, agentMessage],
+        };
+        addOrgConversation(finalConversation);
+        Message.success(`Response received from ${targetAgent.name}`);
+      } else {
+        const result = await engine.executeDirective(prompt, undefined, undefined, undefined, true);
+
+        // Auto-instantiate any departments requested
+        if (result.createdDepartments && result.createdDepartments.length > 0) {
+          for (const dept of result.createdDepartments) {
+            addDepartment(dept);
+          }
         }
-      }
 
-      // Auto-instantiate any teams requested
-      if (result.createdTeams && result.createdTeams.length > 0) {
-        for (const { departmentId, team } of result.createdTeams) {
-          addSubTeam(departmentId, team);
+        // Auto-instantiate any teams requested
+        if (result.createdTeams && result.createdTeams.length > 0) {
+          for (const { departmentId, team } of result.createdTeams) {
+            addSubTeam(departmentId, team);
+          }
         }
+
+        // Auto-instantiate any projects requested
+        if (result.createdProjects && result.createdProjects.length > 0) {
+          for (const proj of result.createdProjects) {
+            addOrgProject(proj);
+          }
+        }
+
+        // Auto-instantiate any specialists requested
+        if (result.createdMembers && result.createdMembers.length > 0) {
+          for (const { teamId, member } of result.createdMembers) {
+            addTeamMember(teamId, member);
+          }
+        }
+
+        const ceoMessage: OrgConversationMessage = {
+          id: `msg-${Date.now()}-c`,
+          sender: hierarchy.rootCeo.ceoAgent.name,
+          role: 'ceo',
+          content: result.finalSynthesis,
+          timestamp: Date.now(),
+        };
+
+        const finalConversation: OrgConversation = {
+          ...interimConversation,
+          summary: result.finalSynthesis,
+          targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
+          messages: [...existingMessages, userMessage, ceoMessage],
+        };
+        addOrgConversation(finalConversation);
+        Message.success('Executive directive processed by Root CEO');
       }
-
-      const ceoMessage: OrgConversationMessage = {
-        id: `msg-${Date.now()}-c`,
-        sender: hierarchy.rootCeo.ceoAgent.name,
-        role: 'ceo',
-        content: result.finalSynthesis,
-        timestamp: Date.now(),
-      };
-
-      const finalConversation: OrgConversation = {
-        ...interimConversation,
-        summary: result.finalSynthesis,
-        targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
-        messages: [...existingMessages, userMessage, ceoMessage],
-      };
-      addOrgConversation(finalConversation);
-      Message.success('Executive directive processed by Root CEO');
     } catch (err) {
       const errorMsg: OrgConversationMessage = {
         id: `msg-${Date.now()}-err`,
-        sender: hierarchy.rootCeo.ceoAgent.name,
+        sender: targetAgent.name,
         role: 'system',
         content: `Halted: ${err instanceof Error ? err.message : String(err)}`,
         timestamp: Date.now(),
@@ -150,20 +269,23 @@ export const OrgChatView: React.FC = () => {
         ...interimConversation,
         messages: [...existingMessages, userMessage, errorMsg],
       });
-      Message.error('Failed to complete directive execution');
+      Message.error('Failed to complete execution');
     } finally {
       setIsExecuting(false);
       setLiveStepText(null);
-      updateNodeStatus('root-ceo', 'recently_finished');
-      setTimeout(() => updateNodeStatus('root-ceo', 'idle'), 3000);
+      updateNodeStatus(targetAgent.id, 'recently_finished');
+      setTimeout(() => updateNodeStatus(targetAgent.id, 'idle'), 3000);
     }
   }, [
     inputPrompt,
     isExecuting,
     activeConversation,
+    activeTargetAgent,
     hierarchy,
     addDepartment,
     addSubTeam,
+    addOrgProject,
+    addTeamMember,
     addOrgConversation,
     setSelectedConversationId,
     updateNodeStatus,
@@ -191,14 +313,25 @@ export const OrgChatView: React.FC = () => {
       <div className='h-54px px-20px border-b border-[var(--color-border-2)] bg-[var(--color-bg-2)] flex items-center justify-between shrink-0 select-none'>
         <div className='flex items-center gap-12px min-w-0'>
           <span className='size-34px rounded-10px bg-amber-500/15 text-amber-300 flex items-center justify-center text-18px shadow-sm shrink-0'>
-            👑
+            {activeTargetAgent ? <Robot size={18} theme='outline' className='text-primary' /> : '👑'}
           </span>
           <div className='flex flex-col min-w-0'>
             <div className='flex items-center gap-8px'>
-              <span className='font-bold text-14px text-t-primary truncate'>{hierarchy.rootCeo.ceoAgent.name}</span>
-              <Tag size='small' color='gold' className='text-10px font-medium px-6px py-0.5px rounded-full'>
-                Root Executive HQ
+              <span className='font-bold text-14px text-t-primary truncate'>
+                {activeTargetAgent ? activeTargetAgent.name : hierarchy.rootCeo.ceoAgent.name}
+              </span>
+              <Tag
+                size='small'
+                color={activeTargetAgent ? 'arcoblue' : 'gold'}
+                className='text-10px font-medium px-6px py-0.5px rounded-full'
+              >
+                {activeTargetAgent ? activeTargetAgent.title || activeTargetAgent.role : 'Root Executive HQ'}
               </Tag>
+              {currentAgentModel?.modelId && (
+                <Tag size='small' color='cyan' className='text-10px font-mono px-6px py-0.5px rounded-full'>
+                  {currentAgentModel.modelId}
+                </Tag>
+              )}
               {isExecuting ? (
                 <span className='flex items-center gap-4px text-10px font-mono text-emerald-400'>
                   <span className='size-6px rounded-full bg-emerald-400 animate-ping' />
@@ -211,12 +344,27 @@ export const OrgChatView: React.FC = () => {
                 </span>
               )}
             </div>
-            {hierarchy.rootCeo.workspacePath ? (
-              <div className='flex items-center gap-4px text-10px font-mono text-t-tertiary truncate'>
-                <FolderClose size={11} theme='outline' className='text-amber-400 shrink-0' />
-                <span className='truncate'>{hierarchy.rootCeo.workspacePath}</span>
-              </div>
-            ) : null}
+            <div
+              onClick={() => void handlePickWorkspaceFolder()}
+              className='flex items-center gap-4px text-10px font-mono text-t-tertiary hover:text-primary transition-colors cursor-pointer truncate max-w-360px group'
+              title='Click to bind or change organization workspace folder'
+            >
+              <FolderClose
+                size={11}
+                theme='outline'
+                className={classNames('shrink-0', activeWorkspacePath ? 'text-amber-400' : 'text-t-tertiary')}
+              />
+              <span className='truncate'>{activeWorkspacePath || 'Click to bind Organization Folder'}</span>
+              {activeWorkspacePath && (
+                <span
+                  onClick={handleClearWorkspaceFolder}
+                  className='opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-2px flex items-center'
+                  title='Unbind folder'
+                >
+                  <Close size={10} theme='outline' />
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -228,7 +376,7 @@ export const OrgChatView: React.FC = () => {
             onClick={handleNewConversation}
             className='!rounded-8px !text-12px'
           >
-            New Directive
+            {activeTargetAgent ? 'New Message' : 'New Directive'}
           </Button>
 
           <Button
@@ -248,25 +396,51 @@ export const OrgChatView: React.FC = () => {
         {messages.length === 0 ? (
           <div className='my-auto flex flex-col items-center justify-center max-w-560px mx-auto text-center gap-16px select-none py-32px'>
             <span className='size-64px rounded-20px bg-gradient-to-tr from-amber-500/20 via-primary/15 to-emerald-500/20 flex items-center justify-center text-32px shadow-md border border-amber-500/30'>
-              👑
+              {activeTargetAgent ? <Robot size={32} theme='outline' className='text-primary' /> : '👑'}
             </span>
             <div className='flex flex-col gap-6px'>
-              <h2 className='text-18px font-bold text-t-primary m-0'>Global Executive Command</h2>
+              <h2 className='text-18px font-bold text-t-primary m-0'>
+                {activeTargetAgent ? `Direct Line: ${activeTargetAgent.name}` : 'Global Executive Command'}
+              </h2>
               <p className='text-13px text-t-secondary m-0 leading-relaxed'>
-                You are directly conversing with the <strong>Root Organization CEO</strong>. Issue top-level mandates,
-                direct organizational structuring (such as creating departments and teams), or plan upcoming projects.
+                {activeTargetAgent ? (
+                  <>
+                    Conversing directly with <strong>{activeTargetAgent.name}</strong> (
+                    {activeTargetAgent.title || activeTargetAgent.role}). Powered by assigned AI Model:{' '}
+                    <code className='text-primary font-mono'>
+                      {activeTargetAgent.model?.modelId || 'claude-3-7-sonnet'}
+                    </code>
+                    .
+                  </>
+                ) : (
+                  <>
+                    You are directly conversing with the <strong>Root Organization CEO</strong>. Issue top-level
+                    mandates, direct organizational structuring (such as creating departments, teams, projects, or
+                    hiring specialists).
+                  </>
+                )}
               </p>
             </div>
 
             <div className='flex flex-col gap-8px w-full mt-8px'>
-              <span className='text-11px font-mono text-t-tertiary uppercase tracking-wider'>Suggested Directives</span>
+              <span className='text-11px font-mono text-t-tertiary uppercase tracking-wider'>
+                {activeTargetAgent ? 'Suggested Directives' : 'Suggested Directives'}
+              </span>
               <div className='flex flex-col gap-6px'>
-                {[
-                  'Create department Engineering',
-                  'Create department Growth Marketing',
-                  'Create team Mobile in department Engineering',
-                  'Formulate a strategic plan for our product launch',
-                ].map((suggestion) => (
+                {(activeTargetAgent
+                  ? [
+                      'What are your active priorities and task status?',
+                      'Review our workspace deliverables and suggest improvements',
+                      'Prepare a sprint breakdown for our assigned tasks',
+                    ]
+                  : [
+                      'Create department Engineering',
+                      'Create department Growth Marketing',
+                      'Create team Mobile in department Engineering',
+                      'Hire specialist Performance Engineer to team Mobile with model gpt-4o',
+                      'Create project iOS Redesign under department Engineering',
+                    ]
+                ).map((suggestion) => (
                   <button
                     key={suggestion}
                     type='button'
@@ -302,7 +476,13 @@ export const OrgChatView: React.FC = () => {
                       : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                   )}
                 >
-                  {isUser ? <User size={16} theme='outline' /> : '👑'}
+                  {isUser ? (
+                    <User size={16} theme='outline' />
+                  ) : activeTargetAgent ? (
+                    <Robot size={16} theme='outline' className='text-primary' />
+                  ) : (
+                    '👑'
+                  )}
                 </div>
 
                 {/* Bubble */}
@@ -340,15 +520,16 @@ export const OrgChatView: React.FC = () => {
         {isExecuting && (
           <div className='flex gap-12px max-w-800px w-full mr-auto'>
             <div className='size-32px rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center justify-center text-14px shrink-0 mt-2px shadow-sm'>
-              👑
+              {activeTargetAgent ? <Robot size={16} theme='outline' className='text-primary' /> : '👑'}
             </div>
             <div className='flex flex-col gap-4px max-w-[85%]'>
               <span className='text-11px font-mono text-t-tertiary px-2px'>
-                {hierarchy.rootCeo.ceoAgent.name} (Delegating...)
+                {activeTargetAgent ? activeTargetAgent.name : hierarchy.rootCeo.ceoAgent.name} (
+                {activeTargetAgent ? 'Responding...' : 'Delegating...'})
               </span>
               <div className='p-12px rounded-14px bg-[var(--color-bg-2)] border border-primary/30 text-t-primary rounded-tl-2px flex items-center gap-10px shadow-sm text-12px font-mono'>
                 <Spin dot size={12} />
-                <span className='text-primary truncate'>{liveStepText || 'Processing executive directive...'}</span>
+                <span className='text-primary truncate'>{liveStepText || 'Processing directive...'}</span>
               </div>
             </div>
           </div>
@@ -365,16 +546,58 @@ export const OrgChatView: React.FC = () => {
               onChange={setInputPrompt}
               onKeyDown={handleKeyDown}
               disabled={isExecuting}
-              placeholder="Direct Root CEO (e.g. 'Create department Engineering', 'Plan mobile app launch')..."
+              placeholder={
+                activeTargetAgent
+                  ? `Message ${activeTargetAgent.name} directly (${activeTargetAgent.model?.modelId || 'claude-3-7-sonnet'})...`
+                  : "Direct Root CEO (e.g. 'Create department Engineering', 'Hire specialist Performance Eng to team Mobile with model gpt-4o')..."
+              }
               className='!border-none !bg-transparent !p-12px !text-13px resize-none'
               autoFocus
             />
 
             <div className='flex items-center justify-between px-12px py-6px border-t border-[var(--color-border-2)]/40 bg-[var(--color-bg-2)]/50'>
-              <span className='text-10px font-mono text-t-tertiary'>
-                Press <kbd className='px-4px py-1px rounded bg-fill-2 text-t-secondary'>Enter</kbd> to send,{' '}
-                <kbd className='px-4px py-1px rounded bg-fill-2 text-t-secondary'>Shift+Enter</kbd> for new line
-              </span>
+              <div className='flex items-center gap-8px min-w-0 flex-wrap'>
+                <OrgModelSelector
+                  currentModel={currentAgentModel}
+                  onSelectModel={handleSelectAgentModel}
+                  disabled={isExecuting}
+                />
+
+                <Tooltip
+                  content={
+                    activeWorkspacePath ? `Bound to: ${activeWorkspacePath}` : 'Bind organization workspace folder'
+                  }
+                >
+                  <Button
+                    size='small'
+                    shape='round'
+                    icon={<FolderOpen size={13} theme='outline' />}
+                    onClick={() => void handlePickWorkspaceFolder()}
+                    disabled={isExecuting}
+                    className='!text-11px !h-26px !px-10px flex items-center gap-4px hover:!border-primary transition-colors'
+                  >
+                    <span className='truncate max-w-130px'>
+                      {activeWorkspacePath
+                        ? activeWorkspacePath.split(/[/\\]/).filter(Boolean).pop() || activeWorkspacePath
+                        : 'Bind Folder'}
+                    </span>
+                    {activeWorkspacePath && (
+                      <span
+                        onClick={handleClearWorkspaceFolder}
+                        className='ml-2px text-t-tertiary hover:text-red-400 flex items-center'
+                        title='Unbind folder'
+                      >
+                        <Close size={11} theme='outline' />
+                      </span>
+                    )}
+                  </Button>
+                </Tooltip>
+
+                <span className='hidden sm:inline text-10px font-mono text-t-tertiary truncate'>
+                  Press <kbd className='px-4px py-1px rounded bg-fill-2 text-t-secondary'>Enter</kbd> to send,{' '}
+                  <kbd className='px-4px py-1px rounded bg-fill-2 text-t-secondary'>Shift+Enter</kbd> for new line
+                </span>
+              </div>
 
               <Button
                 type='primary'
@@ -383,7 +606,7 @@ export const OrgChatView: React.FC = () => {
                 loading={isExecuting}
                 disabled={!inputPrompt.trim() || isExecuting}
                 onClick={() => void handleSendMessage()}
-                className='!rounded-8px !px-14px !h-28px !font-medium'
+                className='!rounded-8px !px-14px !h-28px !font-medium shrink-0'
               >
                 Send
               </Button>

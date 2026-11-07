@@ -17,6 +17,12 @@ export type OrgAgentRole =
   | 'hr_coordinator'
   | 'specialist';
 
+export interface OrgAgentModelConfig {
+  providerId?: string;
+  modelId: string;
+  modelName?: string;
+}
+
 export interface OrgAgentMember {
   id: string;
   canonicalAgentId: string;
@@ -32,6 +38,10 @@ export interface OrgAgentMember {
   busyInDepartmentName?: string | null;
   /** Persistent local disk directory bound to this entity (if any). */
   workspacePath?: string | null;
+  /** Specific AI model assigned to this agent */
+  model?: OrgAgentModelConfig;
+  /** Custom system prompt or instructions for this role */
+  systemPrompt?: string;
 }
 
 export interface OrgTeamNode {
@@ -123,9 +133,13 @@ export interface OrgConversation {
   teamId?: string;
   /** Optional agent that handled the chat. */
   agentId?: string;
-  type: 'ceo_directive' | 'dept_handoff' | 'team_execution';
+  type: 'ceo_directive' | 'dept_handoff' | 'team_execution' | 'agent_direct';
   sourceNodeId: string;
   targetNodeId: string;
+  targetAgentId?: string;
+  targetRole?: OrgAgentRole | string;
+  targetAgentName?: string;
+  targetAgentModel?: OrgAgentModelConfig;
   timestamp: number;
   summary?: string;
   messages: OrgConversationMessage[];

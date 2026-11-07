@@ -277,6 +277,13 @@ export interface ElectronBridgeAPI {
   }>;
   onGatewayLogAdded?: (callback: (log: import('../gateway/gatewayTypes').GatewayTelemetryLog) => void) => () => void;
   onGatewayQuotaUpdated?: (callback: (account: import('../gateway/gatewayTypes').GatewayAccount) => void) => () => void;
+  // Org Mode APIs
+  orgAssertWithinScope?: (params: {
+    targetPath: string;
+    allowedRoot: string;
+  }) => Promise<{ allowed: boolean; reason?: string; resolved: string }>;
+  orgSaveData?: (params: { key: string; value: string }) => Promise<boolean>;
+  orgLoadData?: (params: { key: string }) => Promise<string | null>;
 }
 
 export type BackendStartupFailureReason =

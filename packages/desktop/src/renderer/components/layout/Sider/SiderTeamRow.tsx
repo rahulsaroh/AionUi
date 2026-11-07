@@ -18,7 +18,7 @@ interface SiderTeamRowProps {
   status: OrgNodeStatus;
   isSelected: boolean;
   onSelect: () => void;
-  onEdit: (e: React.MouseEvent) => void;
+  onEdit: (e?: React.MouseEvent | Event) => void;
   siderTooltipProps: SiderTooltipProps;
 }
 

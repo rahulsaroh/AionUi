@@ -64,6 +64,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     addOrgConversation,
     addDepartment,
     addSubTeam,
+    addOrgProject,
+    addTeamMember,
     selectedDepartmentId,
     selectedTeamId,
     selectedProjectId,
@@ -186,6 +188,16 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     if (result.createdTeams && result.createdTeams.length > 0) {
       for (const { departmentId, team } of result.createdTeams) {
         addSubTeam(departmentId, team);
+      }
+    }
+    if (result.createdProjects && result.createdProjects.length > 0) {
+      for (const proj of result.createdProjects) {
+        addOrgProject(proj);
+      }
+    }
+    if (result.createdMembers && result.createdMembers.length > 0) {
+      for (const { teamId, member } of result.createdMembers) {
+        addTeamMember(teamId, member);
       }
     }
 
@@ -752,6 +764,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                                 relativeTime={formatChatTime(conv.timestamp)}
                                                 onSelect={() => {
                                                   setSelectedChatId(conv.id);
+                                                  setSelectedConversationId(conv.id);
+                                                  setOrgViewMode('chat');
                                                   onSessionClick?.();
                                                   void navigate('/organization');
                                                 }}

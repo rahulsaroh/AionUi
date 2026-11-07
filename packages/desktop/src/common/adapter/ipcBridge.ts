@@ -2740,3 +2740,24 @@ export const knowledgeRepo = {
     throw new Error('Knowledge repos are only supported in desktop mode');
   },
 };
+
+export const org = {
+  assertWithinScope: async (targetPath: string, allowedRoot: string) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgAssertWithinScope) {
+      return window.electronAPI.orgAssertWithinScope({ targetPath, allowedRoot });
+    }
+    return { allowed: true, resolved: targetPath };
+  },
+  saveData: async (key: string, value: string): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgSaveData) {
+      return window.electronAPI.orgSaveData({ key, value });
+    }
+    return false;
+  },
+  loadData: async (key: string): Promise<string | null> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgLoadData) {
+      return window.electronAPI.orgLoadData({ key });
+    }
+    return null;
+  },
+};

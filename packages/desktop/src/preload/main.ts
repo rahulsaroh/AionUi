@@ -202,6 +202,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.off('gateway:quotaUpdated', handler);
     };
   },
+  // Org Mode APIs
+  orgAssertWithinScope: (params: { targetPath: string; allowedRoot: string }) =>
+    ipcRenderer.invoke('org:assertWithinScope', params),
+  orgSaveData: (params: { key: string; value: string }) => ipcRenderer.invoke('org:saveData', params),
+  orgLoadData: (params: { key: string }) => ipcRenderer.invoke('org:loadData', params),
 });
 
 // Synchronously fetch aioncore port and expose to renderer via
