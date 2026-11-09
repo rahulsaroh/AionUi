@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
 import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
+import { getSpendThisMonthForDepartment, formatCost } from '@/common/costs';
 
 export type DepartmentNodeData = {
   department: OrgDepartmentNode;
@@ -92,17 +93,40 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
           </div>
         </div>
 
-        <Tag
-          size='small'
-          style={{
-            borderColor: theme.borderColor,
-            color: theme.textColor,
-            backgroundColor: theme.backgroundColor,
-          }}
-          className='font-semibold text-10px px-5px py-0.5px rounded-full'
-        >
-          {theme.badgeText}
-        </Tag>
+        <div className='flex items-center gap-4px shrink-0'>
+          {(() => {
+            const teamIds = (department.teams || []).map((tm) => tm.id);
+            const monthSpend = getSpendThisMonthForDepartment(teamIds);
+            const spendText = monthSpend.hasUnknown
+              ? `~$${monthSpend.totalSpend.toFixed(2)}*`
+              : `$${monthSpend.totalSpend.toFixed(2)}`;
+            return (
+              <Tooltip
+                content={
+                  monthSpend.hasUnknown
+                    ? `This month: ~${formatCost(monthSpend.totalSpend)} (*includes unknown CLI agent calls)`
+                    : `This month: ${formatCost(monthSpend.totalSpend)}`
+                }
+              >
+                <Tag size='small' color='arcoblue' className='font-semibold text-10px px-5px py-0.5px rounded-full'>
+                  {spendText}
+                </Tag>
+              </Tooltip>
+            );
+          })()}
+
+          <Tag
+            size='small'
+            style={{
+              borderColor: theme.borderColor,
+              color: theme.textColor,
+              backgroundColor: theme.backgroundColor,
+            }}
+            className='font-semibold text-10px px-5px py-0.5px rounded-full'
+          >
+            {theme.badgeText}
+          </Tag>
+        </div>
       </div>
 
       <div className='p-10px flex flex-col gap-8px bg-[var(--color-bg-2)]'>

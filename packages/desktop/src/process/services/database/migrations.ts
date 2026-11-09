@@ -1313,6 +1313,174 @@ const migration_v28: IMigration = {
 };
 
 /**
+ * Migration v28 -> v29: Add pipeline runs, steps, and idempotent publish records
+ */
+const migration_v29: IMigration = {
+  version: 29,
+  name: 'Add pipeline runs, steps, and publish records',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS pipeline_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      manifest_path TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_runs_project ON pipeline_runs(project_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS pipeline_steps (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+      step_index INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      inputs TEXT,
+      artifact_paths TEXT,
+      content_hash TEXT,
+      error TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run ON pipeline_steps(run_id, step_index)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_steps_status ON pipeline_steps(status)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS publish_records (
+      id TEXT PRIMARY KEY,
+      idempotency_key TEXT UNIQUE NOT NULL,
+      project_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      post_id TEXT,
+      url TEXT,
+      metadata TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_records_key ON publish_records(idempotency_key)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_publish_records_project ON publish_records(project_id)');
+    console.log('[Migration v29] Added pipeline runs, steps, and publish records');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS publish_records');
+    db.exec('DROP TABLE IF EXISTS pipeline_steps');
+    db.exec('DROP TABLE IF EXISTS pipeline_runs');
+    console.log('[Migration v29] Rolled back pipeline and publish records tables');
+  },
+};
+
+/**
+ * Migration v29 -> v30: Add runs, usage_ledger, and budgets tables
+ */
+const migration_v30: IMigration = {
+  version: 30,
+  name: 'Add runs, usage_ledger, and budgets tables',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      team_id TEXT,
+      trigger TEXT NOT NULL CHECK(trigger IN ('manual', 'cron', 'channel')),
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed', 'paused', 'waiting'))
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_runs_project_id ON runs(project_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_runs_team_id ON runs(team_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at DESC)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS usage_ledger (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      agent_role TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      estimated_cost REAL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_usage_ledger_run_id ON usage_ledger(run_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_usage_ledger_model ON usage_ledger(model)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_usage_ledger_created_at ON usage_ledger(created_at DESC)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      scope_type TEXT NOT NULL CHECK(scope_type IN ('run', 'team_daily', 'department_monthly')),
+      scope_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(scope_type, scope_id)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_budgets_scope ON budgets(scope_type, scope_id)');
+    console.log('[Migration v30] Added runs, usage_ledger, and budgets tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS budgets');
+    db.exec('DROP TABLE IF EXISTS usage_ledger');
+    db.exec('DROP TABLE IF EXISTS runs');
+    console.log('[Migration v30] Rolled back runs, usage_ledger, and budgets tables');
+  },
+};
+
+/**
+ * Migration v30 -> v31: Add browser_profile_assignments and browser_audit_logs tables
+ */
+const migration_v31: IMigration = {
+  version: 31,
+  name: 'Add browser_profile_assignments and browser_audit_logs tables',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS browser_profile_assignments (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL,
+      scope_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(profile_id, scope_type, scope_id)
+    )`);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_browser_profile_assignments_scope ON browser_profile_assignments(scope_type, scope_id)'
+    );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_browser_profile_assignments_profile ON browser_profile_assignments(profile_id)'
+    );
+
+    db.exec(`CREATE TABLE IF NOT EXISTS browser_audit_logs (
+      id TEXT PRIMARY KEY,
+      run_id TEXT,
+      agent_id TEXT,
+      profile_id TEXT NOT NULL,
+      url TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_summary TEXT,
+      sensitive INTEGER DEFAULT 0,
+      approved INTEGER DEFAULT 1,
+      screenshot_before TEXT,
+      screenshot_after TEXT,
+      timestamp INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_timestamp ON browser_audit_logs(timestamp DESC)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_profile ON browser_audit_logs(profile_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_run ON browser_audit_logs(run_id)');
+    console.log('[Migration v31] Added browser profile assignments and audit logs tables');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS browser_audit_logs');
+    db.exec('DROP TABLE IF EXISTS browser_profile_assignments');
+    console.log('[Migration v31] Rolled back browser profile assignments and audit logs tables');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1321,7 +1489,8 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v7, migration_v8, migration_v9, migration_v10, migration_v11, migration_v12,
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
-  migration_v25, migration_v26, migration_v27, migration_v28,
+  migration_v25, migration_v26, migration_v27, migration_v28, migration_v29, migration_v30,
+  migration_v31,
 ];
 
 /**

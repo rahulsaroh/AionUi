@@ -5,19 +5,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
-import {
-  Button,
-  Checkbox,
-  Empty,
-  Tag,
-  Typography,
-  Card,
-  Space,
-  Modal,
-  Drawer,
-  Table,
-  Message,
-} from '@arco-design/web-react';
+import { Button, Checkbox, Empty, Tag, Typography, Card, Space, Drawer, Table, Message } from '@arco-design/web-react';
 import {
   CheckOne,
   CloseOne,
@@ -31,18 +19,13 @@ import {
   Filter,
 } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
-import {
-  useApprovalsInbox,
-  type InboxApprovalItem,
-  useAuditLogs,
-} from '@/common/autonomy';
+import { useApprovalsInbox, type InboxApprovalItem, useAuditLogs } from '@/common/autonomy';
 
 const { Title, Text, Paragraph } = Typography;
 
 export const ApprovalsInboxPage: React.FC = () => {
   const { t } = useTranslation();
-  const { items, pendingCount, approve, deny, approveAlways, batchApprove, batchDeny } =
-    useApprovalsInbox();
+  const { items, pendingCount, approve, deny, approveAlways, batchApprove, batchDeny } = useApprovalsInbox();
   const auditLogs = useAuditLogs();
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -79,9 +62,7 @@ export const ApprovalsInboxPage: React.FC = () => {
   );
 
   const handleToggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   }, []);
 
   const handleBatchApprove = useCallback(async () => {
@@ -301,9 +282,7 @@ export const ApprovalsInboxPage: React.FC = () => {
                             {t('approvals.headlessBadge', { defaultValue: 'Headless Task' })}
                           </Tag>
                         )}
-                        <Text className='font-semibold text-15px text-t-primary'>
-                          {item.title}
-                        </Text>
+                        <Text className='font-semibold text-15px text-t-primary'>{item.title}</Text>
                       </div>
 
                       {item.expiresAt && (
@@ -338,6 +317,51 @@ export const ApprovalsInboxPage: React.FC = () => {
                           <span>{t('approvals.diffPreview', { defaultValue: 'File Diff' })}</span>
                         </div>
                         <pre className='m-0 whitespace-pre-wrap'>{item.diffPreview}</pre>
+                      </div>
+                    )}
+
+                    {/* Publish preview card */}
+                    {item.publishPreview && (
+                      <div
+                        className='bg-fill-2 p-12px rd-8px border border-border-2 flex flex-col gap-8px'
+                        data-testid={`publish-preview-${item.id}`}
+                      >
+                        <div className='flex items-center justify-between'>
+                          <Tag color='arcoblue' size='small'>
+                            {item.publishPreview.platform.toUpperCase()}
+                          </Tag>
+                          {item.publishPreview.contentHash && (
+                            <Text type='secondary' className='text-11px font-mono'>
+                              Hash: {item.publishPreview.contentHash.slice(0, 10)}...
+                            </Text>
+                          )}
+                        </div>
+                        <Text className='font-semibold text-14px text-t-primary'>{item.publishPreview.title}</Text>
+                        {item.publishPreview.description && (
+                          <Paragraph type='secondary' className='text-12px m-0'>
+                            {item.publishPreview.description}
+                          </Paragraph>
+                        )}
+                        {item.publishPreview.thumbnailUrl && (
+                          <div className='rd-6px overflow-hidden max-h-180px flex justify-center bg-black/10'>
+                            <img
+                              src={item.publishPreview.thumbnailUrl}
+                              alt='Thumbnail preview'
+                              className='object-cover max-h-180px rd-4px'
+                              data-testid='publish-preview-thumbnail'
+                            />
+                          </div>
+                        )}
+                        {item.publishPreview.videoUrl && (
+                          <div className='rd-6px overflow-hidden max-h-240px bg-black'>
+                            <video
+                              controls
+                              src={item.publishPreview.videoUrl}
+                              className='w-full max-h-240px'
+                              data-testid='publish-preview-video'
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 

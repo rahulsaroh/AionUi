@@ -192,6 +192,135 @@ export function initSchema(db: ISqliteDriver): void {
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_approval_audit_logs_created ON approval_audit_logs(created_at DESC)');
 
+  // Pipeline runs (流水线运行记录)
+  db.exec(`CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    manifest_path TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_runs_project ON pipeline_runs(project_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status)');
+
+  // Pipeline steps (流水线步骤)
+  db.exec(`CREATE TABLE IF NOT EXISTS pipeline_steps (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+    step_index INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    inputs TEXT,
+    artifact_paths TEXT,
+    content_hash TEXT,
+    error TEXT,
+    started_at INTEGER,
+    completed_at INTEGER,
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_steps_run ON pipeline_steps(run_id, step_index)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_steps_status ON pipeline_steps(status)');
+
+  // Idempotent publish records (幂等发布记录)
+  db.exec(`CREATE TABLE IF NOT EXISTS publish_records (
+    id TEXT PRIMARY KEY,
+    idempotency_key TEXT UNIQUE NOT NULL,
+    project_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'published',
+    post_id TEXT,
+    url TEXT,
+    metadata TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_records_key ON publish_records(idempotency_key)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_publish_records_project ON publish_records(project_id)');
+
+  // Runs table (执行记录)
+  db.exec(`CREATE TABLE IF NOT EXISTS runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    team_id TEXT,
+    trigger TEXT NOT NULL CHECK(trigger IN ('manual', 'cron', 'channel')),
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed', 'paused', 'waiting'))
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_runs_project_id ON runs(project_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_runs_team_id ON runs(team_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_runs_started_at ON runs(started_at DESC)');
+
+  // Usage ledger table (LLM调用账单记录)
+  db.exec(`CREATE TABLE IF NOT EXISTS usage_ledger (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    agent_role TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    estimated_cost REAL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_usage_ledger_run_id ON usage_ledger(run_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_usage_ledger_model ON usage_ledger(model)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_usage_ledger_created_at ON usage_ledger(created_at DESC)');
+
+  // Budgets table (预算配置)
+  db.exec(`CREATE TABLE IF NOT EXISTS budgets (
+    id TEXT PRIMARY KEY,
+    scope_type TEXT NOT NULL CHECK(scope_type IN ('run', 'team_daily', 'department_monthly')),
+    scope_id TEXT NOT NULL,
+    amount REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(scope_type, scope_id)
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_budgets_scope ON budgets(scope_type, scope_id)');
+
+  // Browser Profile Assignments (浏览器配置文件与项目/团队绑定)
+  db.exec(`CREATE TABLE IF NOT EXISTS browser_profile_assignments (
+    id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(profile_id, scope_type, scope_id)
+  )`);
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_browser_profile_assignments_scope ON browser_profile_assignments(scope_type, scope_id)'
+  );
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_browser_profile_assignments_profile ON browser_profile_assignments(profile_id)'
+  );
+
+  // Browser Audit Logs (浏览器操作审计日志与截图)
+  db.exec(`CREATE TABLE IF NOT EXISTS browser_audit_logs (
+    id TEXT PRIMARY KEY,
+    run_id TEXT,
+    agent_id TEXT,
+    profile_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_summary TEXT,
+    sensitive INTEGER DEFAULT 0,
+    approved INTEGER DEFAULT 1,
+    screenshot_before TEXT,
+    screenshot_after TEXT,
+    timestamp INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_timestamp ON browser_audit_logs(timestamp DESC)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_profile ON browser_audit_logs(profile_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_run ON browser_audit_logs(run_id)');
+
   console.log('[Database] Schema initialized successfully');
 }
 
@@ -220,4 +349,4 @@ export function setDatabaseVersion(db: ISqliteDriver, version: number): void {
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 28;
+export const CURRENT_DB_VERSION = 31;

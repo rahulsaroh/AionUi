@@ -28,6 +28,9 @@ const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTa
 const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
 const OrganizationCanvasView = React.lazy(() => import('@renderer/pages/organization'));
 const ApprovalsInboxPage = React.lazy(() => import('@renderer/pages/approvals/ApprovalsInboxPage'));
+const PipelineTimelinePage = React.lazy(() => import('@renderer/pages/pipeline/PipelineTimelinePage'));
+const CostsPage = React.lazy(() => import('@renderer/pages/costs/CostsPage'));
+const TodayPage = React.lazy(() => import('@renderer/pages/today/TodayPage'));
 const RememberedRulesSettings = React.lazy(() => import('@renderer/pages/settings/RememberedRulesSettings'));
 
 import { Button } from '@arco-design/web-react';
@@ -133,6 +136,9 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
             element={TEAM_MODE_ENABLED ? withRouteFallback(OrganizationCanvasView) : <Navigate to='/guid' replace />}
           />
           <Route path='/approvals' element={withRouteFallback(ApprovalsInboxPage)} />
+          <Route path='/pipeline' element={withRouteFallback(PipelineTimelinePage)} />
+          <Route path='/costs' element={withRouteFallback(CostsPage)} />
+          <Route path='/today' element={withRouteFallback(TodayPage)} />
           <Route path='/settings/rules' element={withRouteFallback(RememberedRulesSettings)} />
           <Route path='/settings/model' element={withRouteFallback(ModeSettings)} />
           <Route path='/settings/gateway' element={withRouteFallback(GatewaySettings)} />

@@ -12,6 +12,15 @@ import { addRememberedRule } from './rulesStore';
 import { recordAuditLog } from './auditLogStore';
 import type { AuditChannel, HeadlessGateItem } from './types';
 
+export interface PublishPreviewData {
+  platform: string;
+  thumbnailUrl?: string;
+  videoUrl?: string;
+  title: string;
+  description?: string;
+  contentHash?: string;
+}
+
 export interface InboxApprovalItem {
   id: string; // unique ID
   callId: string; // IConfirmation call_id
@@ -32,6 +41,7 @@ export interface InboxApprovalItem {
   options: Array<{ label: string; value: string }>;
   isHeadless?: boolean;
   jobId?: string;
+  publishPreview?: PublishPreviewData;
   createdAt: number;
   expiresAt?: number;
 }
