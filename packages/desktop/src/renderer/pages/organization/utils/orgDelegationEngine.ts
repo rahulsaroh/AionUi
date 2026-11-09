@@ -14,6 +14,7 @@ import type {
   OrgProject,
 } from '@/types/organization';
 import { createDepartmentShell, createTeamShell, createMemberShell } from './orgCoherence';
+import { getDefaultDeptPath, getDefaultTeamPath, getDefaultProjectPath } from './orgPathUtils';
 
 export interface DelegationStepLog {
   id: string;
@@ -112,37 +113,10 @@ export class OrgDelegationEngine {
       return `[Simulated] ${opts.agent.name} (${opts.agent.model?.modelId || 'default model'}) executed: "${opts.userDirective.slice(0, 60)}..." in ${effectiveWorkspace || 'default workspace'}`;
     }
 
-    const convId = `org-agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const collectedText: string[] = [];
     let finished = false;
     let lastActivity = Date.now();
-
-    const unsubscribe = ipcBridge.conversation.responseStream.on((msg: unknown) => {
-      const m = msg as { conversation_id?: string; data?: unknown; type?: string; status?: string };
-      if (m.conversation_id !== convId) return;
-      if (m.type === 'error' || m.status === 'error') {
-        const errText = typeof m.data === 'string' ? m.data : JSON.stringify(m.data);
-        collectedText.push(`\n[Inference Error: ${errText}]`);
-        finished = true;
-      } else if (m.data) {
-        const text =
-          typeof m.data === 'string'
-            ? m.data
-            : ((m.data as { content?: string; text?: string })?.content ??
-              (m.data as { content?: string; text?: string })?.text ??
-              '');
-        if (text) {
-          collectedText.push(text);
-          opts.onStreamUpdate(text);
-          this.onAgentStream?.(text);
-        }
-      }
-      if (m.status === 'finish' || m.type === 'finish') {
-        finished = true;
-      }
-      lastActivity = Date.now();
-    });
-
+    let unsubscribe: (() => void) | undefined;
     let runError: string | null = null;
 
     try {
@@ -154,7 +128,7 @@ export class OrgDelegationEngine {
         const preferred =
           enabled.find((a) => a.source === 'generated' && a.agent?.type === 'aionrs') ??
           enabled.find((a) => a.agent?.type === 'aionrs') ??
-          enabled[0];
+          enabled.find((a) => a.id.includes('aionrs'));
         if (preferred?.id) {
           assistantId = preferred.id;
         }
@@ -173,6 +147,8 @@ export class OrgDelegationEngine {
           const matchedProvider = enabledProviders.find((p) => p.id === opts.agent.model?.providerId);
           if (matchedProvider) {
             resolvedModel = { id: matchedProvider.id, use_model: opts.agent.model.modelId };
+          } else {
+            resolvedModel = { id: opts.agent.model.providerId, use_model: opts.agent.model.modelId };
           }
         }
         if (!resolvedModel && opts.agent.model?.modelId) {
@@ -182,18 +158,18 @@ export class OrgDelegationEngine {
           }
         }
         if (!resolvedModel && enabledProviders.length > 0) {
-          const providerWithModels = enabledProviders.find((p) => p.models && p.models.length > 0);
-          if (providerWithModels && providerWithModels.models?.[0]) {
-            resolvedModel = { id: providerWithModels.id, use_model: providerWithModels.models[0] };
-          }
+          const p = enabledProviders.find((prov) => prov.models && prov.models.length > 0) || enabledProviders[0];
+          resolvedModel = {
+            id: p.id,
+            use_model: opts.agent.model?.modelId || (p.models && p.models[0]) || 'default',
+          };
         }
       } catch {
         // Non-fatal provider resolution fallback
       }
 
-      // 3. Create real conversation session
+      // 3. Create real conversation session (server generates canonical UUID)
       const createPayload: Record<string, unknown> = {
-        id: convId,
         name: `Org: ${opts.agent.name}`,
         assistant: { id: assistantId },
         extra: {
@@ -206,7 +182,37 @@ export class OrgDelegationEngine {
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await ipcBridge.conversation.create.invoke(createPayload as any);
+      const createdConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as { id?: string } | null;
+      const convId = createdConv?.id;
+      if (!convId) {
+        throw new Error('Failed to create conversation: backend returned no conversation id');
+      }
+
+      unsubscribe = ipcBridge.conversation.responseStream.on((msg: unknown) => {
+        const m = msg as { conversation_id?: string; data?: unknown; type?: string; status?: string };
+        if (m.conversation_id !== convId) return;
+        if (m.type === 'error' || m.status === 'error') {
+          const errText = typeof m.data === 'string' ? m.data : JSON.stringify(m.data);
+          collectedText.push(`\n[Inference Error: ${errText}]`);
+          finished = true;
+        } else if (m.data) {
+          const text =
+            typeof m.data === 'string'
+              ? m.data
+              : ((m.data as { content?: string; text?: string })?.content ??
+                (m.data as { content?: string; text?: string })?.text ??
+                '');
+          if (text) {
+            collectedText.push(text);
+            opts.onStreamUpdate(text);
+            this.onAgentStream?.(text);
+          }
+        }
+        if (m.status === 'finish' || m.type === 'finish') {
+          finished = true;
+        }
+        lastActivity = Date.now();
+      });
 
       const promptToSend = `[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
 
@@ -233,7 +239,7 @@ export class OrgDelegationEngine {
       console.warn('[OrgDelegationEngine] LLM invocation warning:', err);
       runError = err instanceof Error ? err.message : String(err);
     } finally {
-      unsubscribe();
+      unsubscribe?.();
     }
 
     if (collectedText.length > 0) {
@@ -365,6 +371,9 @@ export class OrgDelegationEngine {
     if (deptCreationMatch && deptCreationMatch[1]?.trim()) {
       const deptName = deptCreationMatch[1].trim().replace(/^["']|["']$/g, '');
       const newDept = createDepartmentShell(deptName);
+      if (rootCeo.workspacePath) {
+        newDept.workspacePath = getDefaultDeptPath(rootCeo.workspacePath, deptName);
+      }
 
       addLog({
         depth: 1,
@@ -438,6 +447,9 @@ export class OrgDelegationEngine {
 
     if (explicitTeamName && explicitDeptTarget) {
       const newTeam = createTeamShell(explicitDeptTarget.id, explicitTeamName);
+      if (rootCeo.workspacePath) {
+        newTeam.workspacePath = getDefaultTeamPath(rootCeo.workspacePath, explicitDeptTarget.name, explicitTeamName);
+      }
 
       addLog({
         depth: 1,
@@ -517,6 +529,7 @@ export class OrgDelegationEngine {
         teamIds: explicitProjectDeptTarget.teams.length > 0 ? [explicitProjectDeptTarget.teams[0].id] : [],
         description: `Project initialized via Root CEO directive: "${userPrompt}"`,
         status: 'active',
+        path: rootCeo.workspacePath ? getDefaultProjectPath(rootCeo.workspacePath, explicitProjectName) : undefined,
       };
 
       addLog({

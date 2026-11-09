@@ -7,13 +7,14 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@arco-design/web-react';
-import { FolderClose, MessageOne, NetworkTree, Peoples } from '@icon-park/react';
+import { FolderClose, MessageOne, NetworkTree, Peoples, CheckOne } from '@icon-park/react';
 import classNames from 'classnames';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import { isMacOS } from '@renderer/utils/platform';
 import { useTeamList } from '@/renderer/pages/team/hooks/useTeamList';
 import { useOrgTelemetryStore } from '@/renderer/pages/organization/store/useOrgTelemetryStore';
+import { useApprovalsInbox } from '@/common/autonomy';
 
 interface SiderPrimaryNavProps {
   isMobile: boolean;
@@ -38,10 +39,12 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
 
   const isOrgActive = location.pathname.startsWith('/organization');
   const isTeamActive = location.pathname.startsWith('/team/');
+  const isApprovalsActive = location.pathname.startsWith('/approvals');
   const isChatActive =
     location.pathname.startsWith('/conversation/') || location.pathname === '/guid' || location.pathname === '/';
 
   const inFlightHandoffsCount = Object.keys(activeHandoffs).length;
+  const { pendingCount } = useApprovalsInbox();
 
   const tabs = [
     {
@@ -101,6 +104,18 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
         void navigate('/organization');
       },
     },
+    {
+      id: 'approvals',
+      label: t('approvals.title', { defaultValue: 'Approvals' }),
+      icon: CheckOne,
+      isActive: isApprovalsActive,
+      shortcut: `${mod}5`,
+      badge: pendingCount > 0 ? pendingCount : undefined,
+      onClick: () => {
+        onSessionClick?.();
+        void navigate('/approvals');
+      },
+    },
   ];
 
   if (collapsed) {
@@ -125,7 +140,18 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
                   className='block leading-none shrink-0'
                   style={{ lineHeight: 0 }}
                 />
-                {tab.badge && <span className='size-5px rounded-full bg-cyan-400 absolute top-1 right-2' />}
+                {tab.badge && (
+                  tab.id === 'approvals' ? (
+                    <span
+                      data-testid='sider-tab-badge-approvals'
+                      className='min-w-14px h-14px px-3px text-9px flex items-center justify-center rounded-full bg-red-500 text-white font-bold absolute top-1 right-1'
+                    >
+                      {tab.badge}
+                    </span>
+                  ) : (
+                    <span className='size-5px rounded-full bg-cyan-400 absolute top-1 right-2' />
+                  )
+                )}
               </div>
             </Tooltip>
           );
@@ -154,7 +180,18 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
             >
               <IconComp theme='outline' size={14} fill='currentColor' className='shrink-0' />
               <span className='truncate text-11px'>{tab.label}</span>
-              {tab.badge && <span className='size-5px rounded-full bg-cyan-400 shrink-0' />}
+              {tab.badge && (
+                tab.id === 'approvals' ? (
+                  <span
+                    data-testid='sider-tab-badge-approvals'
+                    className='min-w-16px h-16px px-4px text-10px flex items-center justify-center rounded-full bg-red-500 text-white font-bold shrink-0'
+                  >
+                    {tab.badge}
+                  </span>
+                ) : (
+                  <span className='size-5px rounded-full bg-cyan-400 shrink-0' />
+                )
+              )}
             </Button>
           </Tooltip>
         );

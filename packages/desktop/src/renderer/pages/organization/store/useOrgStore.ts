@@ -579,6 +579,7 @@ export function useOrgStore() {
         schedule: {
           kind: 'cron',
           expr: job.cronExpression || '0 9 * * *',
+          description: `Org: ${job.name}`,
         },
         prompt: job.taskDirective,
         conversation_id: '',

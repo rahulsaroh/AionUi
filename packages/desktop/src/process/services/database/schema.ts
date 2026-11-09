@@ -136,6 +136,62 @@ export function initSchema(db: ISqliteDriver): void {
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_team ON team_tasks(team_id, status)');
 
+  // Autonomy profiles (自主性配置)
+  db.exec(`CREATE TABLE IF NOT EXISTS autonomy_profiles (
+    id TEXT PRIMARY KEY,
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    profile TEXT NOT NULL DEFAULT 'ask',
+    max_tool_calls_per_run INTEGER DEFAULT 50,
+    allowlisted_commands TEXT DEFAULT '[]',
+    allowlisted_domains TEXT DEFAULT '[]',
+    timeout_hours INTEGER DEFAULT 12,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(scope_type, scope_id)
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_autonomy_profiles_scope ON autonomy_profiles(scope_type, scope_id)');
+
+  // Remembered rules (记住的审批规则)
+  db.exec(`CREATE TABLE IF NOT EXISTS remembered_rules (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    action_type TEXT,
+    created_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_remembered_rules_project ON remembered_rules(project_id)');
+
+  // Headless gates (无头任务闸门)
+  db.exec(`CREATE TABLE IF NOT EXISTS headless_gates (
+    id TEXT PRIMARY KEY,
+    job_id TEXT,
+    conversation_id TEXT NOT NULL,
+    call_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'waiting_for_approval',
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_headless_gates_status ON headless_gates(status)');
+
+  // Approval audit logs (审批审计日志)
+  db.exec(`CREATE TABLE IF NOT EXISTS approval_audit_logs (
+    id TEXT PRIMARY KEY,
+    confirmation_id TEXT,
+    conversation_id TEXT,
+    project_id TEXT,
+    team_id TEXT,
+    action TEXT,
+    action_type TEXT,
+    decision TEXT NOT NULL,
+    decision_by TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    details TEXT,
+    created_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_approval_audit_logs_created ON approval_audit_logs(created_at DESC)');
+
   console.log('[Database] Schema initialized successfully');
 }
 
@@ -164,4 +220,4 @@ export function setDatabaseVersion(db: ISqliteDriver, version: number): void {
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 27;
+export const CURRENT_DB_VERSION = 28;

@@ -1246,6 +1246,72 @@ const migration_v27: IMigration = {
   },
 };
 
+const migration_v28: IMigration = {
+  version: 28,
+  name: 'Add autonomy_profiles, remembered_rules, headless_gates, and approval_audit_logs tables',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS autonomy_profiles (
+      id TEXT PRIMARY KEY,
+      scope_type TEXT NOT NULL,
+      scope_id TEXT NOT NULL,
+      profile TEXT NOT NULL DEFAULT 'ask',
+      max_tool_calls_per_run INTEGER DEFAULT 50,
+      allowlisted_commands TEXT DEFAULT '[]',
+      allowlisted_domains TEXT DEFAULT '[]',
+      timeout_hours INTEGER DEFAULT 12,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(scope_type, scope_id)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_autonomy_profiles_scope ON autonomy_profiles(scope_type, scope_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS remembered_rules (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      action_type TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_remembered_rules_project ON remembered_rules(project_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS headless_gates (
+      id TEXT PRIMARY KEY,
+      job_id TEXT,
+      conversation_id TEXT NOT NULL,
+      call_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'waiting_for_approval',
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_headless_gates_status ON headless_gates(status)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS approval_audit_logs (
+      id TEXT PRIMARY KEY,
+      confirmation_id TEXT,
+      conversation_id TEXT,
+      project_id TEXT,
+      team_id TEXT,
+      action TEXT,
+      action_type TEXT,
+      decision TEXT NOT NULL,
+      decision_by TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      details TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_approval_audit_logs_created ON approval_audit_logs(created_at DESC)');
+    console.log('[Migration v28] Added autonomy tables (profiles, rules, gates, audit logs)');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS approval_audit_logs');
+    db.exec('DROP TABLE IF EXISTS headless_gates');
+    db.exec('DROP TABLE IF EXISTS remembered_rules');
+    db.exec('DROP TABLE IF EXISTS autonomy_profiles');
+    console.log('[Migration v28] Rolled back autonomy tables');
+  },
+};
+
 /**
  * All migrations in order
  */
@@ -1255,7 +1321,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v7, migration_v8, migration_v9, migration_v10, migration_v11, migration_v12,
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
-  migration_v25, migration_v26, migration_v27,
+  migration_v25, migration_v26, migration_v27, migration_v28,
 ];
 
 /**

@@ -5,13 +5,19 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Input, Modal, Select, Tag, InputNumber } from '@arco-design/web-react';
+import { Button, Input, Modal, Select, Tag, InputNumber, Message } from '@arco-design/web-react';
 import { Edit, FolderOpen, Setting, Terminal, LinkOne } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import type { OrgAgentMember, OrgDepartmentNode, OrgProject, OrgTeamNode } from '@/types/organization';
 import { useOrgStore } from '../store/useOrgStore';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
+import {
+  validateWithinMaster,
+  getDefaultDeptPath,
+  getDefaultTeamPath,
+  getDefaultProjectPath,
+} from '../utils/orgPathUtils';
 
 type EditEntityType = 'department' | 'team' | 'member' | 'project';
 
@@ -53,6 +59,25 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const [projectDeptId, setProjectDeptId] = useState('');
   const [projectTeamId, setProjectTeamId] = useState('');
   const [projectStatus, setProjectStatus] = useState<'active' | 'dormant' | 'done'>('active');
+  const [pathScopeError, setPathScopeError] = useState<string | null>(null);
+
+  const masterRoot = hierarchy.rootCeo.workspacePath || null;
+
+  useEffect(() => {
+    if (!folderPath.trim() || !masterRoot) {
+      setPathScopeError(null);
+      return;
+    }
+    let cancelled = false;
+    void validateWithinMaster(folderPath, masterRoot).then((res) => {
+      if (!cancelled) {
+        setPathScopeError(res.valid ? null : res.error || 'Folder must be inside the organization master folder');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [folderPath, masterRoot]);
 
   const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
 
@@ -138,7 +163,16 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     }
   }, [visible, data, entity]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    if (folderPath.trim() && masterRoot) {
+      const check = await validateWithinMaster(folderPath, masterRoot);
+      if (!check.valid) {
+        Message.error(check.error || 'Folder must be inside the organization master folder');
+        setPathScopeError(check.error || 'Folder must be inside the organization master folder');
+        return;
+      }
+    }
+
     if (entity === 'department' && data) {
       const dept = data as OrgDepartmentNode;
       if (!name.trim()) return;
@@ -229,6 +263,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     modelId,
     parentDeptId,
     folderPath,
+    masterRoot,
     buildCmd,
     runCmd,
     projectDeptId,
@@ -314,33 +349,37 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               </Select>
             </div>
             <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Local Workspace Folder Path</span>
+              <div className='flex items-center justify-between'>
+                <span className='text-12px text-t-secondary'>Department Workspace Folder Path</span>
+                {masterRoot && name.trim() && (
+                  <Button
+                    size='mini'
+                    type='text'
+                    onClick={() => setFolderPath(getDefaultDeptPath(masterRoot, name))}
+                    className='!text-10px !h-20px !px-4px text-primary'
+                  >
+                    Auto-scaffold in Master Root
+                  </Button>
+                )}
+              </div>
               <div className='flex items-center gap-6px'>
                 <WorkspaceFolderSelect
                   value={folderPath}
                   onChange={setFolderPath}
-                  placeholder='Choose a folder...'
+                  placeholder='Choose subfolder within master root...'
                   recentLabel='Recent'
                   chooseDifferentLabel='Browse Folder...'
                 />
-                <Button
-                  size='small'
-                  type='text'
-                  icon={<FolderOpen size={13} />}
-                  onClick={async () => {
-                    try {
-                      const paths = await window.electronAPI.selectDirectory({ defaultPath: folderPath || undefined });
-                      if (paths?.[0]) {
-                        setFolderPath(paths[0]);
-                      }
-                    } catch (err) {
-                      console.error('[OrgEntityEditModal] selectDirectory failed:', err);
-                    }
-                  }}
-                >
-                  Browse Folder
-                </Button>
               </div>
+              {pathScopeError ? (
+                <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+              ) : masterRoot ? (
+                <span className='text-10px text-t-tertiary truncate'>
+                  Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+                </span>
+              ) : (
+                <span className='text-10px text-amber-500'>Organization master folder is not set yet.</span>
+              )}
             </div>
           </>
         )}
@@ -380,14 +419,36 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               <Input value={hrName} onChange={setHrName} />
             </div>
             <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Local Workspace Folder Path</span>
+              <div className='flex items-center justify-between'>
+                <span className='text-12px text-t-secondary'>Team Workspace Folder Path</span>
+                {masterRoot && name.trim() && (
+                  <Button
+                    size='mini'
+                    type='text'
+                    onClick={() => {
+                      const dept = hierarchy.departments.find((d) => d.id === context.departmentId);
+                      setFolderPath(getDefaultTeamPath(masterRoot, dept?.name || 'department', name));
+                    }}
+                    className='!text-10px !h-20px !px-4px text-primary'
+                  >
+                    Auto-scaffold in Master Root
+                  </Button>
+                )}
+              </div>
               <WorkspaceFolderSelect
                 value={folderPath}
                 onChange={setFolderPath}
-                placeholder='Choose a folder...'
+                placeholder='Choose subfolder within master root...'
                 recentLabel='Recent'
                 chooseDifferentLabel='Browse Folder...'
               />
+              {pathScopeError ? (
+                <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+              ) : masterRoot ? (
+                <span className='text-10px text-t-tertiary truncate'>
+                  Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+                </span>
+              ) : null}
             </div>
           </>
         )}
@@ -460,14 +521,33 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               </Select>
             </div>
             <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Local Git / Workspace Folder Path</span>
+              <div className='flex items-center justify-between'>
+                <span className='text-12px text-t-secondary'>Project Workspace Folder</span>
+                {masterRoot && name.trim() && (
+                  <Button
+                    size='mini'
+                    type='text'
+                    onClick={() => setFolderPath(getDefaultProjectPath(masterRoot, name))}
+                    className='!text-10px !h-20px !px-4px text-primary'
+                  >
+                    Auto-scaffold in Master Root
+                  </Button>
+                )}
+              </div>
               <WorkspaceFolderSelect
                 value={folderPath}
                 onChange={setFolderPath}
-                placeholder='Assign folder...'
+                placeholder='Assign subfolder within master root...'
                 recentLabel='Recent'
                 chooseDifferentLabel='Browse Folder...'
               />
+              {pathScopeError ? (
+                <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+              ) : masterRoot ? (
+                <span className='text-10px text-t-tertiary truncate'>
+                  Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+                </span>
+              ) : null}
             </div>
             <div className='flex flex-col gap-4px'>
               <span className='text-12px text-t-secondary'>Build Command</span>

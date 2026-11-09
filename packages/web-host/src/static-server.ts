@@ -76,7 +76,16 @@ function getLanIP(): string | null {
   return pickLanIP(networkInterfaces());
 }
 
-function forwardToBackend(req: IncomingMessage, res: ServerResponse, backendPort: number): void {
+function isRemoteClient(req: IncomingMessage): boolean {
+  if (req.headers['x-remote-session'] === 'true' || req.headers['x-remote-client'] === 'true') {
+    return true;
+  }
+  const addr = req.socket.remoteAddress;
+  if (!addr) return false;
+  return addr !== '127.0.0.1' && addr !== '::1' && addr !== '::ffff:127.0.0.1';
+}
+
+function forwardToBackend(req: IncomingMessage, res: ServerResponse, backendPort: number, bufferedBody?: Buffer): void {
   const options: http.RequestOptions = {
     hostname: '127.0.0.1',
     port: backendPort,
@@ -96,7 +105,12 @@ function forwardToBackend(req: IncomingMessage, res: ServerResponse, backendPort
       res.destroy();
     }
   });
-  req.pipe(proxy);
+  if (bufferedBody && bufferedBody.length > 0) {
+    proxy.write(bufferedBody);
+    proxy.end();
+  } else {
+    req.pipe(proxy);
+  }
 }
 
 // Max bytes we peek before forcing a routing decision. An HTTP request-line
@@ -184,6 +198,60 @@ export async function startStaticServer(opts: StaticServerOptions): Promise<Stat
       // /login and /logout are aionui-auth's top-level auth endpoints: proxy them too
       // so WebUI browser clients reach the backend without a path-rewrite.
       if (req.url.startsWith('/api/') || req.url.startsWith('/api?') || req.url === '/login' || req.url === '/logout') {
+        if (req.url.includes('/confirmations/') && req.url.endsWith('/confirm') && isRemoteClient(req)) {
+          // Inspect body and headers for remote approval permissions
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) {
+            chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
+          }
+          const bodyBuffer = Buffer.concat(chunks);
+          let bodyObj: any = null;
+          try {
+            bodyObj = JSON.parse(bodyBuffer.toString('utf-8'));
+          } catch {
+            // Ignore parse errors on malformed payloads
+          }
+
+          const actionCategory =
+            req.headers['x-action-category'] ||
+            bodyObj?.action_context?.category ||
+            bodyObj?.actionContext?.category ||
+            bodyObj?.data?.action_context?.category;
+
+          const isOutside =
+            req.headers['x-action-outside'] === 'true' ||
+            bodyObj?.action_context?.isOutsideWorkspace ||
+            bodyObj?.actionContext?.isOutsideWorkspace ||
+            bodyObj?.data?.action_context?.isOutsideWorkspace;
+
+          const profile =
+            req.headers['x-autonomy-profile'] || bodyObj?.profileConfig?.profile || bodyObj?.autonomyProfile || 'ask';
+
+          // NEVER auto-approve categories: publish, spend, credentials, delete outside workspace
+          const isNeverAuto =
+            actionCategory === 'publish' ||
+            actionCategory === 'spend' ||
+            actionCategory === 'credentials' ||
+            (actionCategory === 'file_delete' && isOutside);
+
+          // If action is forbidden or exceeds profile permissions for remote session
+          const isForbidden = isNeverAuto || (profile !== 'autopilot' && isOutside);
+
+          if (isForbidden) {
+            res.writeHead(403, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: 'REMOTE_APPROVAL_FORBIDDEN',
+                message: 'Remote sessions cannot approve actions that the profile forbids',
+              })
+            );
+            return;
+          }
+
+          forwardToBackend(req, res, opts.backendPort, bodyBuffer);
+          return;
+        }
+
         forwardToBackend(req, res, opts.backendPort);
         return;
       }

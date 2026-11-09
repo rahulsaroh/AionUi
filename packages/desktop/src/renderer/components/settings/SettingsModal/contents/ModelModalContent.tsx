@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import { isBackendHttpError } from '@/common/adapter/httpBridge';
 import type { IProvider } from '@/common/config/storage';
 import { supportsOpenAiApiMode } from '@/common/utils/modelCapabilities';
 import { Button, Divider, Message, Popconfirm, Collapse, Tag, Switch, Tooltip } from '@arco-design/web-react';
@@ -151,7 +152,10 @@ const ModelModalContent: React.FC = () => {
         if (msg.includes('409')) {
           message.error(t('settings.providerIdConflict', { defaultValue: 'Provider id already exists, retry.' }));
         } else {
-          message.error(t('settings.saveModelConfigFailed'));
+          const detail = isBackendHttpError(error) ? error.backendMessage || error.code : msg;
+          message.error(
+            detail ? `${t('settings.saveModelConfigFailed')}: ${detail}` : t('settings.saveModelConfigFailed')
+          );
         }
       });
   };
@@ -167,7 +171,11 @@ const ModelModalContent: React.FC = () => {
       .catch((error) => {
         void mutate();
         console.error('Failed to delete provider:', error);
-        message.error(t('settings.saveModelConfigFailed'));
+        const msg = error instanceof Error ? error.message : String(error);
+        const detail = isBackendHttpError(error) ? error.backendMessage || error.code : msg;
+        message.error(
+          detail ? `${t('settings.saveModelConfigFailed')}: ${detail}` : t('settings.saveModelConfigFailed')
+        );
       });
   };
 

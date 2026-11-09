@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Drawer, Button, Tag, Tabs, Input, Message } from '@arco-design/web-react';
 import {
   Peoples,
@@ -22,6 +22,7 @@ import {
 import { useOrgStore } from '../store/useOrgStore';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
+import { validateWithinMaster } from '../utils/orgPathUtils';
 import type { OrgProject } from '@/types/organization';
 
 type OrgInspectorDrawerProps = {
@@ -60,6 +61,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     addSubTeam,
     addTeamMember,
     upsertOrgProject,
+    updateRootCeo,
     setOrgViewMode,
     setSelectedConversationId,
   } = useOrgStore();
@@ -209,10 +211,25 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       const chosenPath = paths?.[0];
       if (!chosenPath) return;
 
+      if (selectedNodeType === 'ceo' || selectedNodeId === 'root-ceo') {
+        updateRootCeo({ workspacePath: chosenPath });
+        Message.success(`Master organization workspace folder set to: ${chosenPath}`);
+        return;
+      }
+
+      if (hierarchy.rootCeo.workspacePath) {
+        const check = await validateWithinMaster(chosenPath, hierarchy.rootCeo.workspacePath);
+        if (!check.valid) {
+          Message.error(check.error || 'Folder must be inside the organization master folder');
+          return;
+        }
+      }
+
       if (selectedNodeType === 'department') {
         const dept = hierarchy.departments.find((d) => d.id === selectedNodeId);
         if (dept) {
           await updateDepartment(dept.id, { workspacePath: chosenPath });
+          Message.success(`Department workspace folder set to: ${chosenPath}`);
         }
       } else if (selectedNodeType === 'team') {
         for (const d of hierarchy.departments) {
@@ -220,6 +237,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           if (teamNode) {
             // eslint-disable-next-line no-await-in-loop
             await updateTeamNode(teamNode.id, { workspacePath: chosenPath });
+            Message.success(`Team workspace folder set to: ${chosenPath}`);
             break;
           }
         }

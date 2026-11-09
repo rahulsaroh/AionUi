@@ -64,6 +64,28 @@ export async function checkOmniRouteRunning(port = DEFAULT_PORT): Promise<boolea
   }
 }
 
+export async function fetchOmniRouteLiveModels(
+  port = DEFAULT_PORT,
+  apiKey = 'sk-f6f40206b4ef1835-515e4f-552c8f80'
+): Promise<string[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`http://localhost:${port}/v1/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return [];
+    const json = (await res.json()) as { data?: Array<{ id: string }> };
+    if (!Array.isArray(json?.data)) return [];
+    return json.data.map((m) => m.id).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export function readLocalOmniRouteData(): {
   accounts: OmniRouteConnectionRecord[];
   apiKey: string;
@@ -108,7 +130,8 @@ export function readLocalOmniRouteData(): {
     const keys = db.prepare('SELECT key, name FROM api_keys LIMIT 1').all() as Array<{ key: string }>;
     db.close();
 
-    const apiKey = keys[0]?.key || 'sk-9465108bb15ed26b-1477ab-600eaeb5';
+    const rawKey = keys[0]?.key;
+    const apiKey = rawKey && !rawKey.startsWith('enc:') ? rawKey : 'sk-f6f40206b4ef1835-515e4f-552c8f80';
     return { accounts, apiKey };
   } catch (err) {
     console.warn('[OmniRouteSync] Error reading SQLite database:', err);
@@ -119,39 +142,32 @@ export function readLocalOmniRouteData(): {
 export async function syncOmniRouteIntoStore(store: GatewayStore): Promise<OmniRouteSyncResult> {
   const isRunning = await checkOmniRouteRunning(DEFAULT_PORT);
   const data = readLocalOmniRouteData();
+  const activeKey = data?.apiKey || 'sk-f6f40206b4ef1835-515e4f-552c8f80';
+  const liveModels = isRunning ? await fetchOmniRouteLiveModels(DEFAULT_PORT, activeKey) : [];
+  const baseModels = Array.from(new Set([...ANTIGRAVITY_DEFAULT_MODELS, ...liveModels]));
 
   if (!data || data.accounts.length === 0) {
     // If SQLite is unreadable, create a clean default OmniRoute connection using running server
     const fallbackId = 'acc-omniroute-default';
     const existing = store.getAccount(fallbackId);
-    if (!existing) {
-      const defaultAccount: GatewayAccount = {
-        id: fallbackId,
-        name: 'OmniRoute Local Gateway (Antigravity & Claude)',
-        platform: 'omniroute',
-        baseUrl: DEFAULT_BASE_URL,
-        apiKey: 'sk-9465108bb15ed26b-1477ab-600eaeb5',
-        models: ANTIGRAVITY_DEFAULT_MODELS,
-        enabled: true,
-        status: 'active',
-      };
-      store.saveAccount(defaultAccount);
-      return {
-        success: true,
-        importedAccounts: 1,
-        importedCombos: 0,
-        serverRunning: isRunning,
-        serverPort: DEFAULT_PORT,
-        message: 'Imported default OmniRoute gateway account',
-      };
-    }
+    const defaultAccount: GatewayAccount = {
+      id: fallbackId,
+      name: 'OmniRoute Local Gateway (Antigravity & Claude)',
+      platform: 'omniroute',
+      baseUrl: DEFAULT_BASE_URL,
+      apiKey: activeKey,
+      models: baseModels.length > 0 ? baseModels : ANTIGRAVITY_DEFAULT_MODELS,
+      enabled: true,
+      status: 'active',
+    };
+    store.saveAccount(defaultAccount);
     return {
       success: true,
-      importedAccounts: 0,
+      importedAccounts: existing ? 0 : 1,
       importedCombos: 0,
       serverRunning: isRunning,
       serverPort: DEFAULT_PORT,
-      message: 'OmniRoute account already connected',
+      message: existing ? 'Updated OmniRoute models from local server' : 'Imported default OmniRoute gateway account',
     };
   }
 
@@ -171,7 +187,7 @@ export async function syncOmniRouteIntoStore(store: GatewayStore): Promise<OmniR
 
     if (isAntigravity) {
       platform = 'omniroute';
-      models = ANTIGRAVITY_DEFAULT_MODELS;
+      models = baseModels.length > 0 ? baseModels : ANTIGRAVITY_DEFAULT_MODELS;
       label = `Google Antigravity (${record.email || record.name || 'Account'})`;
     } else if (isClaude) {
       platform = 'omniroute';
@@ -195,7 +211,7 @@ export async function syncOmniRouteIntoStore(store: GatewayStore): Promise<OmniR
       name: label,
       platform,
       baseUrl: DEFAULT_BASE_URL,
-      apiKey: data.apiKey,
+      apiKey: activeKey,
       models,
       enabled: record.is_active === 1,
       status: 'active',

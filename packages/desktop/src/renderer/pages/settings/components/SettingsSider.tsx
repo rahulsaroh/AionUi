@@ -13,6 +13,7 @@ import {
   Lightning,
   LinkCloud,
   Puzzle,
+  Shield,
   Speed,
   Switch as SwitchIcon,
   System,
@@ -32,6 +33,7 @@ export const BUILTIN_TAB_IDS = [
   'gateway',
   'skills',
   'tools',
+  'rules',
   'appearance',
   'webui',
   'pet',
@@ -111,6 +113,12 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
         label: t('settings.tools', { defaultValue: 'Tools' }),
         icon: <Toolkit />,
         path: 'tools',
+      },
+      rules: {
+        id: 'rules',
+        label: t('settings.rules.tabLabel', { defaultValue: 'Rules' }),
+        icon: <Shield />,
+        path: 'rules',
       },
       appearance: { id: 'appearance', label: t('settings.appearancePanel'), icon: <Computer />, path: 'appearance' },
       webui: {

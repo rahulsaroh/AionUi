@@ -34,6 +34,7 @@ import OrgSeedModal from './components/OrgSeedModal';
 import OrgProjectModal from './components/OrgProjectModal';
 import OrgDepartmentModal from './components/OrgDepartmentModal';
 import OrgEntityEditModal from './components/OrgEntityEditModal';
+import { OrgMasterFolderModal } from './components/OrgMasterFolderModal';
 import ProjectNode from './components/ProjectNode';
 import { layoutOrgChart } from './utils/layoutOrgChart';
 import { createDepartmentShell, createTeamShell } from './utils/orgCoherence';
@@ -84,6 +85,7 @@ const CanvasInner: React.FC = () => {
   const [selectedNodeType, setSelectedNodeType] = useState<'ceo' | 'department' | 'team' | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isSeedModalOpen, setIsSeedModalOpen] = useState(false);
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const [projectModal, setProjectModal] = useState<{
     visible: boolean;
     project: OrgProject | null;
@@ -168,7 +170,9 @@ const CanvasInner: React.FC = () => {
 
   const handleSetFolder = useCallback(
     (nodeId: string, nodeType: 'ceo' | 'department' | 'team') => {
-      if (nodeType === 'department') {
+      if (nodeType === 'ceo' || nodeId === 'root-ceo') {
+        setIsMasterModalOpen(true);
+      } else if (nodeType === 'department') {
         const dept = hierarchy.departments.find((d) => d.id === nodeId);
         setEditEntity({ type: 'department', data: dept ?? null, context: { departmentId: nodeId } });
       } else if (nodeType === 'team') {
@@ -200,6 +204,7 @@ const CanvasInner: React.FC = () => {
         orientation: direction,
         onDispatchToCeo: handleDispatchToCeo,
         onSelectNode: (id: string, type: 'ceo') => handleSelectNode(id, type),
+        onSetFolder: (id: string) => handleSetFolder(id, 'ceo'),
       },
       position: { x: 0, y: 0 },
       className:
@@ -453,6 +458,7 @@ const CanvasInner: React.FC = () => {
         onClose={() => setEditEntity(null)}
         onSave={handleEditSave}
       />
+      <OrgMasterFolderModal visible={isMasterModalOpen} onClose={() => setIsMasterModalOpen(false)} />
 
       <Modal
         title={t('team.organization.addDepartment', { defaultValue: 'Add Department' })}

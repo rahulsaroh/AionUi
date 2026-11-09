@@ -51,10 +51,14 @@ const AddModelModal = ModalHOC<{ data?: IProvider; model?: string; onSubmit: (mo
 
     const handleConfirm = useCallback(() => {
       if (!data || (!editingModel && !models.length)) return;
-      const targetModels = editingModel ? [editingModel] : models;
+      const splitModels = models
+        .flatMap((m) => (typeof m === 'string' ? m.split(',') : [m]))
+        .map((m) => (typeof m === 'string' ? m.trim() : m))
+        .filter(Boolean);
+      const targetModels = editingModel ? [editingModel] : splitModels;
       const updatedData: IProvider = {
         ...data,
-        models: editingModel ? existingModels : [...existingModels, ...models],
+        models: editingModel ? existingModels : [...existingModels, ...splitModels],
         model_settings: updateModelSettings(
           data.model_settings,
           targetModels,

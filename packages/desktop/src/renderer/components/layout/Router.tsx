@@ -27,6 +27,8 @@ const ScheduledTasksPage = React.lazy(() => import('@renderer/pages/cron/Schedul
 const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage/TaskDetailPage'));
 const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
 const OrganizationCanvasView = React.lazy(() => import('@renderer/pages/organization'));
+const ApprovalsInboxPage = React.lazy(() => import('@renderer/pages/approvals/ApprovalsInboxPage'));
+const RememberedRulesSettings = React.lazy(() => import('@renderer/pages/settings/RememberedRulesSettings'));
 
 import { Button } from '@arco-design/web-react';
 
@@ -130,6 +132,8 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
             path='/organization'
             element={TEAM_MODE_ENABLED ? withRouteFallback(OrganizationCanvasView) : <Navigate to='/guid' replace />}
           />
+          <Route path='/approvals' element={withRouteFallback(ApprovalsInboxPage)} />
+          <Route path='/settings/rules' element={withRouteFallback(RememberedRulesSettings)} />
           <Route path='/settings/model' element={withRouteFallback(ModeSettings)} />
           <Route path='/settings/gateway' element={withRouteFallback(GatewaySettings)} />
           <Route path='/assistants' element={withRouteFallback(AssistantSettings)} />

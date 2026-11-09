@@ -6,9 +6,33 @@
 
 import type { IProvider, TProviderWithModel } from '@/common/config/storage';
 import { useGoogleAuthModels } from '@/renderer/hooks/agent/useGoogleAuthModels';
-import { useProvidersQuery } from '@/renderer/hooks/agent/useModelProviderList';
+import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import { hasAvailableModels } from '../utils/modelUtils';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+const GUID_LAST_MODEL_STORAGE_KEY = 'aionui:guid-last-model';
+
+function getStoredModelPreference(): { providerId: string; modelId: string } | null {
+  try {
+    const raw = localStorage.getItem(GUID_LAST_MODEL_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredModelPreference(pref: { providerId: string; modelId: string } | null): void {
+  try {
+    if (pref) {
+      localStorage.setItem(GUID_LAST_MODEL_STORAGE_KEY, JSON.stringify(pref));
+    } else {
+      localStorage.removeItem(GUID_LAST_MODEL_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Build a unique key for a provider/model pair.
@@ -49,12 +73,12 @@ export type GuidModelSelectionResult = {
  */
 export const useGuidModelSelection = (agentKey: ProviderAgentKey = 'aionrs'): GuidModelSelectionResult => {
   const { isGoogleAuth } = useGoogleAuthModels();
-  const { data: modelConfig } = useProvidersQuery();
+  const { providers } = useModelProviderList();
 
   const modelList = useMemo(() => {
-    const allProviders: IProvider[] = (modelConfig || []).filter((platform) => !!platform.models.length);
+    const allProviders: IProvider[] = (providers || []).filter((platform) => !!platform.models?.length);
     return allProviders.filter(hasAvailableModels);
-  }, [modelConfig]);
+  }, [providers]);
 
   const formatGeminiModelLabel = useCallback(
     (provider: { platform?: string; id?: string } | undefined, modelName?: string) => {
@@ -74,9 +98,12 @@ export const useGuidModelSelection = (agentKey: ProviderAgentKey = 'aionrs'): Gu
   const selectedModelKeyRef = useRef<string | null>(null);
 
   const setCurrentModel = useCallback(
-    async (model_info: TProviderWithModel, _options?: { persistPreference?: boolean }) => {
+    async (model_info: TProviderWithModel, options?: { persistPreference?: boolean }) => {
       selectedModelKeyRef.current = buildModelKey(model_info.id, model_info.use_model);
       _setCurrentModel(model_info);
+      if (options?.persistPreference !== false && model_info.id && model_info.use_model) {
+        setStoredModelPreference({ providerId: model_info.id, modelId: model_info.use_model });
+      }
     },
     []
   );
@@ -85,6 +112,25 @@ export const useGuidModelSelection = (agentKey: ProviderAgentKey = 'aionrs'): Gu
     async (options?: { persistPreference?: boolean }) => {
       if (!modelList || modelList.length === 0) {
         return;
+      }
+
+      // Check stored user preference first
+      const storedPref = getStoredModelPreference();
+      if (storedPref) {
+        const storedKey = buildModelKey(storedPref.providerId, storedPref.modelId);
+        if (isModelKeyAvailable(storedKey, modelList)) {
+          const provider = modelList.find((p) => p.id === storedPref.providerId);
+          if (provider) {
+            await setCurrentModel(
+              {
+                ...provider,
+                use_model: storedPref.modelId,
+              },
+              options
+            );
+            return;
+          }
+        }
       }
 
       selectedModelKeyRef.current = null;
@@ -118,13 +164,27 @@ export const useGuidModelSelection = (agentKey: ProviderAgentKey = 'aionrs'): Gu
         }
         return;
       }
+
+      // If current key is not available, check stored preference before resetting to 0
+      const storedPref = getStoredModelPreference();
+      if (storedPref) {
+        const storedKey = buildModelKey(storedPref.providerId, storedPref.modelId);
+        if (isModelKeyAvailable(storedKey, modelList)) {
+          const provider = modelList.find((p) => p.id === storedPref.providerId);
+          if (provider) {
+            await setCurrentModel({ ...provider, use_model: storedPref.modelId }, { persistPreference: true });
+            return;
+          }
+        }
+      }
+
       await resetCurrentModel();
     };
 
     setDefaultModel().catch((error) => {
       console.error('Failed to set default model:', error);
     });
-  }, [agentKey, current_model?.id, current_model?.use_model, modelList, resetCurrentModel]);
+  }, [agentKey, current_model?.id, current_model?.use_model, modelList, resetCurrentModel, setCurrentModel]);
   return {
     modelList,
     isGoogleAuth,

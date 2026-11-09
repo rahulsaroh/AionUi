@@ -7,7 +7,7 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Tag, Tooltip, Button } from '@arco-design/web-react';
-import { Play, Peoples, Send } from '@icon-park/react';
+import { Play, Peoples, Send, FolderClose } from '@icon-park/react';
 import type { RootCEO, OrgNodeStatus } from '@/types/organization';
 import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
@@ -17,10 +17,11 @@ export interface RootCeoNodeData {
   orientation?: 'TB' | 'LR';
   onDispatchToCeo?: (rootCeo: RootCEO) => void;
   onSelectNode?: (nodeId: string, nodeType: 'ceo') => void;
+  onSetFolder?: (nodeId: string) => void;
 }
 
 export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({ data, selected = false }) => {
-  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode } = data;
+  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode, onSetFolder } = data;
   const { nodeStatuses, isSimulating } = useOrgStore();
 
   const currentStatus = nodeStatuses[rootCeo.id] || rootCeo.status || 'idle';
@@ -93,6 +94,30 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
             <span className='text-10px text-t-tertiary'>{rootCeo.chiefOfStaffAgent.title}</span>
           </div>
         )}
+
+        {/* Master Workspace Root indicator */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetFolder?.(rootCeo.id);
+          }}
+          className='px-10px py-6px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-11px hover:border-primary/50 cursor-pointer transition-colors group'
+          title='Click to configure master organization workspace folder'
+        >
+          <div className='flex items-center gap-6px min-w-0'>
+            <FolderClose
+              size={14}
+              theme='outline'
+              className={rootCeo.workspacePath ? 'text-amber-400 shrink-0' : 'text-t-tertiary shrink-0'}
+            />
+            <span className='font-mono text-10px truncate text-t-secondary group-hover:text-t-primary'>
+              {rootCeo.workspacePath ? `Master: ${rootCeo.workspacePath}` : 'Set Master Folder (Required)'}
+            </span>
+          </div>
+          <span className='text-10px text-primary font-mono shrink-0 ml-4px opacity-0 group-hover:opacity-100 transition-opacity'>
+            Edit ›
+          </span>
+        </div>
 
         {/* Action Button: Dispatch Task to CEO */}
         <Button

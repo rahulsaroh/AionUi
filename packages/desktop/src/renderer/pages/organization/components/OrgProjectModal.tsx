@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import type { OrgProject } from '@/types/organization';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { useOrgStore } from '../store/useOrgStore';
+import { validateWithinMaster, getDefaultProjectPath } from '../utils/orgPathUtils';
 
 type OrgProjectModalProps = {
   visible: boolean;
@@ -35,6 +36,27 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
   const [path, setPath] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<NonNullable<OrgProject['status']>>('active');
+  const [pathScopeError, setPathScopeError] = useState<string | null>(null);
+
+  const masterRoot = hierarchy.rootCeo.workspacePath || null;
+
+  useEffect(() => {
+    if (!path.trim() || !masterRoot) {
+      setPathScopeError(null);
+      return;
+    }
+    let cancelled = false;
+    void validateWithinMaster(path, masterRoot).then((res) => {
+      if (!cancelled) {
+        setPathScopeError(
+          res.valid ? null : res.error || 'Project folder must be inside the organization master folder'
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, masterRoot]);
 
   useEffect(() => {
     if (!visible) return;
@@ -67,8 +89,18 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
     }
   }, [teamId, teamOptions]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || !departmentId) return;
+
+    if (path.trim() && masterRoot) {
+      const check = await validateWithinMaster(path, masterRoot);
+      if (!check.valid) {
+        Message.error(check.error || 'Project folder must be inside the organization master folder');
+        setPathScopeError(check.error || 'Project folder must be inside the organization master folder');
+        return;
+      }
+    }
+
     try {
       upsertOrgProject({
         id: project?.id ?? `proj-${Date.now()}`,
@@ -162,16 +194,35 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
           </Select>
         </div>
         <div className='flex flex-col gap-4px'>
-          <span className='text-12px text-t-secondary'>
-            {t('team.organization.folder', { defaultValue: 'Folder / codebase path' })}
-          </span>
+          <div className='flex items-center justify-between'>
+            <span className='text-12px text-t-secondary'>
+              {t('team.organization.folder', { defaultValue: 'Folder / codebase path' })}
+            </span>
+            {masterRoot && name.trim() && (
+              <Button
+                size='mini'
+                type='text'
+                onClick={() => setPath(getDefaultProjectPath(masterRoot, name))}
+                className='!text-10px !h-20px !px-4px text-primary'
+              >
+                Auto-scaffold in Master Root
+              </Button>
+            )}
+          </div>
           <WorkspaceFolderSelect
             value={path}
             onChange={setPath}
-            placeholder={t('team.organization.assignFolder', { defaultValue: 'Assign folder' })}
+            placeholder={t('team.organization.assignFolder', { defaultValue: 'Assign folder inside master root...' })}
             recentLabel={t('team.create.recentLabel', { defaultValue: 'Recent' })}
             chooseDifferentLabel={t('team.create.chooseDifferentFolder', { defaultValue: 'Choose a different folder' })}
           />
+          {pathScopeError ? (
+            <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+          ) : masterRoot ? (
+            <span className='text-10px text-t-tertiary truncate'>
+              Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+            </span>
+          ) : null}
           <span className='text-11px text-t-tertiary'>
             {t('team.organization.folderHint', {
               defaultValue: 'Assign a folder so agents can work in this codebase.',

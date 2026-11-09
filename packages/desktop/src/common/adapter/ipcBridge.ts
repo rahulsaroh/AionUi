@@ -2746,7 +2746,16 @@ export const org = {
     if (typeof window !== 'undefined' && window.electronAPI?.orgAssertWithinScope) {
       return window.electronAPI.orgAssertWithinScope({ targetPath, allowedRoot });
     }
-    return { allowed: true, resolved: targetPath };
+    if (!allowedRoot) return { allowed: true, resolved: targetPath };
+    if (!targetPath) return { allowed: false, reason: 'empty target path', resolved: targetPath };
+    const normTarget = targetPath.replace(/\\/g, '/').toLowerCase();
+    const normRoot = allowedRoot.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
+    const allowed = normTarget === normRoot || normTarget.startsWith(normRoot + '/');
+    return {
+      allowed,
+      reason: allowed ? undefined : `Path "${targetPath}" is outside the organization master folder "${allowedRoot}"`,
+      resolved: targetPath,
+    };
   },
   saveData: async (key: string, value: string): Promise<boolean> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgSaveData) {

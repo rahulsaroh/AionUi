@@ -27,6 +27,7 @@ import { ipcBridge } from '@/common';
 import { useOrgStore } from '../store/useOrgStore';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { OrgModelSelector } from './OrgModelSelector';
+import { OrgMasterFolderModal } from './OrgMasterFolderModal';
 import type { OrgConversation, OrgConversationMessage, OrgAgentModelConfig } from '@/types/organization';
 
 export const OrgChatView: React.FC = () => {
@@ -50,6 +51,7 @@ export const OrgChatView: React.FC = () => {
   const [inputPrompt, setInputPrompt] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [liveStepText, setLiveStepText] = useState<string | null>(null);
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Active conversation: selected from sidebar or the latest Root CEO conversation
@@ -91,18 +93,9 @@ export const OrgChatView: React.FC = () => {
     return raw && raw !== 'workspace' ? raw : null;
   }, [activeTargetAgent?.workspacePath, hierarchy.rootCeo.workspacePath]);
 
-  const handlePickWorkspaceFolder = useCallback(async () => {
-    try {
-      const files = await ipcBridge.dialog.showOpen.invoke({ properties: ['openDirectory', 'createDirectory'] });
-      if (files && files.length > 0 && files[0]) {
-        const picked = files[0];
-        updateRootCeo({ workspacePath: picked });
-        Message.success(`Organization workspace bound to: ${picked}`);
-      }
-    } catch (err) {
-      console.warn('Failed to open directory dialog:', err);
-    }
-  }, [updateRootCeo]);
+  const handlePickWorkspaceFolder = useCallback(() => {
+    setIsMasterModalOpen(true);
+  }, []);
 
   const handleClearWorkspaceFolder = useCallback(
     (e: React.MouseEvent) => {
@@ -614,6 +607,8 @@ export const OrgChatView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <OrgMasterFolderModal visible={isMasterModalOpen} onClose={() => setIsMasterModalOpen(false)} />
     </div>
   );
 };

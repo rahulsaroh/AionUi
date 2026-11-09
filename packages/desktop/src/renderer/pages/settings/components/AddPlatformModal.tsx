@@ -587,10 +587,17 @@ const AddPlatformModal = ModalHOC<{
           // Prefer user input base_url, fallback to platform preset
           base_url: isBedrock ? '' : values.base_url || selectedPlatform?.base_url || '',
           api_key: isBedrock ? '' : values.api_key,
-          // The model Select is multi-select: values.model is a string[], but
-          // keep the single-value fallback for safety.
-          models: Array.isArray(values.model) ? values.model : [values.model],
+          // Flatten any comma-separated values (e.g. user pasted '3.7L, 3.7M, 3.7H')
+          models: (Array.isArray(values.model) ? values.model : [values.model])
+            .flatMap((m: string) => (typeof m === 'string' ? m.split(',') : [m]))
+            .map((m: string) => (typeof m === 'string' ? m.trim() : m))
+            .filter(Boolean),
           is_full_url: isFullUrl,
+          capabilities: [
+            { type: 'text' },
+            ...(imageInput !== 'unsupported' ? [{ type: 'vision' as const }] : []),
+            { type: 'function_calling' as const },
+          ],
         };
 
         // Add Bedrock configuration if platform is Bedrock
@@ -613,15 +620,14 @@ const AddPlatformModal = ModalHOC<{
         // Multi-select: apply the chosen protocol to every selected model so we
         // never produce a comma-joined ("a,b") dirty key. Per-model fine-tuning
         // still lives on the platform list tag switcher.
+        const normalizedModels: string[] = provider.models;
         if (isNewApi && values.model) {
-          const selectedModels: string[] = Array.isArray(values.model) ? values.model : [values.model];
-          provider.model_protocols = Object.fromEntries(selectedModels.filter(Boolean).map((m) => [m, modelProtocol]));
+          provider.model_protocols = Object.fromEntries(normalizedModels.map((m) => [m, modelProtocol]));
         }
 
-        const selectedModels: string[] = Array.isArray(values.model) ? values.model : [values.model];
         provider.model_settings = updateModelSettings(
           undefined,
-          selectedModels.filter(Boolean),
+          normalizedModels,
           imageInput,
           showOpenAiApiMode ? openAiApiMode : 'auto'
         );

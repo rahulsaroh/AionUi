@@ -16,9 +16,9 @@ import type {
  * Capability matching regex patterns
  */
 export const CAPABILITY_PATTERNS: Record<ModelType, RegExp> = {
-  text: /gpt|claude|gemini|qwen|llama|mistral|deepseek/i,
-  vision: /4o|claude-3|gemini-.*-pro|gemini-.*-flash|gemini-2\.0|qwen-vl|llava|vision/i,
-  function_calling: /gpt-4|claude-3|gemini|qwen|deepseek/i,
+  text: /gpt|claude|gemini|qwen|llama|mistral|deepseek|3\.[78]/i,
+  vision: /4o|claude-3|claude-4|gemini|3\.[78]|qwen-vl|llava|vision/i,
+  function_calling: /gpt-4|claude-3|claude-4|gemini|qwen|deepseek|3\.[78]/i,
   image_generation: /flux|diffusion|stabilityai|sd-|dall|cogview|janus|midjourney|mj-|imagen/i,
   web_search: /search|perplexity/i,
   reasoning: /o1-|reasoning|think/i,
@@ -100,10 +100,16 @@ export const updateModelSettings = (
  * Returns true (supported), false (excluded), or undefined (unknown).
  */
 export const hasSpecificModelCapability = (
-  _platformModel: IProvider,
+  platformModel: IProvider,
   modelName: string,
   type: ModelType
 ): boolean | undefined => {
+  const explicitImageInput = platformModel?.model_settings?.[modelName]?.image_input;
+  if (type === 'vision' && explicitImageInput) {
+    if (explicitImageInput === 'supported') return true;
+    if (explicitImageInput === 'unsupported') return false;
+  }
+
   const baseModelName = getBaseModelName(modelName);
   const exclusions = CAPABILITY_EXCLUSIONS[type];
   const pattern = CAPABILITY_PATTERNS[type];
