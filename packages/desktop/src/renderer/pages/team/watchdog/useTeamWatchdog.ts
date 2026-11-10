@@ -16,7 +16,10 @@ import {
   setCachedLastPrompt,
   setWatchdogInterval,
 } from './teamWatchdogStorage';
-import type { TeamWatchdogInterval, TeamWatchdogPrompt } from './watchdogTypes';
+import type { TeamBudgetState, TeamWatchdogInterval, TeamWatchdogPrompt } from './watchdogTypes';
+import { evaluateRunBudgets, raiseBudgetAndResume } from '@/common/costs/budgetEvaluator';
+import { recordRunStart, recordUsage } from '@/common/costs/costLedgerStore';
+import type { BudgetScopeType } from '@/common/costs/types';
 
 const TICK_INTERVAL_MS = 5_000;
 const RECOVERY_COOLDOWN_MS = 1_500;
@@ -40,11 +43,13 @@ export function useTeamWatchdog({ team_id, teamRun, statusMap, assistants }: Use
   const [intervalMs, setLocalIntervalMs] = useState<TeamWatchdogInterval>(() => getWatchdogInterval(team_id));
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
+  const [budgetState, setBudgetState] = useState<TeamBudgetState>({ isBudgetPaused: false });
 
   const lastActivityTimeRef = useRef<number>(Date.now());
   const lastPromptRef = useRef<TeamWatchdogPrompt | null>(getCachedLastPrompt(team_id));
   const retryCountRef = useRef(0);
   const isRecoveringRef = useRef(false);
+  const hasWarnedRef = useRef(false);
 
   // Keep references to frequently updating values so tick timer is never torn down prematurely
   const teamRunRef = useRef(teamRun);
@@ -91,6 +96,14 @@ export function useTeamWatchdog({ team_id, teamRun, statusMap, assistants }: Use
       lastActivityTimeRef.current = Date.now();
       retryCountRef.current = 0;
       setIsMonitoring(true);
+
+      const activeRunId = teamRunRef.current.state.activeRun?.team_run_id || `run_${Date.now()}`;
+      recordRunStart({
+        id: activeRunId,
+        team_id,
+        trigger: 'manual',
+        status: 'running',
+      });
     },
     [team_id]
   );
@@ -115,6 +128,17 @@ export function useTeamWatchdog({ team_id, teamRun, statusMap, assistants }: Use
       ipcBridge.team?.childTurnCompleted?.on?.((event) => {
         if (event.team_id === team_id) {
           lastActivityTimeRef.current = Date.now();
+          // Record usage entry in ledger for this completed turn.
+          // External/untracked usage records null ("unknown"), never invented numbers.
+          recordUsage({
+            run_id: event.team_run_id,
+            agent_role: event.role || event.slot_id,
+            provider: 'team_agent',
+            model: event.slot_id,
+            input_tokens: null,
+            output_tokens: null,
+            estimated_cost: null,
+          });
         }
       }) ?? (() => {});
 
@@ -311,7 +335,61 @@ export function useTeamWatchdog({ team_id, teamRun, statusMap, assistants }: Use
         return;
       }
 
+      // Check budget thresholds for active run / team
+      const activeRunId = teamRunRef.current.state.activeRun?.team_run_id;
+      if (activeRunId) {
+        const budgetEval = evaluateRunBudgets({ run_id: activeRunId, team_id });
+        if (budgetEval.warned && !hasWarnedRef.current) {
+          hasWarnedRef.current = true;
+          Message.warning(
+            t('team.budget.warn80', {
+              defaultValue: 'Budget warning: 80% of budget reached for this team/run.',
+            })
+          );
+        }
+
+        if (budgetEval.paused) {
+          setBudgetState({
+            isBudgetPaused: true,
+            blockingScopeType: budgetEval.blockingEvaluation?.scopeType,
+            blockingLimit: budgetEval.blockingEvaluation?.limit,
+            currentSpend: budgetEval.blockingEvaluation?.currentSpend,
+          });
+          setIsMonitoring(false);
+          const activeRun = teamRunRef.current.state.activeRun;
+          if (activeRun) {
+            void ipcBridge.team.cancelRun.invoke({ team_id, team_run_id: activeRun.team_run_id }).catch(() => {});
+          }
+          Message.error(
+            t('team.budget.hardPause', {
+              defaultValue: 'Hard budget limit reached (100%). Run paused by team watchdog.',
+            })
+          );
+          return;
+        }
+      }
+
       setIsMonitoring(true);
+
+      // Check if run is waiting for publish or human approval:
+      // A run waiting on approval must never be treated as stalled!
+      const isWaitingForApproval =
+        Boolean(
+          teamRunRef.current.state.activeRun &&
+            ((teamRunRef.current.state.activeRun as unknown as { status?: string }).status === 'waiting_for_approval' ||
+              (teamRunRef.current.state.activeRun as unknown as { status?: string }).status === 'waiting')
+        ) ||
+        Object.values(teamRunRef.current.state.slotWorkBySlot || {}).some(
+          (w) =>
+            w &&
+            ((w as unknown as { state?: string }).state === 'waiting_for_approval' ||
+              (w as unknown as { state?: string }).state === 'waiting')
+        );
+
+      if (isWaitingForApproval) {
+        lastActivityTimeRef.current = Date.now();
+        return;
+      }
 
       const idleDurationMs = Date.now() - lastActivityTimeRef.current;
       console.debug(
@@ -341,12 +419,38 @@ export function useTeamWatchdog({ team_id, teamRun, statusMap, assistants }: Use
     return () => clearInterval(timer);
   }, [executeRecovery, intervalMs, t, team_id]);
 
+  // Raise budget and resume
+  const raiseBudgetAndResumeRun = useCallback(
+    async (newAmount?: number) => {
+      const activeRunId = teamRunRef.current.state.activeRun?.team_run_id || team_id;
+      const currentLimit = budgetState.blockingLimit ?? 10;
+      const targetAmount = newAmount ?? (currentLimit > 0 ? currentLimit * 1.5 : 10);
+      const scope = (budgetState.blockingScopeType as BudgetScopeType) || 'team_daily';
+      const scopeId = scope === 'team_daily' ? team_id : activeRunId;
+
+      raiseBudgetAndResume({
+        run_id: activeRunId,
+        scope_type: scope,
+        scope_id: scopeId,
+        new_amount: targetAmount,
+      });
+
+      hasWarnedRef.current = false;
+      setBudgetState({ isBudgetPaused: false });
+      Message.success(t('team.budget.resumed', { defaultValue: 'Budget raised. Watchdog resuming run...' }));
+      await executeRecovery(true);
+    },
+    [budgetState, executeRecovery, t, team_id]
+  );
+
   return {
     intervalMs,
     setIntervalMs: updateInterval,
     isMonitoring,
     isRecovering,
+    budgetState,
     recordSentPrompt,
     checkAndRetryNow,
+    raiseBudgetAndResumeRun,
   };
 }

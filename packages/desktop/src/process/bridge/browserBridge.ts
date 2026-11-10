@@ -10,8 +10,17 @@ import {
   getExternalChromeLauncher,
   getBrowserToolService,
   getBrowserSafetyGateService,
+  getBrowserAuditService,
+  getBrowserSensitiveActionService,
+  getBrowserSessionHealthService,
+  getBrowserAssignmentService,
 } from '../services/browser';
-import type { CreateProfileInput, ExternalChromeConfig, UpdateProfileInput } from '@/common/browser/types';
+import type {
+  BrowserAuditFilter,
+  CreateProfileInput,
+  ExternalChromeConfig,
+  UpdateProfileInput,
+} from '@/common/browser/types';
 
 export function registerBrowserBridge(): void {
   try {
@@ -29,6 +38,24 @@ export function registerBrowserBridge(): void {
       for (const win of windows) {
         if (!win.isDestroyed()) {
           win.webContents.send('browser:safetyApprovalRequest', req);
+        }
+      }
+    });
+
+    getBrowserSensitiveActionService().on('sensitiveApprovalRequested', (req) => {
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('browser:sensitiveApprovalRequested', req);
+        }
+      }
+    });
+
+    getBrowserSessionHealthService().on('reloginNeeded', (evt) => {
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('browser:reloginNeeded', evt);
         }
       }
     });
@@ -474,4 +501,106 @@ export function registerBrowserBridge(): void {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
+
+  // Audit Logs & Retention
+  ipcMain.handle('browser:getAuditLogs', async (_event, filter?: BrowserAuditFilter) => {
+    try {
+      const logs = getBrowserAuditService().getLogs(filter);
+      return { success: true, data: logs };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:getAuditRetentionDays', async () => {
+    try {
+      const days = getBrowserAuditService().getRetentionDays();
+      return { success: true, data: days };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:setAuditRetentionDays', async (_event, days: number) => {
+    try {
+      getBrowserAuditService().setRetentionDays(days);
+      return { success: true, data: days };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:clearAuditLogs', async () => {
+    try {
+      getBrowserAuditService().clearLogs();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // Sensitive Approval Response
+  ipcMain.handle('browser:respondSensitiveApproval', async (_event, payload: { id: string; approved: boolean }) => {
+    try {
+      const res = getBrowserSensitiveActionService().respondApproval(payload.id, payload.approved);
+      return { success: true, data: res };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // Session Health & Relogin
+  ipcMain.handle('browser:markSessionHealthy', async (_event, profileId: string) => {
+    try {
+      getBrowserSessionHealthService().markHealthy(profileId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // Profile Assignment
+  ipcMain.handle(
+    'browser:assignProfileScope',
+    async (_event, payload: { profileId: string; scopeType: 'project' | 'team'; scopeId: string }) => {
+      try {
+        const assignment = getBrowserAssignmentService().assignProfile(
+          payload.profileId,
+          payload.scopeType,
+          payload.scopeId
+        );
+        return { success: true, data: assignment };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'browser:unassignProfileScope',
+    async (_event, payload: { profileId: string; scopeType: 'project' | 'team'; scopeId: string }) => {
+      try {
+        const deleted = getBrowserAssignmentService().unassignProfile(
+          payload.profileId,
+          payload.scopeType,
+          payload.scopeId
+        );
+        return { success: true, data: deleted };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'browser:getAssignedProfiles',
+    async (_event, payload: { scopeType: 'project' | 'team'; scopeId: string }) => {
+      try {
+        const list = getBrowserAssignmentService().getAssignedProfiles(payload.scopeType, payload.scopeId);
+        return { success: true, data: list };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
 }

@@ -5,18 +5,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import {
-  Button,
-  Card,
-  Empty,
-  Input,
-  Message,
-  Popconfirm,
-  Space,
-  Table,
-  Tag,
-  Typography,
-} from '@arco-design/web-react';
+import { Button, Card, Empty, Input, Message, Popconfirm, Space, Table, Tag, Typography } from '@arco-design/web-react';
 import { Delete, Search, Shield, Toolkit } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { useRememberedRules, type RememberedRule } from '@/common/autonomy';
@@ -34,9 +23,7 @@ export const RememberedRulesContent: React.FC = () => {
     const q = searchQuery.toLowerCase();
     return rules.filter(
       (r) =>
-        r.projectId.toLowerCase().includes(q) ||
-        r.tool.toLowerCase().includes(q) ||
-        r.pattern.toLowerCase().includes(q)
+        r.projectId.toLowerCase().includes(q) || r.tool.toLowerCase().includes(q) || r.pattern.toLowerCase().includes(q)
     );
   }, [rules, searchQuery]);
 
@@ -111,9 +98,7 @@ export const RememberedRulesContent: React.FC = () => {
               title: t('settings.rules.pattern', { defaultValue: 'Allowed Pattern' }),
               dataIndex: 'pattern',
               render: (pattern: string) => (
-                <code className='bg-fill-3 px-8px py-4px rd-4px text-12px font-mono break-all'>
-                  {pattern}
-                </code>
+                <code className='bg-fill-3 px-8px py-4px rd-4px text-12px font-mono break-all'>{pattern}</code>
               ),
             },
             {

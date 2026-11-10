@@ -215,6 +215,7 @@ export function initSchema(db: ISqliteDriver): void {
     inputs TEXT,
     artifact_paths TEXT,
     content_hash TEXT,
+    side_effect_free INTEGER DEFAULT 0,
     error TEXT,
     started_at INTEGER,
     completed_at INTEGER,
@@ -227,9 +228,11 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec(`CREATE TABLE IF NOT EXISTS publish_records (
     id TEXT PRIMARY KEY,
     idempotency_key TEXT UNIQUE NOT NULL,
+    legacy_idempotency_key TEXT,
     project_id TEXT NOT NULL,
     platform TEXT NOT NULL,
     content_hash TEXT NOT NULL,
+    preview_binding_hash TEXT,
     status TEXT NOT NULL DEFAULT 'published',
     post_id TEXT,
     url TEXT,
@@ -238,6 +241,7 @@ export function initSchema(db: ISqliteDriver): void {
     updated_at INTEGER NOT NULL
   )`);
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_records_key ON publish_records(idempotency_key)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_publish_records_legacy_key ON publish_records(legacy_idempotency_key)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_publish_records_project ON publish_records(project_id)');
 
   // Runs table (执行记录)
@@ -349,4 +353,4 @@ export function setDatabaseVersion(db: ISqliteDriver, version: number): void {
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 31;
+export const CURRENT_DB_VERSION = 32;

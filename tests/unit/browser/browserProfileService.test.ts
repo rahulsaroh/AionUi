@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { BrowserProfileService } from '@process/services/browser/BrowserProfileService';
+import { BrowserProfileService, getBrowserAssignmentService } from '@process/services/browser/BrowserProfileService';
 import { DEFAULT_BROWSER_PROFILE_ID } from '@/common/browser/constants';
 
 describe('BrowserProfileService', () => {
@@ -87,5 +87,73 @@ describe('BrowserProfileService', () => {
     const result = await service.clearProfileData(created.id);
     expect(result.success).toBe(true);
     expect(result.profileId).toBe(created.id);
+  });
+
+  it('guarantees isolated persistent storage partitions for different profiles', () => {
+    const profileA = service.createProfile({ name: 'youtube-main' });
+    const profileB = service.createProfile({ name: 'instagram-news' });
+
+    expect(profileA.partition).not.toBe(profileB.partition);
+    expect(profileA.partition).toContain('youtube-main');
+    expect(profileB.partition).toContain('instagram-news');
+    expect(profileA.partition.startsWith('persist:')).toBe(true);
+    expect(profileB.partition.startsWith('persist:')).toBe(true);
+  });
+
+  it('prevents agents from accessing cookies or authorization tokens', () => {
+    expect(() => {
+      service.assertAgentCannotAccessCookies('evaluate', { script: 'return document.cookie;' });
+    }).toThrow(/cookies, tokens, or credentials is prohibited/);
+
+    expect(() => {
+      service.assertAgentCannotAccessCookies('evaluate', { script: 'localStorage.getItem("authToken")' });
+    }).toThrow(/cookies, tokens, or credentials is prohibited/);
+
+    expect(() => {
+      service.assertAgentCannotAccessCookies('type', { text: 'BearerToken123' });
+    }).toThrow(/cookies, tokens, or credentials is prohibited/);
+
+    const scrubbed = service.scrubAgentOutput({
+      url: 'https://example.com',
+      headers: 'Cookie: session=secret123\r\nAuthorization: Bearer myToken',
+      data: { cookie: 'secret', token: 'token123' },
+    });
+
+    expect(JSON.stringify(scrubbed)).not.toContain('secret123');
+    expect(JSON.stringify(scrubbed)).not.toContain('myToken');
+    expect(JSON.stringify(scrubbed)).toContain('[REDACTED]');
+  });
+
+  it('enforces project and team profile assignments', () => {
+    const assignmentService = getBrowserAssignmentService();
+    assignmentService.clearAll();
+
+    const profileYoutube = service.createProfile({
+      name: 'youtube-main',
+      assignedTeamIds: ['team-media'],
+      assignedProjectIds: ['project-alpha'],
+    });
+
+    const profileInstagram = service.createProfile({
+      name: 'instagram-news',
+      assignedTeamIds: ['team-social'],
+    });
+
+    // team-media can use profileYoutube but NOT profileInstagram
+    expect(assignmentService.canScopeUseProfile(profileYoutube.id, 'team', 'team-media')).toBe(true);
+    expect(assignmentService.canScopeUseProfile(profileInstagram.id, 'team', 'team-media')).toBe(false);
+
+    // team-social can use profileInstagram but NOT profileYoutube
+    expect(assignmentService.canScopeUseProfile(profileInstagram.id, 'team', 'team-social')).toBe(true);
+    expect(assignmentService.canScopeUseProfile(profileYoutube.id, 'team', 'team-social')).toBe(false);
+
+    // project-alpha can use profileYoutube
+    expect(assignmentService.canScopeUseProfile(profileYoutube.id, 'project', 'project-alpha')).toBe(true);
+    expect(assignmentService.canScopeUseProfile(profileInstagram.id, 'project', 'project-alpha')).toBe(false);
+
+    // An unassigned profile throws in assertScopeCanUseProfile
+    expect(() => {
+      assignmentService.assertScopeCanUseProfile(profileInstagram.id, 'team', 'team-media');
+    }).toThrow(/Access denied: Profile/);
   });
 });

@@ -6,7 +6,6 @@
 
 import { EventEmitter } from 'node:events';
 import type {
-  BrowserActionRequest,
   LocatorTarget,
   SnapshotOptions,
   ScreenshotOptions,
@@ -15,6 +14,7 @@ import type {
 import { getBrowserAutomationEngine } from './BrowserAutomationEngine';
 import { getBrowserDownloadManager } from './BrowserDownloadManager';
 import { getBrowserProfileService } from './BrowserProfileService';
+import { getBrowserAssignmentService } from './BrowserAssignmentService';
 
 export type BrowserToolName =
   | 'browser_open'
@@ -282,7 +282,7 @@ export class BrowserToolService extends EventEmitter {
   public async executeTool(
     tool: BrowserToolName,
     args: Record<string, unknown> = {},
-    options?: { taskId?: string; signal?: AbortSignal }
+    options?: { taskId?: string; signal?: AbortSignal; scopeType?: 'project' | 'team'; scopeId?: string }
   ): Promise<BrowserToolExecutionResult> {
     const startTime = Date.now();
     const taskId = options?.taskId || `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -309,6 +309,9 @@ export class BrowserToolService extends EventEmitter {
       const engine = getBrowserAutomationEngine();
       const profileService = getBrowserProfileService();
       const profileId = (args.profileId as string) || profileService.getActiveProfile().id;
+
+      // Enforce project and team profile assignment scope
+      getBrowserAssignmentService().assertScopeCanUseProfile(profileId, options?.scopeType, options?.scopeId);
 
       let resultData: unknown;
 

@@ -140,8 +140,8 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
                   className='block leading-none shrink-0'
                   style={{ lineHeight: 0 }}
                 />
-                {tab.badge && (
-                  tab.id === 'approvals' ? (
+                {tab.badge &&
+                  (tab.id === 'approvals' ? (
                     <span
                       data-testid='sider-tab-badge-approvals'
                       className='min-w-14px h-14px px-3px text-9px flex items-center justify-center rounded-full bg-red-500 text-white font-bold absolute top-1 right-1'
@@ -150,8 +150,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
                     </span>
                   ) : (
                     <span className='size-5px rounded-full bg-cyan-400 absolute top-1 right-2' />
-                  )
-                )}
+                  ))}
               </div>
             </Tooltip>
           );
@@ -180,8 +179,8 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
             >
               <IconComp theme='outline' size={14} fill='currentColor' className='shrink-0' />
               <span className='truncate text-11px'>{tab.label}</span>
-              {tab.badge && (
-                tab.id === 'approvals' ? (
+              {tab.badge &&
+                (tab.id === 'approvals' ? (
                   <span
                     data-testid='sider-tab-badge-approvals'
                     className='min-w-16px h-16px px-4px text-10px flex items-center justify-center rounded-full bg-red-500 text-white font-bold shrink-0'
@@ -190,8 +189,7 @@ export const SiderPrimaryNav: React.FC<SiderPrimaryNavProps> = ({
                   </span>
                 ) : (
                   <span className='size-5px rounded-full bg-cyan-400 shrink-0' />
-                )
-              )}
+                ))}
             </Button>
           </Tooltip>
         );

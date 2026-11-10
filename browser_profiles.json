@@ -1,0 +1,166 @@
+{
+  "activeProfileId": "main",
+  "profiles": [
+    {
+      "id": "main",
+      "name": "Main Profile",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "isDefault": true,
+      "createdAt": 0,
+      "updatedAt": 0
+    },
+    {
+      "id": "youtube-main-41dog",
+      "name": "youtube-main",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-youtube-main-41dog",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\youtube-main-41dog"
+      },
+      "isDefault": false,
+      "createdAt": 1794247552014,
+      "updatedAt": 1794247552014
+    },
+    {
+      "id": "instagram-news-9e3j2",
+      "name": "instagram-news",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-instagram-news-9e3j2",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\instagram-news-9e3j2"
+      },
+      "isDefault": false,
+      "createdAt": 1794247552016,
+      "updatedAt": 1794247552016
+    },
+    {
+      "id": "youtube-main-ohezh",
+      "name": "youtube-main",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-youtube-main-ohezh",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\youtube-main-ohezh"
+      },
+      "isDefault": false,
+      "createdAt": 1794247650070,
+      "updatedAt": 1794247650070
+    },
+    {
+      "id": "instagram-news-up2xe",
+      "name": "instagram-news",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-instagram-news-up2xe",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\instagram-news-up2xe"
+      },
+      "isDefault": false,
+      "createdAt": 1794247650071,
+      "updatedAt": 1794247650071
+    },
+    {
+      "id": "youtube-main-0olwo",
+      "name": "youtube-main",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-youtube-main-0olwo",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\youtube-main-0olwo"
+      },
+      "isDefault": false,
+      "createdAt": 1794247675987,
+      "updatedAt": 1794247675987
+    },
+    {
+      "id": "instagram-news-pkc7i",
+      "name": "instagram-news",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-instagram-news-pkc7i",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\instagram-news-pkc7i"
+      },
+      "isDefault": false,
+      "createdAt": 1794247675989,
+      "updatedAt": 1794247675989
+    },
+    {
+      "id": "youtube-main-6zgbm",
+      "name": "youtube-main",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-youtube-main-6zgbm",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\youtube-main-6zgbm"
+      },
+      "isDefault": false,
+      "createdAt": 1794248349011,
+      "updatedAt": 1794248349011
+    },
+    {
+      "id": "instagram-news-qevsa",
+      "name": "instagram-news",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-instagram-news-qevsa",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\instagram-news-qevsa"
+      },
+      "isDefault": false,
+      "createdAt": 1794248349012,
+      "updatedAt": 1794248349012
+    },
+    {
+      "id": "youtube-main-8ofyh",
+      "name": "youtube-main",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-youtube-main-8ofyh",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\youtube-main-8ofyh"
+      },
+      "isDefault": false,
+      "createdAt": 1794250149995,
+      "updatedAt": 1794250149995
+    },
+    {
+      "id": "instagram-news-5zv9v",
+      "name": "instagram-news",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-instagram-news-5zv9v",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "C:\\AionUI\\AionUi\\chrome-profiles\\instagram-news-5zv9v"
+      },
+      "isDefault": false,
+      "createdAt": 1794250150002,
+      "updatedAt": 1794250150002
+    }
+  ]
+}

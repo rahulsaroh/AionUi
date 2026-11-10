@@ -15,4 +15,11 @@ export type TeamWatchdogPrompt = {
   timestamp: number;
 };
 
-export type TeamWatchdogStatus = 'idle' | 'monitoring' | 'recovering';
+export type TeamWatchdogStatus = 'idle' | 'monitoring' | 'recovering' | 'waiting_for_approval';
+
+export type TeamBudgetState = {
+  isBudgetPaused: boolean;
+  blockingScopeType?: string;
+  blockingLimit?: number;
+  currentSpend?: number;
+};

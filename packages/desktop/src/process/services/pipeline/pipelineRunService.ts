@@ -7,7 +7,11 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { IPipelineManifest, IPipelineRun, IPipelineStep } from '@/common/types/pipeline/pipelineTypes';
-import { computeArtifactsHash, verifyArtifacts } from './artifactHasher';
+import {
+  computeArtifactsHash,
+  validateArtifactPath,
+  verifyArtifacts,
+} from './artifactHasher';
 import type { PipelineRepository } from './pipelineRepository';
 
 export type ResumeResult = {
@@ -50,6 +54,7 @@ export class PipelineRunService {
           inputs: s.inputs,
           artifactPaths: s.artifactPaths,
           contentHash: s.contentHash,
+          sideEffectFree: s.sideEffectFree,
           error: s.error,
         })),
       };
@@ -62,6 +67,8 @@ export class PipelineRunService {
 
   /**
    * Creates or imports a run from a run.json manifest file.
+   * Re-verifies hashes on disk and never trusts stored values.
+   * Rejects path-traversal / symlink escapes.
    */
   public importFromManifest(manifestPath: string, projectId: string): IPipelineRun {
     if (!existsSync(manifestPath)) {
@@ -70,24 +77,55 @@ export class PipelineRunService {
 
     const content = readFileSync(manifestPath, 'utf-8');
     const parsed = JSON.parse(content) as IPipelineManifest;
+    const projectRoot = path.dirname(manifestPath);
 
     const run = this.repo.createRun({
       id: parsed.runId,
       projectId: parsed.projectId || projectId,
-      name: parsed.name || path.basename(path.dirname(manifestPath)),
+      name: parsed.name || path.basename(projectRoot),
       manifestPath,
     });
 
     for (let i = 0; i < (parsed.steps || []).length; i++) {
       const s = parsed.steps[i];
+      let verifiedStatus = s.status || 'pending';
+      let verifiedHash = s.contentHash;
+
+      if (s.artifactPaths && s.artifactPaths.length > 0) {
+        let pathsValid = true;
+        for (const p of s.artifactPaths) {
+          const val = validateArtifactPath(p, projectRoot);
+          if (!val.valid) {
+            pathsValid = false;
+            break;
+          }
+        }
+
+        if (!pathsValid) {
+          verifiedStatus = 'pending';
+          verifiedHash = undefined;
+        } else {
+          // Verify actual artifact hashes on disk
+          const computed = computeArtifactsHash(s.artifactPaths, projectRoot);
+          if (!computed || (s.contentHash && computed !== s.contentHash)) {
+            // Tampered or missing artifacts! Reset to pending
+            verifiedStatus = 'pending';
+            verifiedHash = undefined;
+          } else {
+            verifiedHash = computed;
+          }
+        }
+      }
+
       this.repo.createStep({
         runId: run.id,
         stepIndex: i,
         name: s.name,
-        status: s.status || 'pending',
+        status: verifiedStatus,
         inputs: s.inputs,
         artifactPaths: s.artifactPaths || [],
-        contentHash: s.contentHash,
+        contentHash: verifiedHash,
+        sideEffectFree: s.sideEffectFree,
         error: s.error,
       });
     }
@@ -113,22 +151,33 @@ export class PipelineRunService {
 
     this.repo.updateRunStatus(runId, 'running');
     this.syncManifest(runId);
-
     return this.repo.getStep(step.id)!;
   }
 
   /**
-   * step.complete: hashes output artifacts, stores content_hash, marks completed.
+   * step.complete: records artifact paths, computes content hash, marks completed.
+   * Validates that artifact paths resolve inside project root.
    */
   public completeStep(
     runId: string,
     stepIdentifier: string | number,
     artifactPaths: string[] = [],
-    baseDir?: string
+    baseDir?: string,
+    options?: { sideEffectFree?: boolean }
   ): IPipelineStep {
     const step = this.findStep(runId, stepIdentifier);
     if (!step) {
       throw new Error(`Step not found: ${stepIdentifier} in run ${runId}`);
+    }
+
+    // Reject path-traversal / symlink escapes outside baseDir
+    if (baseDir && artifactPaths.length > 0) {
+      for (const p of artifactPaths) {
+        const val = validateArtifactPath(p, baseDir);
+        if (!val.valid) {
+          throw new Error(`Invalid artifact path: ${val.error}`);
+        }
+      }
     }
 
     const contentHash = computeArtifactsHash(artifactPaths, baseDir) || undefined;
@@ -138,6 +187,7 @@ export class PipelineRunService {
       completedAt: Date.now(),
       artifactPaths,
       contentHash,
+      sideEffectFree: options?.sideEffectFree !== undefined ? options.sideEffectFree : step.sideEffectFree,
       error: undefined,
     });
 
@@ -172,9 +222,10 @@ export class PipelineRunService {
 
   /**
    * Resumes a run after crash, restart, or stall:
+   * - Steps left 'running' reset to pending on resume.
    * - Validates completed steps: verifies that artifact files exist and hashes match.
-   * - If an artifact is missing or altered, invalidates that step and all downstream steps.
-   * - If a step was left in 'running', marks it pending (retry) and invalidates downstream.
+   * - Steps with NO artifacts re-run on resume unless explicitly marked sideEffectFree.
+   * - If an artifact is missing, altered, or escapes root, invalidates that step and all downstream.
    * - Skips valid completed steps.
    */
   public resumeRun(runId: string, baseDir?: string): ResumeResult {
@@ -192,11 +243,20 @@ export class PipelineRunService {
       const step = steps[i];
 
       if (step.status === 'completed') {
-        // If step declared artifacts, verify they exist and match the recorded content_hash
         if (step.artifactPaths && step.artifactPaths.length > 0) {
           const verification = verifyArtifacts(step.artifactPaths, step.contentHash, baseDir);
           if (!verification.matches) {
-            // Artifact missing or modified -> invalidate this step and all downstream steps!
+            // Artifact missing, modified, or path escaped -> invalidate this step and all downstream!
+            this.repo.invalidateStepsFrom(runId, step.stepIndex);
+            for (let j = i; j < steps.length; j++) {
+              invalidatedStepIndices.push(steps[j].stepIndex);
+            }
+            firstIncompleteIndex = step.stepIndex;
+            break;
+          }
+        } else {
+          // Steps with NO artifacts re-run on resume unless explicitly marked sideEffectFree!
+          if (!step.sideEffectFree) {
             this.repo.invalidateStepsFrom(runId, step.stepIndex);
             for (let j = i; j < steps.length; j++) {
               invalidatedStepIndices.push(steps[j].stepIndex);
@@ -207,7 +267,7 @@ export class PipelineRunService {
         }
         skippedStepIndices.push(step.stepIndex);
       } else if (step.status === 'running') {
-        // Stalled or mid-step crash -> reset to pending and invalidate downstream
+        // Crash mid-step: reset running step to pending and invalidate downstream
         this.repo.invalidateStepsFrom(runId, step.stepIndex);
         for (let j = i; j < steps.length; j++) {
           invalidatedStepIndices.push(steps[j].stepIndex);
@@ -234,12 +294,13 @@ export class PipelineRunService {
       };
     }
 
+    // Set run to running/pending from the target resume step
     this.repo.updateRunStatus(runId, 'running');
     this.syncManifest(runId);
 
     return {
       run: this.repo.getRun(runId)!,
-      resumeFromStepIndex: firstIncompleteIndex >= 0 ? firstIncompleteIndex : 0,
+      resumeFromStepIndex: firstIncompleteIndex,
       skippedStepIndices,
       invalidatedStepIndices,
       canResume: true,
@@ -247,19 +308,17 @@ export class PipelineRunService {
   }
 
   /**
-   * Re-run from step X:
-   * Invalidates step X and all downstream steps (status -> pending, content_hash cleared).
+   * Re-run from step X: invalidates step X and all downstream steps (status -> pending).
    */
-  public rerunFromStep(runId: string, stepIndex: number): IPipelineRun {
-    const run = this.repo.getRun(runId);
-    if (!run) {
-      throw new Error(`Run not found: ${runId}`);
+  public rerunFromStep(runId: string, stepIdentifier: string | number): IPipelineRun {
+    const step = this.findStep(runId, stepIdentifier);
+    if (!step) {
+      throw new Error(`Step not found: ${stepIdentifier} in run ${runId}`);
     }
 
-    this.repo.invalidateStepsFrom(runId, stepIndex);
-    this.repo.updateRunStatus(runId, 'running');
+    this.repo.invalidateStepsFrom(runId, step.stepIndex);
+    this.repo.updateRunStatus(runId, 'pending');
     this.syncManifest(runId);
-
     return this.repo.getRun(runId)!;
   }
 }

@@ -1,5 +1,6 @@
-import { Button, Dropdown, Menu, Message, Modal, Spin, Tooltip } from '@arco-design/web-react';
-import { FullScreen, Left, MoreOne, OffScreen, Peoples, Plus, Right } from '@icon-park/react';
+import { Button, Dropdown, Menu, Message, Modal, Spin, Tag, Tooltip } from '@arco-design/web-react';
+import { FullScreen, Left, MoreOne, OffScreen, Peoples, Plus, Right, Finance } from '@icon-park/react';
+import { getSpendToday, formatCost } from '@/common/costs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import classNames from 'classnames';
@@ -987,6 +988,49 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
           onRenameTitle={onRenameTeam}
           headerExtra={
             <div className='flex items-center gap-10px'>
+              {/* Today's Spend Badge */}
+              {(() => {
+                const todaySpend = getSpendToday(team.id);
+                const spendLabel = todaySpend.hasUnknown
+                  ? `Today: ~${formatCost(todaySpend.totalSpend)}*`
+                  : `Today: ${formatCost(todaySpend.totalSpend)}`;
+                return (
+                  <Tooltip
+                    content={
+                      todaySpend.hasUnknown
+                        ? t('costs.todayTooltipUnknown', {
+                            defaultValue: "Today's estimated spend for this team (*includes unknown CLI agent calls)",
+                          })
+                        : t('costs.todayTooltip', { defaultValue: "Today's total spend for this team" })
+                    }
+                    position='bottom'
+                  >
+                    <Tag
+                      color='arcoblue'
+                      size='small'
+                      icon={<Finance size={12} theme='outline' />}
+                      className='cursor-pointer font-medium'
+                      onClick={() => navigate('/costs')}
+                    >
+                      {spendLabel}
+                    </Tag>
+                  </Tooltip>
+                );
+              })()}
+
+              {/* Raise budget and resume button when watchdog hard-paused */}
+              {watchdog.budgetState.isBudgetPaused && (
+                <Button
+                  size='small'
+                  type='primary'
+                  status='warning'
+                  onClick={() => void watchdog.raiseBudgetAndResumeRun()}
+                  data-testid='raise-budget-resume-btn'
+                >
+                  {t('team.budget.raiseAndResume', { defaultValue: 'Raise budget and resume' })}
+                </Button>
+              )}
+
               {assistants.length > 1 ? <TeamViewToggle value={viewMode} onChange={setViewMode} /> : undefined}
               <TeamWatchdogToggle
                 intervalMs={watchdog.intervalMs}

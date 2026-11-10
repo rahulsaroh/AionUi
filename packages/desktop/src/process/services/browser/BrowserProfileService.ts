@@ -6,7 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, session } from 'electron';
+import { app, session, safeStorage } from 'electron';
 import {
   BROWSER_PARTITION_PREFIX,
   DEFAULT_BROWSER_PROFILE,
@@ -19,6 +19,9 @@ import type {
   CreateProfileInput,
   UpdateProfileInput,
 } from '@/common/browser/types';
+import { getBrowserAssignmentService } from '@process/services/browser/BrowserAssignmentService';
+
+export { getBrowserAssignmentService };
 
 export class BrowserProfileService {
   private profiles: Map<string, BrowserProfile> = new Map();
@@ -30,6 +33,93 @@ export class BrowserProfileService {
     this.userDataRoot = options?.userDataPath || this.resolveUserDataRoot();
     this.configFilePath = options?.configFilePath || path.join(this.userDataRoot, 'browser_profiles.json');
     this.loadProfiles();
+  }
+
+  public encryptSensitive(plaintext: string): string {
+    if (!plaintext) return '';
+    try {
+      if (
+        typeof safeStorage !== 'undefined' &&
+        typeof safeStorage.isEncryptionAvailable === 'function' &&
+        safeStorage.isEncryptionAvailable()
+      ) {
+        const encrypted = safeStorage.encryptString(plaintext);
+        return `safe:${encrypted.toString('base64')}`;
+      }
+    } catch {
+      // safeStorage error or unavailable
+    }
+    return `plain:${plaintext}`;
+  }
+
+  public decryptSensitive(ciphertext: string): string {
+    if (!ciphertext) return '';
+    if (ciphertext.startsWith('safe:')) {
+      try {
+        if (
+          typeof safeStorage !== 'undefined' &&
+          typeof safeStorage.isEncryptionAvailable === 'function' &&
+          safeStorage.isEncryptionAvailable()
+        ) {
+          const raw = Buffer.from(ciphertext.slice(5), 'base64');
+          return safeStorage.decryptString(raw);
+        }
+      } catch {
+        return '';
+      }
+    }
+    if (ciphertext.startsWith('plain:')) {
+      return ciphertext.slice(6);
+    }
+    return ciphertext;
+  }
+
+  /**
+   * Asserts that an agent cannot access cookies, credentials, or session tokens.
+   */
+  public assertAgentCannotAccessCookies(action: string, params: unknown): void {
+    if (!params || typeof params !== 'object') return;
+    const str = JSON.stringify(params).toLowerCase();
+    if (
+      str.includes('document.cookie') ||
+      str.includes('sessionstorage') ||
+      str.includes('localstorage') ||
+      str.includes('authtoken') ||
+      str.includes('authorization') ||
+      str.includes('bearertoken') ||
+      str.includes('set-cookie')
+    ) {
+      throw new Error(`Security policy violation: Agent access to cookies, tokens, or credentials is prohibited.`);
+    }
+  }
+
+  /**
+   * Scrubs cookies and tokens from data returned to agents.
+   */
+  public scrubAgentOutput<T>(data: T): T {
+    if (!data) return data;
+    if (typeof data === 'string') {
+      return data
+        .replace(/cookie:[^\n\r]+/gi, 'cookie: [REDACTED]')
+        .replace(/authorization:\s*bearer\s+[^\s\n\r]+/gi, 'authorization: Bearer [REDACTED]')
+        .replace(/set-cookie:[^\n\r]+/gi, 'set-cookie: [REDACTED]') as unknown as T;
+    }
+    if (typeof data === 'object') {
+      try {
+        let serialized = JSON.stringify(data);
+        serialized = serialized
+          .replace(/cookie:[^\n\r\\"]+/gi, 'cookie: [REDACTED]')
+          .replace(/authorization:\s*bearer\s+[^\s\n\r\\"]+/gi, 'authorization: Bearer [REDACTED]')
+          .replace(/set-cookie:[^\n\r\\"]+/gi, 'set-cookie: [REDACTED]')
+          .replace(/"cookie":\s*"[^"]*"/gi, '"cookie":"[REDACTED]"')
+          .replace(/"authorization":\s*"[^"]*"/gi, '"authorization":"[REDACTED]"')
+          .replace(/"token":\s*"[^"]*"/gi, '"token":"[REDACTED]"');
+        return JSON.parse(serialized) as T;
+      } catch {
+        return data;
+      }
+    }
+    return data;
   }
 
   private resolveUserDataRoot(): string {
@@ -48,10 +138,22 @@ export class BrowserProfileService {
       if (fs.existsSync(this.configFilePath)) {
         const raw = fs.readFileSync(this.configFilePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed.profiles)) {
-          for (const item of parsed.profiles) {
+        let profileList = parsed.profiles;
+        if (typeof parsed.encryptedData === 'string' && parsed.encryptedData) {
+          try {
+            const decrypted = this.decryptSensitive(parsed.encryptedData);
+            if (decrypted) {
+              profileList = JSON.parse(decrypted);
+            }
+          } catch {
+            // fallback to plaintext profiles
+          }
+        }
+        if (Array.isArray(profileList)) {
+          for (const item of profileList) {
             if (item && typeof item.id === 'string') {
               this.profiles.set(item.id, item);
+              this.syncProfileAssignments(item);
             }
           }
         }
@@ -77,9 +179,12 @@ export class BrowserProfileService {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
+      const profileList = Array.from(this.profiles.values());
+      const encryptedData = this.encryptSensitive(JSON.stringify(profileList));
       const data = {
         activeProfileId: this.activeProfileId,
-        profiles: Array.from(this.profiles.values()),
+        profiles: profileList,
+        encryptedData: encryptedData.startsWith('safe:') ? encryptedData : undefined,
       };
       fs.writeFileSync(this.configFilePath, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
@@ -136,6 +241,13 @@ export class BrowserProfileService {
       name: rawName,
       backend,
       partition,
+      mode: input.mode || 'act',
+      allowedDomains: input.allowedDomains ? [...input.allowedDomains] : undefined,
+      autoApproveActions: input.autoApproveActions ? [...input.autoApproveActions] : undefined,
+      assignedTeamIds: input.assignedTeamIds ? [...input.assignedTeamIds] : undefined,
+      assignedProjectIds: input.assignedProjectIds ? [...input.assignedProjectIds] : undefined,
+      sensitiveUrlPatterns: input.sensitiveUrlPatterns ? [...input.sensitiveUrlPatterns] : undefined,
+      sessionHealth: 'healthy',
       externalChrome: {
         port: input.externalChrome?.port || DEFAULT_EXTERNAL_CHROME_PORT,
         userDataDir: input.externalChrome?.userDataDir || externalChromeUserDataDir,
@@ -147,8 +259,23 @@ export class BrowserProfileService {
     };
 
     this.profiles.set(id, newProfile);
+    this.syncProfileAssignments(newProfile);
     this.saveProfiles();
     return newProfile;
+  }
+
+  private syncProfileAssignments(profile: BrowserProfile): void {
+    const assignmentService = getBrowserAssignmentService();
+    if (profile.assignedTeamIds) {
+      for (const teamId of profile.assignedTeamIds) {
+        assignmentService.assignProfile(profile.id, 'team', teamId);
+      }
+    }
+    if (profile.assignedProjectIds) {
+      for (const projectId of profile.assignedProjectIds) {
+        assignmentService.assignProfile(profile.id, 'project', projectId);
+      }
+    }
   }
 
   public updateProfile(input: UpdateProfileInput): BrowserProfile {
@@ -162,6 +289,27 @@ export class BrowserProfileService {
     }
     if (input.backend) {
       existing.backend = input.backend;
+    }
+    if (input.mode) {
+      existing.mode = input.mode;
+    }
+    if (input.allowedDomains !== undefined) {
+      existing.allowedDomains = input.allowedDomains ? [...input.allowedDomains] : undefined;
+    }
+    if (input.autoApproveActions !== undefined) {
+      existing.autoApproveActions = input.autoApproveActions ? [...input.autoApproveActions] : undefined;
+    }
+    if (input.assignedTeamIds !== undefined) {
+      existing.assignedTeamIds = input.assignedTeamIds ? [...input.assignedTeamIds] : undefined;
+    }
+    if (input.assignedProjectIds !== undefined) {
+      existing.assignedProjectIds = input.assignedProjectIds ? [...input.assignedProjectIds] : undefined;
+    }
+    if (input.sensitiveUrlPatterns !== undefined) {
+      existing.sensitiveUrlPatterns = input.sensitiveUrlPatterns ? [...input.sensitiveUrlPatterns] : undefined;
+    }
+    if (input.sessionHealth !== undefined) {
+      existing.sessionHealth = input.sessionHealth;
     }
     if (input.externalChrome) {
       existing.externalChrome = {
@@ -177,6 +325,7 @@ export class BrowserProfileService {
     existing.updatedAt = Date.now();
 
     this.profiles.set(existing.id, existing);
+    this.syncProfileAssignments(existing);
     this.saveProfiles();
     return existing;
   }

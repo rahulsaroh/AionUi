@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Morning Digest Content Generator > generates accurate digest summary matching expected structure and snapshot 1`] = `
+"# 🌅 Morning Digest — 2026-03-09
+
+## 📊 24h Executions
+- **Completed:** 1
+- **Failed:** 1
+- **Waiting / In-Progress:** 1
+- **Paused:** 0
+- **Total Runs:** 3
+
+## 💰 Spend & Budgets
+- **24h Spend:** ~$0.23 (est with unknown CLI usage)
+
+## 📁 Outputs Produced
+- [Run run_comp_1 Output (cron)](#/team/team_copywriters)
+
+## ⚠️ Items Needing Approval (1)
+- **Deploy to Staging** (Team: DevOps) — \`kubectl apply -f deployment.yaml\`"
+`;

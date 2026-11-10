@@ -8,11 +8,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ApprovalsInboxPage } from '@/renderer/pages/approvals/ApprovalsInboxPage';
-import {
-  addInboxItem,
-  clearInboxItems,
-  type InboxApprovalItem,
-} from '@/common/autonomy/approvalsInboxStore';
+import { addInboxItem, clearInboxItems, type InboxApprovalItem } from '@/common/autonomy/approvalsInboxStore';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

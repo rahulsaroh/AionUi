@@ -137,6 +137,7 @@ const PanelRoute: React.FC<{ layout: React.ReactElement }> = ({ layout }) => {
           />
           <Route path='/approvals' element={withRouteFallback(ApprovalsInboxPage)} />
           <Route path='/pipeline' element={withRouteFallback(PipelineTimelinePage)} />
+          <Route path='/pipeline/:runId' element={withRouteFallback(PipelineTimelinePage)} />
           <Route path='/costs' element={withRouteFallback(CostsPage)} />
           <Route path='/today' element={withRouteFallback(TodayPage)} />
           <Route path='/settings/rules' element={withRouteFallback(RememberedRulesSettings)} />

@@ -9,10 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { RememberedRulesContent } from '@/renderer/pages/settings/RememberedRulesSettings';
-import {
-  addRememberedRule,
-  clearRememberedRules,
-} from '@/common/autonomy/rulesStore';
+import { addRememberedRule, clearRememberedRules } from '@/common/autonomy/rulesStore';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

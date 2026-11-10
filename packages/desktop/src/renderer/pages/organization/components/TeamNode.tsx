@@ -12,6 +12,7 @@ import type { OrgTeamNode, OrgNodeStatus } from '@/types/organization';
 import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
 import AgentMemberPill from './AgentMemberPill';
+import { getSpendToday, formatCost } from '@/common/costs';
 
 export interface TeamNodeData {
   team: OrgTeamNode;
@@ -58,17 +59,39 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
           </span>
         </div>
 
-        <Tag
-          size='small'
-          style={{
-            borderColor: theme.borderColor,
-            color: theme.textColor,
-            backgroundColor: theme.backgroundColor,
-          }}
-          className='text-9px font-medium px-4px py-0.5px rounded-full'
-        >
-          {theme.badgeText}
-        </Tag>
+        <div className='flex items-center gap-4px shrink-0'>
+          {(() => {
+            const todaySpend = getSpendToday(team.id);
+            const spendText = todaySpend.hasUnknown
+              ? `~$${todaySpend.totalSpend.toFixed(2)}*`
+              : `$${todaySpend.totalSpend.toFixed(2)}`;
+            return (
+              <Tooltip
+                content={
+                  todaySpend.hasUnknown
+                    ? `Today's spend: ~${formatCost(todaySpend.totalSpend)} (*includes unknown CLI agent calls)`
+                    : `Today's spend: ${formatCost(todaySpend.totalSpend)}`
+                }
+              >
+                <Tag size='small' color='arcoblue' className='text-9px font-medium px-4px py-0.5px rounded-full'>
+                  {spendText}
+                </Tag>
+              </Tooltip>
+            );
+          })()}
+
+          <Tag
+            size='small'
+            style={{
+              borderColor: theme.borderColor,
+              color: theme.textColor,
+              backgroundColor: theme.backgroundColor,
+            }}
+            className='text-9px font-medium px-4px py-0.5px rounded-full'
+          >
+            {theme.badgeText}
+          </Tag>
+        </div>
       </div>
 
       {/* Body: Team Manager / HR + Linked Project + Specialists */}

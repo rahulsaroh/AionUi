@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventEmitter } from 'node:events';
+import EventEmitter from 'eventemitter3';
 import type { AuditChannel, HeadlessGateItem, HeadlessGateStatus } from './types';
 
 export interface ParkGateOptions {
@@ -33,7 +33,7 @@ export interface GateResolution {
 
 interface ActiveGate {
   item: HeadlessGateItem;
-  timer: NodeJS.Timeout | null;
+  timer: ReturnType<typeof setTimeout> | null;
   resolve: (res: GateResolution) => void;
 }
 

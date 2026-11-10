@@ -199,6 +199,7 @@ describe('Resumable Pipelines & Idempotent Publishing', () => {
 
   describe('3. Idempotent Publishing', () => {
     it('VERIFY Scenario 3: call publish twice with mock platform, confirm only one post is created; force creates a second', async () => {
+      publishService.setPlatformApprovalConfig('youtube', false);
       let publishCount = 0;
       const mockPublisher = vi.fn().mockImplementation(async (req: PublishRequest) => {
         publishCount++;

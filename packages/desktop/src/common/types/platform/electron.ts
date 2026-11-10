@@ -133,10 +133,40 @@ export interface ElectronBridgeAPI {
   }>;
   browserClearHistory?: () => Promise<{ error?: string; success: boolean }>;
   browserDeleteHistoryEntry?: (id: string) => Promise<{ error?: string; success: boolean; data?: boolean }>;
+  browserGetAuditLogs?: (filter?: import('../../browser').BrowserAuditFilter) => Promise<{
+    error?: string;
+    success: boolean;
+    data?: import('../../browser').BrowserAuditEntry[];
+  }>;
+  browserGetAuditRetentionDays?: () => Promise<{ error?: string; success: boolean; data?: number }>;
+  browserSetAuditRetentionDays?: (days: number) => Promise<{ error?: string; success: boolean; data?: number }>;
+  browserClearAuditLogs?: () => Promise<{ error?: string; success: boolean }>;
+  browserRespondSensitiveApproval?: (payload: { id: string; approved: boolean }) => Promise<{
+    error?: string;
+    success: boolean;
+    data?: boolean;
+  }>;
+  browserMarkSessionHealthy?: (profileId: string) => Promise<{ error?: string; success: boolean }>;
+  browserAssignProfileScope?: (payload: {
+    profileId: string;
+    scopeType: 'project' | 'team';
+    scopeId: string;
+  }) => Promise<{ error?: string; success: boolean; data?: import('../../browser').BrowserProfileAssignment }>;
+  browserUnassignProfileScope?: (payload: {
+    profileId: string;
+    scopeType: 'project' | 'team';
+    scopeId: string;
+  }) => Promise<{ error?: string; success: boolean; data?: boolean }>;
+  browserGetAssignedProfiles?: (payload: {
+    scopeType: 'project' | 'team';
+    scopeId: string;
+  }) => Promise<{ error?: string; success: boolean; data?: string[] }>;
   onBrowserToolProgress?: (callback: (event: unknown) => void) => () => void;
   onBrowserSafetyApprovalRequest?: (
     callback: (request: import('../../browser/safetyTypes').SafetyGateRequest) => void
   ) => () => void;
+  onBrowserSensitiveApprovalRequest?: (callback: (request: unknown) => void) => () => void;
+  onBrowserReloginNeeded?: (callback: (event: import('../../browser').BrowserSessionHealthEvent) => void) => () => void;
   // Teamwork Multi-Agent Orchestration APIs
   teamworkInitiate?: (
     params: import('../teamwork').InitiateTeamworkRequest
@@ -284,6 +314,24 @@ export interface ElectronBridgeAPI {
   }) => Promise<{ allowed: boolean; reason?: string; resolved: string }>;
   orgSaveData?: (params: { key: string; value: string }) => Promise<boolean>;
   orgLoadData?: (params: { key: string }) => Promise<string | null>;
+  // Pipeline & Resumable Publishing APIs
+  pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
+  pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;
+  pipelineResume?: (
+    runId: string,
+    baseDir?: string
+  ) => Promise<import('@/process/services/pipeline').ResumeResult>;
+  pipelineRerun?: (runId: string, stepIndex: number) => Promise<import('../pipeline/pipelineTypes').IPipelineRun>;
+  publishApprove?: (
+    idempotencyKey: string,
+    previewPayload?: unknown
+  ) => Promise<import('../pipeline/pipelineTypes').PublishResult>;
+  publishReject?: (
+    idempotencyKey: string,
+    reason?: string
+  ) => Promise<import('../pipeline/pipelineTypes').IPublishRecord>;
+  publishListRecords?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPublishRecord[]>;
+  publishGetRecord?: (idempotencyKey: string) => Promise<import('../pipeline/pipelineTypes').IPublishRecord | null>;
 }
 
 export type BackendStartupFailureReason =

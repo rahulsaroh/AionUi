@@ -11,11 +11,83 @@ import { getBrowserWorkflowEngine } from '../BrowserWorkflowEngine';
 
 export class SocialApiService {
   /**
-   * Post to social media with official Graph API as preferred path,
-   * falling back to human-paced browser automation.
+   * Post to social media routed through PublishService for strict idempotency,
+   * with official Graph API as preferred path, falling back to human-paced browser automation.
    */
   public async post(options: SocialPostOptions): Promise<SocialPostResult> {
     const startTime = Date.now();
+    const { platform, caption, mediaPath, autoApprove, profileId } = options;
+
+    // Route through PublishService with idempotency keying and state machine
+    try {
+      const { getPipelineServices } = await import('../../pipeline');
+      const { publishService } = await getPipelineServices();
+
+      const publishRes = await publishService.publish(
+        {
+          projectId: profileId || 'default-social-project',
+          platform,
+          payload: {
+            title: caption.slice(0, 60),
+            caption,
+            description: caption,
+            mediaPath,
+          },
+          requireApproval: !autoApprove,
+        },
+        {
+          publisher: async () => {
+            const rawResult = await this.executeUnderlyingPost(options, startTime);
+            if (!rawResult.success) {
+              throw new Error(rawResult.error || 'Post execution failed');
+            }
+            return {
+              postId: rawResult.postId || `post_${Date.now()}`,
+              url: rawResult.url || '',
+              metadata: { mode: rawResult.mode },
+            };
+          },
+        }
+      );
+
+      if (publishRes.status === 'pending_approval') {
+        return {
+          success: false,
+          platform,
+          mode: 'official_api',
+          error: 'Publish action is pending approval in Approvals Inbox.',
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      if (!publishRes.success) {
+        return {
+          success: false,
+          platform,
+          mode: 'official_api',
+          error: publishRes.error || `Publishing returned status: ${publishRes.status}`,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      return {
+        success: true,
+        platform,
+        mode: (publishRes.postId ? 'official_api' : 'browser_automation') as 'official_api' | 'browser_automation',
+        postId: publishRes.postId,
+        url: publishRes.url,
+        durationMs: Date.now() - startTime,
+      };
+    } catch (err) {
+      console.warn('[SocialApiService] Failed to route via PublishService, falling back to direct post:', err);
+      return this.executeUnderlyingPost(options, startTime);
+    }
+  }
+
+  /**
+   * Underlying post execution through Graph API or Browser Automation.
+   */
+  private async executeUnderlyingPost(options: SocialPostOptions, startTime: number): Promise<SocialPostResult> {
     const { platform, caption, mediaPath, autoApprove, apiCredentials, profileId } = options;
 
     // 1. Safety Gate: Explicit user approval before publishing
@@ -86,99 +158,125 @@ export class SocialApiService {
         'social-post',
         {
           platform,
+          content: caption,
           mediaPath,
-          caption,
         },
-        { profileId }
+        profileId
       );
 
-      if (!workflowResult.success) {
+      if (workflowResult.success) {
+        rateLimiter.recordPost(platform);
         return {
-          success: false,
+          success: true,
           platform,
           mode: 'browser_automation',
-          error: workflowResult.error || 'Browser posting workflow failed',
+          postId: `browser_${Date.now()}`,
+          url: `https://${platform}.com`,
           durationMs: Date.now() - startTime,
         };
       }
 
-      rateLimiter.recordPost(platform);
       return {
-        success: true,
+        success: false,
         platform,
         mode: 'browser_automation',
+        error: workflowResult.error || 'Browser automation workflow failed',
         durationMs: Date.now() - startTime,
       };
     });
   }
 
+  /**
+   * Post via official platform APIs (Meta Graph API for IG/FB)
+   */
   private async publishViaOfficialApi(
     platform: 'instagram' | 'facebook',
     caption: string,
-    mediaPath: string,
-    credentials: { accessToken?: string; accountId?: string; pageId?: string }
-  ): Promise<{ postId: string; url?: string }> {
-    const { accessToken, accountId, pageId } = credentials;
-    if (!accessToken) throw new Error('Access token is missing');
+    mediaPath?: string,
+    credentials?: { accessToken: string; pageId?: string; igUserId?: string }
+  ): Promise<{ postId: string; url: string }> {
+    const accessToken = credentials?.accessToken;
+    if (!accessToken) {
+      throw new Error('Access token is required for official API posting');
+    }
 
     if (platform === 'facebook') {
-      const targetId = pageId || 'me';
-      // Post to Facebook Page feed
-      const url = `https://graph.facebook.com/v19.0/${targetId}/feed`;
-      const response = await fetch(url, {
+      const pageId = credentials?.pageId || 'me';
+      const endpoint = `https://graph.facebook.com/v19.0/${pageId}/feed`;
+
+      const body: Record<string, string> = {
+        message: caption,
+        access_token: accessToken,
+      };
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: caption,
-          access_token: accessToken,
-        }),
+        body: JSON.stringify(body),
       });
 
-      const data = (await response.json()) as { id?: string; error?: { message: string } };
-      if (!response.ok || !data.id) {
-        throw new Error(data.error?.message || `Facebook API error: ${response.statusText}`);
+      if (!res.ok) {
+        const errorData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error(`Facebook Graph API error: ${res.statusText} - ${JSON.stringify(errorData)}`);
       }
 
-      return { postId: data.id, url: `https://facebook.com/${data.id}` };
+      const data = (await res.json()) as { id: string };
+      return {
+        postId: data.id,
+        url: `https://facebook.com/${data.id}`,
+      };
     }
 
     if (platform === 'instagram') {
-      if (!accountId) throw new Error('Instagram account ID is required');
+      const igUserId = credentials?.igUserId;
+      if (!igUserId) {
+        throw new Error('Instagram User ID (igUserId) is required for Instagram Graph API');
+      }
 
-      // 1. Create Media Container
-      const createUrl = `https://graph.facebook.com/v19.0/${accountId}/media`;
-      const createRes = await fetch(createUrl, {
+      if (!mediaPath) {
+        throw new Error('Instagram requires an image or video URL to publish a post');
+      }
+
+      // 1. Create media container
+      const containerEndpoint = `https://graph.facebook.com/v19.0/${igUserId}/media`;
+      const containerRes = await fetch(containerEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          image_url: mediaPath,
           caption,
-          image_url: mediaPath.startsWith('http') ? mediaPath : undefined,
           access_token: accessToken,
         }),
       });
 
-      const createData = (await createRes.json()) as { id?: string; error?: { message: string } };
-      if (!createRes.ok || !createData.id) {
-        throw new Error(createData.error?.message || `Instagram container creation failed: ${createRes.statusText}`);
+      if (!containerRes.ok) {
+        const errorData = (await containerRes.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error(`Instagram container creation error: ${JSON.stringify(errorData)}`);
       }
 
-      // 2. Publish Media Container
-      const publishUrl = `https://graph.facebook.com/v19.0/${accountId}/media_publish`;
-      const publishRes = await fetch(publishUrl, {
+      const containerData = (await containerRes.json()) as { id: string };
+
+      // 2. Publish media container
+      const publishEndpoint = `https://graph.facebook.com/v19.0/${igUserId}/media_publish`;
+      const publishRes = await fetch(publishEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          creation_id: createData.id,
+          creation_id: containerData.id,
           access_token: accessToken,
         }),
       });
 
-      const publishData = (await publishRes.json()) as { id?: string; error?: { message: string } };
-      if (!publishRes.ok || !publishData.id) {
-        throw new Error(publishData.error?.message || `Instagram publish failed: ${publishRes.statusText}`);
+      if (!publishRes.ok) {
+        const errorData = (await publishRes.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error(`Instagram publish error: ${JSON.stringify(errorData)}`);
       }
 
-      return { postId: publishData.id };
+      const publishData = (await publishRes.json()) as { id: string };
+      return {
+        postId: publishData.id,
+        url: `https://instagram.com/p/${publishData.id}`,
+      };
     }
 
     throw new Error(`Unsupported platform: ${platform}`);

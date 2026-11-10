@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
+import { Message, Spin } from '@arco-design/web-react';
 import type { IPipelineRun } from '@/common/types/pipeline/pipelineTypes';
 import { RunTimeline } from './RunTimeline';
-
-const STORAGE_KEY = 'aionui:active-pipeline-run';
 
 const defaultDemoRun: IPipelineRun = {
   id: 'run-demo-pipeline-1',
@@ -61,40 +61,62 @@ const defaultDemoRun: IPipelineRun = {
 };
 
 export const PipelineTimelinePage: React.FC = () => {
-  const [run, setRun] = useState<IPipelineRun>(() => {
+  const { runId: routeRunId } = useParams<{ runId: string }>();
+  const [run, setRun] = useState<IPipelineRun>(defaultDemoRun);
+  const [loading, setLoading] = useState(false);
+
+  const fetchRun = useCallback(async (targetId: string) => {
+    if (!window.electronAPI?.pipelineGetRun) return false;
     try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          return JSON.parse(stored) as IPipelineRun;
-        }
+      setLoading(true);
+      const res = await window.electronAPI.pipelineGetRun(targetId);
+      if (res) {
+        setRun(res);
+        return true;
       }
-    } catch {
-      // fallback
+    } catch (e) {
+      console.warn('[PipelineTimelinePage] Failed to fetch run via IPC:', e);
+    } finally {
+      setLoading(false);
     }
-    return defaultDemoRun;
-  });
+    return false;
+  }, []);
 
   useEffect(() => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(run));
+    const targetId = routeRunId || 'run-demo-pipeline-1';
+    void fetchRun(targetId).then((found) => {
+      if (!found && process.env.NODE_ENV !== 'production') {
+        // Fallback to demo run only in dev / e2e mode when IPC record doesn't exist
+        setRun(defaultDemoRun);
       }
-    } catch {
-      // ignore
-    }
-  }, [run]);
+    });
+  }, [routeRunId, fetchRun]);
 
-  const handleResume = async (runId: string) => {
-    // Resume skips completed steps, moves the failed/incomplete step to running then completed
+  const handleResume = async (runIdToResume: string) => {
+    if (window.electronAPI?.pipelineResume) {
+      try {
+        const res = await window.electronAPI.pipelineResume(runIdToResume);
+        if (res?.run) {
+          setRun(res.run);
+          Message.success(`Resumed from step ${res.resumeFromStepIndex}`);
+          return;
+        }
+      } catch (err) {
+        Message.error(`Resume failed: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+
+    // Dev fallback simulation
     setRun((prev) => {
+      let resumedIndex = -1;
       const updatedSteps = prev.steps.map((s) => {
-        if (s.status === 'failed') {
+        if (s.status === 'failed' || s.status === 'running') {
+          if (resumedIndex === -1) resumedIndex = s.stepIndex;
           return {
             ...s,
             status: 'completed' as const,
             error: undefined,
-            contentHash: 'a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0',
             updatedAt: Date.now(),
           };
         }
@@ -102,27 +124,31 @@ export const PipelineTimelinePage: React.FC = () => {
       });
 
       const allCompleted = updatedSteps.every((s) => s.status === 'completed' || s.status === 'skipped');
-
-      const nextRun: IPipelineRun = {
+      return {
         ...prev,
         status: allCompleted ? 'completed' : 'running',
         updatedAt: Date.now(),
         steps: updatedSteps,
       };
-
-      try {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRun));
-        }
-      } catch {
-        // ignore
-      }
-
-      return nextRun;
     });
   };
 
-  const handleRerunStep = async (runId: string, fromStepIndex: number) => {
+  const handleRerunStep = async (runIdToRerun: string, fromStepIndex: number) => {
+    if (window.electronAPI?.pipelineRerun) {
+      try {
+        const res = await window.electronAPI.pipelineRerun(runIdToRerun, fromStepIndex);
+        if (res) {
+          setRun(res);
+          Message.info(`Re-running from step ${fromStepIndex}`);
+          return;
+        }
+      } catch (err) {
+        Message.error(`Re-run failed: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+
+    // Dev fallback simulation
     setRun((prev) => {
       const updatedSteps = prev.steps.map((s) => {
         if (s.stepIndex >= fromStepIndex) {
@@ -137,24 +163,22 @@ export const PipelineTimelinePage: React.FC = () => {
         return s;
       });
 
-      const nextRun: IPipelineRun = {
+      return {
         ...prev,
         status: 'running',
         updatedAt: Date.now(),
         steps: updatedSteps,
       };
-
-      try {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRun));
-        }
-      } catch {
-        // ignore
-      }
-
-      return nextRun;
     });
   };
+
+  if (loading) {
+    return (
+      <div className='flex items-center justify-center p-48px'>
+        <Spin size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className='p-24px max-w-960px mx-auto w-full'>

@@ -31,6 +31,12 @@ import type {
 import { getBrowserDownloadManager } from './BrowserDownloadManager';
 import { ensureInAppBrowserOpen, flushBrowserSessionData } from './browserLauncherHelper';
 import { getBrowserHistoryService } from './BrowserHistoryService';
+import { getBrowserProfileService } from './BrowserProfileService';
+import { getBrowserSafetyPolicyService } from './BrowserSafetyPolicyService';
+import { getBrowserSensitiveActionService } from './BrowserSensitiveActionService';
+import { getBrowserAuditService } from './BrowserAuditService';
+import { getBrowserSessionHealthService } from './BrowserSessionHealthService';
+import { wrapUntrustedContent } from './BrowserContentSanitizer';
 
 export function resolveLocatorString(target: LocatorTarget): string {
   if (typeof target === 'string') {
@@ -173,13 +179,19 @@ export class BrowserAutomationEngine {
     throw lastError;
   }
 
-  public async navigate(options: NavigateOptions): Promise<{ url: string }> {
+  public async navigate(options: NavigateOptions, profileId?: string): Promise<{ url: string }> {
     let targetUrl = (options.url || '').trim();
     if (!targetUrl) throw new Error('URL is required');
 
     if (!/^https?:\/\//i.test(targetUrl) && !/^about:/i.test(targetUrl) && !/^file:\/\//i.test(targetUrl)) {
       targetUrl = `https://${targetUrl}`;
     }
+
+    const profileService = getBrowserProfileService();
+    const profile = profileId ? profileService.getProfile(profileId) : profileService.getActiveProfile();
+
+    // Domain allowlist check
+    getBrowserSafetyPolicyService().assertDomainAllowed(targetUrl, profile?.allowedDomains, profile?.name);
 
     const wc = await this.ensureWebContents(targetUrl);
     if (!wc) throw new Error('No browser webview available');
@@ -188,6 +200,13 @@ export class BrowserAutomationEngine {
     try {
       await flushBrowserSessionData();
       getBrowserHistoryService().addEntry({ url: targetUrl, title: wc.getTitle?.() || targetUrl });
+
+      // Check session health for login wall or logged-out state
+      getBrowserSessionHealthService().checkSessionHealth({
+        profileId: profile?.id || 'main',
+        url: wc.getURL() || targetUrl,
+        pageText: wc.getTitle?.() || '',
+      });
     } catch {
       // Best-effort in headless/test
     }
@@ -414,9 +433,41 @@ export class BrowserAutomationEngine {
     const selector = resolveLocatorString(options.locator);
     const script = `
       (() => {
-        const el = ${buildDomQueryScript(selector)};
-        if (!el) return { success: false, error: 'Element not found: ' + ${JSON.stringify(selector)} };
-        return { success: true, text: (el.innerText || el.textContent || el.value || '').trim() };
+        const isVisible = (el) => {
+          if (!el) return false;
+          if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
+          try {
+            const s = window.getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0' || s.fontSize === '0px') return false;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0 && el.children.length === 0) return false;
+            if (r.right < -500 || r.bottom < -500 || r.left > 15000 || r.top > 15000) return false;
+          } catch (e) {}
+          return true;
+        };
+
+        const extractVisibleText = (node) => {
+          if (!node) return '';
+          if (node.nodeType === 8) return ''; // comment
+          if (node.nodeType === 3) return node.textContent || '';
+          if (node.nodeType === 1) {
+            const tag = node.tagName.toLowerCase();
+            if (['script', 'style', 'noscript'].includes(tag)) return '';
+            if (!isVisible(node)) return '';
+            let acc = '';
+            for (const child of Array.from(node.childNodes)) {
+              acc += extractVisibleText(child) + ' ';
+            }
+            return acc.replace(/\\s+/g, ' ');
+          }
+          return '';
+        };
+
+        const targetEl = ${buildDomQueryScript(selector)};
+        if (!targetEl) return { success: false, error: 'Element not found: ' + ${JSON.stringify(selector)} };
+        if (!isVisible(targetEl)) return { success: true, text: '' };
+
+        return { success: true, text: extractVisibleText(targetEl).trim() };
       })()
     `;
 
@@ -424,7 +475,13 @@ export class BrowserAutomationEngine {
     if (!res?.success) {
       throw new Error(res?.error || `Could not read text for ${selector}`);
     }
-    return { text: res.text || '' };
+
+    const wrapped = wrapUntrustedContent(res.text || '', {
+      url: wc.getURL?.() || '',
+      title: wc.getTitle?.() || '',
+    });
+
+    return { text: wrapped };
   }
 
   public async getSnapshot(_options?: SnapshotOptions): Promise<{
@@ -437,8 +494,21 @@ export class BrowserAutomationEngine {
 
     const script = `
       (() => {
+        const isVisible = (el) => {
+          if (!el) return false;
+          if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
+          try {
+            const s = window.getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0' || s.fontSize === '0px') return false;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 && r.height === 0 && el.children.length === 0) return false;
+            if (r.right < -500 || r.bottom < -500 || r.left > 15000 || r.top > 15000) return false;
+          } catch (e) {}
+          return true;
+        };
+
         const walk = (el, depth = 0) => {
-          if (!el || depth > 8) return null;
+          if (!el || depth > 8 || !isVisible(el)) return null;
           const role = el.getAttribute('role') || el.tagName.toLowerCase();
           const name = el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText?.slice(0, 50) || '';
           const value = el.value || undefined;
@@ -520,7 +590,60 @@ export class BrowserAutomationEngine {
 
   public async execute(request: BrowserActionRequest): Promise<ActionResult> {
     const startTime = Date.now();
-    const { action, params, retries = 1 } = request;
+    const { action, params, retries = 1, profileId } = request;
+
+    const profileService = getBrowserProfileService();
+    const profile = profileId ? profileService.getProfile(profileId) : profileService.getActiveProfile();
+
+    // 1. Guard against agents accessing cookies or sensitive tokens
+    profileService.assertAgentCannotAccessCookies(action, params);
+
+    // 2. Enforce mode restrictions (e.g. Research mode prohibits mutations)
+    getBrowserSafetyPolicyService().assertModePermitsAction(
+      action,
+      profile?.mode,
+      profile?.name,
+      params?.[action as keyof typeof params] as Record<string, unknown>
+    );
+
+    const currentWc = this.getWebContents();
+    const currentUrl = currentWc?.getURL() || (action === 'navigate' ? params.navigate?.url : '') || '';
+
+    // 3. Classify sensitive actions
+    const sensitiveCheck = getBrowserSensitiveActionService().classifyAction({
+      action,
+      url: currentUrl,
+      params: params?.[action as keyof typeof params] as Record<string, unknown>,
+      profile,
+    });
+
+    let screenshotBefore: string | undefined;
+    let screenshotAfter: string | undefined;
+
+    if (sensitiveCheck.isSensitive) {
+      screenshotBefore = await this.captureScreenshotBase64(currentWc);
+      const approved = await getBrowserSensitiveActionService().requestApproval({
+        category: sensitiveCheck.category!,
+        summary: sensitiveCheck.summary,
+        reason: sensitiveCheck.reason!,
+        profile,
+      });
+
+      if (!approved) {
+        getBrowserAuditService().logAction({
+          profileId: profile?.id || 'main',
+          url: currentUrl,
+          action,
+          targetSummary: sensitiveCheck.summary,
+          sensitive: true,
+          approved: false,
+          screenshotBefore,
+          status: 'blocked',
+          error: 'Action denied by approval policy',
+        });
+        throw new Error(`Action blocked: Sensitive action "${sensitiveCheck.category}" was not approved.`);
+      }
+    }
 
     try {
       let data: unknown;
@@ -528,7 +651,7 @@ export class BrowserAutomationEngine {
       await this.retryOperation(async () => {
         switch (action) {
           case 'navigate':
-            data = await this.navigate(params.navigate || { url: '' });
+            data = await this.navigate(params.navigate || { url: '' }, profileId);
             break;
           case 'click':
             data = await this.click(params.click || { locator: '' });
@@ -577,15 +700,47 @@ export class BrowserAutomationEngine {
         }
       }, retries);
 
+      if (sensitiveCheck.isSensitive) {
+        screenshotAfter = await this.captureScreenshotBase64(this.getWebContents());
+      }
+
+      // Log action to audit trail
+      getBrowserAuditService().logAction({
+        profileId: profile?.id || 'main',
+        url: this.getWebContents()?.getURL() || currentUrl,
+        action,
+        targetSummary: sensitiveCheck.summary,
+        sensitive: sensitiveCheck.isSensitive,
+        approved: true,
+        screenshotBefore,
+        screenshotAfter,
+        status: 'success',
+      });
+
+      // Scrub tokens/cookies before returning to agent
+      const scrubbedData = profileService.scrubAgentOutput(data);
+
       return {
         success: true,
         action,
-        data,
+        data: scrubbedData,
         durationMs: Date.now() - startTime,
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       const failureScreenshot = await this.captureScreenshotBase64();
+
+      getBrowserAuditService().logAction({
+        profileId: profile?.id || 'main',
+        url: currentUrl,
+        action,
+        targetSummary: sensitiveCheck.summary,
+        sensitive: sensitiveCheck.isSensitive,
+        approved: true,
+        screenshotBefore,
+        status: 'failed',
+        error: errorMsg,
+      });
 
       return {
         success: false,

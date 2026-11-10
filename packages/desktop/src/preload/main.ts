@@ -114,6 +114,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserGetHistory: (limit?: number) => ipcRenderer.invoke('browser:getHistory', limit),
   browserClearHistory: () => ipcRenderer.invoke('browser:clearHistory'),
   browserDeleteHistoryEntry: (id: string) => ipcRenderer.invoke('browser:deleteHistoryEntry', id),
+  browserGetAuditLogs: (filter?: unknown) => ipcRenderer.invoke('browser:getAuditLogs', filter),
+  browserGetAuditRetentionDays: () => ipcRenderer.invoke('browser:getAuditRetentionDays'),
+  browserSetAuditRetentionDays: (days: number) => ipcRenderer.invoke('browser:setAuditRetentionDays', days),
+  browserClearAuditLogs: () => ipcRenderer.invoke('browser:clearAuditLogs'),
+  browserRespondSensitiveApproval: (payload: { id: string; approved: boolean }) =>
+    ipcRenderer.invoke('browser:respondSensitiveApproval', payload),
+  browserMarkSessionHealthy: (profileId: string) => ipcRenderer.invoke('browser:markSessionHealthy', profileId),
+  browserAssignProfileScope: (payload: { profileId: string; scopeType: string; scopeId: string }) =>
+    ipcRenderer.invoke('browser:assignProfileScope', payload),
+  browserUnassignProfileScope: (payload: { profileId: string; scopeType: string; scopeId: string }) =>
+    ipcRenderer.invoke('browser:unassignProfileScope', payload),
+  browserGetAssignedProfiles: (payload: { scopeType: string; scopeId: string }) =>
+    ipcRenderer.invoke('browser:getAssignedProfiles', payload),
   onBrowserToolProgress: (callback: (event: unknown) => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
     ipcRenderer.on('browser:toolProgress', handler);
@@ -126,6 +139,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('browser:safetyApprovalRequest', handler);
     return () => {
       ipcRenderer.off('browser:safetyApprovalRequest', handler);
+    };
+  },
+  onBrowserSensitiveApprovalRequest: (callback: (request: unknown) => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on('browser:sensitiveApprovalRequested', handler);
+    return () => {
+      ipcRenderer.off('browser:sensitiveApprovalRequested', handler);
+    };
+  },
+  onBrowserReloginNeeded: (callback: (event: unknown) => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on('browser:reloginNeeded', handler);
+    return () => {
+      ipcRenderer.off('browser:reloginNeeded', handler);
     };
   },
   // Teamwork Multi-Agent Orchestration APIs
@@ -207,6 +234,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('org:assertWithinScope', params),
   orgSaveData: (params: { key: string; value: string }) => ipcRenderer.invoke('org:saveData', params),
   orgLoadData: (params: { key: string }) => ipcRenderer.invoke('org:loadData', params),
+  // Pipeline & Resumable Publishing APIs
+  pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
+  pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),
+  pipelineResume: (runId: string, baseDir?: string) => ipcRenderer.invoke('pipeline:resume', { runId, baseDir }),
+  pipelineRerun: (runId: string, stepIndex: number) => ipcRenderer.invoke('pipeline:rerun', { runId, stepIndex }),
+  publishApprove: (idempotencyKey: string, previewPayload?: unknown) =>
+    ipcRenderer.invoke('publish:approve', { idempotencyKey, previewPayload }),
+  publishReject: (idempotencyKey: string, reason?: string) =>
+    ipcRenderer.invoke('publish:reject', { idempotencyKey, reason }),
+  publishListRecords: (projectId?: string) => ipcRenderer.invoke('publish:listRecords', projectId),
+  publishGetRecord: (idempotencyKey: string) => ipcRenderer.invoke('publish:getRecord', idempotencyKey),
 });
 
 // Synchronously fetch aioncore port and expose to renderer via

@@ -20,6 +20,7 @@ import { beginConversationTurn, endConversationTurn } from '@/renderer/pages/con
 import { ensureConversationRuntime } from '@/renderer/pages/conversation/utils/ensureConversationRuntime';
 import type { ThoughtData } from '@/renderer/components/chat/ThoughtDisplay';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { recordRunStart, recordUsage } from '@/common/costs';
 
 export type UseAcpMessageReturn = {
   thought: ThoughtData;
@@ -440,6 +441,23 @@ export const useAcpMessage = (
                     },
                     merge_extra: true,
                   });
+
+                  // Record run and usage ledger entry
+                  recordRunStart({
+                    id: conversation_id,
+                    trigger: 'manual',
+                    status: 'running',
+                  });
+                  recordUsage({
+                    run_id: conversation_id,
+                    agent_role: 'assistant',
+                    provider: 'acp',
+                    model: 'default',
+                    input_tokens: next.breakdown?.input_tokens ?? null,
+                    output_tokens: next.breakdown?.output_tokens ?? null,
+                    estimated_cost: next.cost?.amount ?? undefined,
+                  });
+
                   return updatedTurns;
                 });
                 mergeLiveMessage({

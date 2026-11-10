@@ -17,6 +17,7 @@ export type IPipelineStep = {
   inputs?: Record<string, unknown>;
   artifactPaths: string[];
   contentHash?: string;
+  sideEffectFree?: boolean;
   error?: string;
   startedAt?: number;
   completedAt?: number;
@@ -40,6 +41,7 @@ export type IPipelineManifestStep = {
   inputs?: Record<string, unknown>;
   artifactPaths?: string[];
   contentHash?: string;
+  sideEffectFree?: boolean;
   error?: string;
 };
 
@@ -50,14 +52,23 @@ export type IPipelineManifest = {
   steps: IPipelineManifestStep[];
 };
 
-export type PublishStatus = 'published' | 'pending_approval' | 'rejected';
+export type PublishStatus =
+  | 'pending_approval'
+  | 'approved'
+  | 'publishing'
+  | 'published'
+  | 'failed'
+  | 'unknown'
+  | 'rejected';
 
 export type IPublishRecord = {
   id: string;
   idempotencyKey: string;
+  legacyIdempotencyKey?: string;
   projectId: string;
   platform: string;
   contentHash: string;
+  previewBindingHash?: string;
   status: PublishStatus;
   postId?: string;
   url?: string;
@@ -79,7 +90,7 @@ export type PublishPayload = {
 export type PublishRequest = {
   projectId: string;
   platform: string;
-  contentHash: string;
+  contentHash?: string;
   payload: PublishPayload;
   force?: boolean;
   requireApproval?: boolean;

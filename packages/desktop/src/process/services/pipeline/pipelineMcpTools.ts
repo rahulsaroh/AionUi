@@ -38,9 +38,18 @@ export function createPipelineMcpToolDefinitions(runService: PipelineRunService,
         step: z.union([z.string(), z.number()]).describe('Step index or step name/id'),
         artifactPaths: z.array(z.string()).describe('List of output file paths produced by this step'),
         baseDir: z.string().optional().describe('Project base directory for relative artifact paths'),
+        sideEffectFree: z.boolean().optional().describe('Whether a step with no artifacts is side-effect-free and can be skipped on resume'),
       }),
-      execute: async (args: { runId: string; step: string | number; artifactPaths: string[]; baseDir?: string }) => {
-        const step = runService.completeStep(args.runId, args.step, args.artifactPaths, args.baseDir);
+      execute: async (args: {
+        runId: string;
+        step: string | number;
+        artifactPaths: string[];
+        baseDir?: string;
+        sideEffectFree?: boolean;
+      }) => {
+        const step = runService.completeStep(args.runId, args.step, args.artifactPaths, args.baseDir, {
+          sideEffectFree: args.sideEffectFree,
+        });
         return {
           content: [
             {
@@ -130,24 +139,22 @@ export function createPipelineMcpToolDefinitions(runService: PipelineRunService,
       parameters: z.object({
         projectId: z.string().describe('Project identifier'),
         platform: z.string().describe('Platform name, e.g. youtube, instagram, facebook'),
-        contentHash: z.string().describe('Content hash of publication artifacts'),
+        contentHash: z.string().optional().describe('Optional content hash of publication artifacts'),
         title: z.string().describe('Post or video title'),
         description: z.string().optional().describe('Post description or caption'),
         thumbnailUrl: z.string().optional().describe('URL or path to thumbnail image'),
         videoUrl: z.string().optional().describe('URL or path to video file'),
-        force: z.boolean().optional().describe('Force re-publishing even if duplicate detected'),
-        requireApproval: z.boolean().optional().describe('Require human approval before publishing'),
+        mediaPath: z.string().optional().describe('Local media file path'),
       }),
       execute: async (args: {
         projectId: string;
         platform: string;
-        contentHash: string;
+        contentHash?: string;
         title: string;
         description?: string;
         thumbnailUrl?: string;
         videoUrl?: string;
-        force?: boolean;
-        requireApproval?: boolean;
+        mediaPath?: string;
       }) => {
         const result = await publishService.publish({
           projectId: args.projectId,
@@ -158,9 +165,8 @@ export function createPipelineMcpToolDefinitions(runService: PipelineRunService,
             description: args.description,
             thumbnailUrl: args.thumbnailUrl,
             videoUrl: args.videoUrl,
+            mediaPath: args.mediaPath,
           },
-          force: args.force,
-          requireApproval: args.requireApproval,
         });
 
         return {

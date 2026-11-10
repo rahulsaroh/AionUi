@@ -38,7 +38,7 @@ import SiderProjectRow from './SiderProjectRow';
 import SiderChatRow from './SiderChatRow';
 import SiderEmptyState from './SiderEmptyState';
 
-import { NetworkTree, AlarmClock, Robot } from '@icon-park/react';
+import { NetworkTree, AlarmClock, Robot, SunOne, Finance, Play } from '@icon-park/react';
 
 type OrganizationSiderContentProps = {
   collapsed: boolean;
@@ -106,6 +106,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const isCanvasActive = location.pathname === '/organization';
   const isAutomationsActive = location.pathname === '/scheduled';
+  const isTodayActive = location.pathname === '/today';
+  const isCostsActive = location.pathname === '/costs';
+  const isPipelineActive = location.pathname.startsWith('/pipeline');
 
   const toggleDept = (deptId: string) => {
     setCollapsedDepts((prev) => {
@@ -462,6 +465,51 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             }}
           />
         </Tooltip>
+        <Tooltip
+          {...siderTooltipProps}
+          content={t('today.navTitle', { defaultValue: 'Today — Morning Digest' })}
+          position='right'
+        >
+          <SiderNavRow
+            icon={<SunOne size={16} theme='outline' fill='currentColor' />}
+            label=''
+            selected={isTodayActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/today');
+            }}
+          />
+        </Tooltip>
+        <Tooltip
+          {...siderTooltipProps}
+          content={t('costs.navTitle', { defaultValue: 'Cost Tracking & Budgets' })}
+          position='right'
+        >
+          <SiderNavRow
+            icon={<Finance size={16} theme='outline' fill='currentColor' />}
+            label=''
+            selected={isCostsActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/costs');
+            }}
+          />
+        </Tooltip>
+        <Tooltip
+          {...siderTooltipProps}
+          content={t('pipeline.navTitle', { defaultValue: 'Active Pipeline Runs' })}
+          position='right'
+        >
+          <SiderNavRow
+            icon={<Play size={16} theme='outline' fill='currentColor' />}
+            label=''
+            selected={isPipelineActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/pipeline/active');
+            }}
+          />
+        </Tooltip>
       </div>
     );
   }
@@ -533,6 +581,33 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             onClick={() => {
               onSessionClick?.();
               void navigate('/scheduled');
+            }}
+          />
+          <SiderNavRow
+            icon={<SunOne size={14} theme='outline' fill='currentColor' />}
+            label={t('today.navTitle', { defaultValue: 'Today — Morning Digest' })}
+            selected={isTodayActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/today');
+            }}
+          />
+          <SiderNavRow
+            icon={<Finance size={14} theme='outline' fill='currentColor' />}
+            label={t('costs.navTitle', { defaultValue: 'Costs & Budgets' })}
+            selected={isCostsActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/costs');
+            }}
+          />
+          <SiderNavRow
+            icon={<Play size={14} theme='outline' fill='currentColor' />}
+            label={t('pipeline.navTitle', { defaultValue: 'Active Runs' })}
+            selected={isPipelineActive}
+            onClick={() => {
+              onSessionClick?.();
+              void navigate('/pipeline/active');
             }}
           />
         </div>

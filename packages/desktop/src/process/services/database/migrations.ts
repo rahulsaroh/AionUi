@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { createHash } from 'crypto';
 import type { ISqliteDriver } from './drivers/ISqliteDriver';
 
 /**
@@ -1481,6 +1482,81 @@ const migration_v31: IMigration = {
 };
 
 /**
+ * Migration v31 -> v32: Add publish state machine, legacy idempotency dual-lookup, preview binding hash, and step side-effect-free flag
+ */
+const migration_v32: IMigration = {
+  version: 32,
+  name: 'Add publish state machine, legacy idempotency dual-lookup, and step side-effect-free flag',
+  up: (db) => {
+    // 1. Back up existing publish_records table before migrating
+    db.exec('CREATE TABLE IF NOT EXISTS publish_records_backup_v29 AS SELECT * FROM publish_records');
+
+    // 2. Add columns to publish_records
+    try {
+      db.exec('ALTER TABLE publish_records ADD COLUMN legacy_idempotency_key TEXT');
+    } catch {
+      // Column may already exist
+    }
+    try {
+      db.exec('ALTER TABLE publish_records ADD COLUMN preview_binding_hash TEXT');
+    } catch {
+      // Column may already exist
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_publish_records_legacy_key ON publish_records(legacy_idempotency_key)');
+
+    // 3. Add side_effect_free to pipeline_steps
+    try {
+      db.exec('ALTER TABLE pipeline_steps ADD COLUMN side_effect_free INTEGER DEFAULT 0');
+    } catch {
+      // Column may already exist
+    }
+
+    // 4. Re-key existing publish_records with normalized JSON serialization and preserve legacy_idempotency_key
+    try {
+      const rows = db
+        .prepare('SELECT id, project_id, platform, content_hash, idempotency_key FROM publish_records')
+        .all() as Array<{
+        id: string;
+        project_id: string;
+        platform: string;
+        content_hash: string;
+        idempotency_key: string;
+      }>;
+
+      for (const row of rows) {
+        const rawJson = JSON.stringify([
+          row.project_id.trim(),
+          row.platform.toLowerCase().trim(),
+          row.content_hash.trim(),
+        ]);
+        const newKey = createHash('sha256').update(rawJson).digest('hex');
+        db.prepare('UPDATE publish_records SET legacy_idempotency_key = ?, idempotency_key = ? WHERE id = ?').run(
+          row.idempotency_key,
+          newKey,
+          row.id
+        );
+      }
+    } catch (e) {
+      console.warn('[Migration v32] Warning while re-keying publish records:', e);
+    }
+
+    // 5. On startup/migration: mark any rows stuck in 'publishing' as 'unknown'
+    const now = Date.now();
+    try {
+      db.prepare("UPDATE publish_records SET status = 'unknown', updated_at = ? WHERE status = 'publishing'").run(now);
+    } catch {}
+
+    console.log('[Migration v32] Upgraded publish records with dual-lookup and recovery');
+  },
+  down: (db) => {
+    try {
+      db.exec('DROP TABLE IF EXISTS publish_records_backup_v29');
+    } catch {}
+    console.log('[Migration v32] Rolled back v32');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1490,7 +1566,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
   migration_v25, migration_v26, migration_v27, migration_v28, migration_v29, migration_v30,
-  migration_v31,
+  migration_v31, migration_v32,
 ];
 
 /**

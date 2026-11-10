@@ -5,10 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import {
-  formatTelegramApprovalMessage,
-  handleTelegramCallbackQuery,
-} from '@/common/autonomy/telegramApprovalGateway';
+import { formatTelegramApprovalMessage, handleTelegramCallbackQuery } from '@/common/autonomy/telegramApprovalGateway';
 import type { InboxApprovalItem } from '@/common/autonomy/approvalsInboxStore';
 import * as inboxStore from '@/common/autonomy/approvalsInboxStore';
 
@@ -53,11 +50,9 @@ describe('Telegram Approval Gateway', () => {
   it('handles Telegram approve callback query', async () => {
     const spyApprove = vi.spyOn(inboxStore, 'approveInboxItem').mockResolvedValue();
 
-    const res = await handleTelegramCallbackQuery(
-      'approve:conv-tg-1:call-tg-1',
-      { id: 12345, username: 'alice' },
-      [mockItem]
-    );
+    const res = await handleTelegramCallbackQuery('approve:conv-tg-1:call-tg-1', { id: 12345, username: 'alice' }, [
+      mockItem,
+    ]);
 
     expect(res.success).toBe(true);
     expect(res.responseText).toContain('Approved by @alice');
@@ -69,11 +64,9 @@ describe('Telegram Approval Gateway', () => {
   it('handles Telegram deny callback query', async () => {
     const spyDeny = vi.spyOn(inboxStore, 'denyInboxItem').mockResolvedValue();
 
-    const res = await handleTelegramCallbackQuery(
-      'deny:conv-tg-1:call-tg-1',
-      { id: 67890, username: 'bob' },
-      [mockItem]
-    );
+    const res = await handleTelegramCallbackQuery('deny:conv-tg-1:call-tg-1', { id: 67890, username: 'bob' }, [
+      mockItem,
+    ]);
 
     expect(res.success).toBe(true);
     expect(res.responseText).toContain('Denied by @bob');

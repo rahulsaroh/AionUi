@@ -63,8 +63,11 @@ export async function executePipelineCliCommand(
         }
         const artifactPaths = flags.artifacts ? flags.artifacts.split(',').map((s) => s.trim()) : [];
         const baseDir = flags.dir || flags.baseDir;
+        const sideEffectFree = flags['side-effect-free'] === 'true' || flags.sideEffectFree === 'true';
         const parsedStep = /^\d+$/.test(step) ? Number.parseInt(step, 10) : step;
-        const updated = services.runService.completeStep(runId, parsedStep, artifactPaths, baseDir);
+        const updated = services.runService.completeStep(runId, parsedStep, artifactPaths, baseDir, {
+          sideEffectFree,
+        });
         return { success: true, data: updated };
       }
 
@@ -107,13 +110,12 @@ export async function executePipelineCliCommand(
         const contentHash = flags.hash || flags.contentHash;
         const title = flags.title || 'Untitled Post';
         const description = flags.description;
-        const force = flags.force === 'true';
-        const requireApproval = flags.requireApproval === 'true' || flags['require-approval'] === 'true';
+        const mediaPath = flags.media || flags.mediaPath;
 
-        if (!projectId || !platform || !contentHash) {
+        if (!projectId || !platform) {
           return {
             success: false,
-            error: 'Usage: publish --project <id> --platform <platform> --hash <hash> [--force] [--require-approval]',
+            error: 'Usage: publish --project <id> --platform <platform> [--hash <hash>] [--title <title>] [--media <path>]',
           };
         }
 
@@ -124,9 +126,8 @@ export async function executePipelineCliCommand(
           payload: {
             title,
             description,
+            mediaPath,
           },
-          force,
-          requireApproval,
         });
 
         return { success: result.success, data: result };

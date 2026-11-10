@@ -50,11 +50,7 @@ describe('SiderPrimaryNav Approvals Badge Count', () => {
 
     render(
       <MemoryRouter>
-        <SiderPrimaryNav
-          isMobile={false}
-          collapsed={false}
-          siderTooltipProps={{}}
-        />
+        <SiderPrimaryNav isMobile={false} collapsed={false} siderTooltipProps={{}} />
       </MemoryRouter>
     );
 
@@ -66,11 +62,7 @@ describe('SiderPrimaryNav Approvals Badge Count', () => {
   it('hides badge when pending count is 0', () => {
     render(
       <MemoryRouter>
-        <SiderPrimaryNav
-          isMobile={false}
-          collapsed={false}
-          siderTooltipProps={{}}
-        />
+        <SiderPrimaryNav isMobile={false} collapsed={false} siderTooltipProps={{}} />
       </MemoryRouter>
     );
 

@@ -17,6 +17,8 @@ export const DEFAULT_BROWSER_PROFILE: BrowserProfile = {
   name: 'Main Profile',
   backend: 'embedded',
   partition: 'persist:aionui-browser',
+  mode: 'act',
+  sessionHealth: 'healthy',
   isDefault: true,
   createdAt: 0,
   updatedAt: 0,

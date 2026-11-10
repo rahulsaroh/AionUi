@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
   Typography,
@@ -19,10 +19,24 @@ import {
   Select,
   Popconfirm,
   Message,
+  Table,
+  Checkbox,
+  Image,
 } from '@arco-design/web-react';
-import { BrowserChrome, Delete, Plus, Shield, FolderDownload, ShareSys, Refresh } from '@icon-park/react';
+import {
+  BrowserChrome,
+  Delete,
+  Plus,
+  Shield,
+  FolderDownload,
+  ShareSys,
+  Refresh,
+  FileText,
+  PreviewOpen,
+} from '@icon-park/react';
 import { useBrowserProfiles } from '@/renderer/pages/conversation/hooks/useBrowserProfiles';
 import type { SafetyActionType } from '@/common/browser/safetyTypes';
+import type { BrowserAuditEntry } from '@/common/browser/types';
 
 const { Text, Paragraph } = Typography;
 const FormItem = Form.Item;
@@ -44,6 +58,29 @@ export const BrowserAutomationSettings: React.FC = () => {
   const [dailyCap, setDailyCap] = useState(10);
   const [todayIgCount, setTodayIgCount] = useState(0);
   const [todayFbCount, setTodayFbCount] = useState(0);
+
+  // Audit Logs & Retention state
+  const [auditLogs, setAuditLogs] = useState<BrowserAuditEntry[]>([]);
+  const [retentionDays, setRetentionDays] = useState(30);
+  const [auditProfileFilter, setAuditProfileFilter] = useState<string>('all');
+  const [auditSensitiveOnly, setAuditSensitiveOnly] = useState(false);
+  const [previewScreenshot, setPreviewScreenshot] = useState<string | null>(null);
+
+  const loadAuditLogs = useCallback(async () => {
+    if (!window.electronAPI?.browserGetAuditLogs) return;
+    try {
+      const res = await window.electronAPI.browserGetAuditLogs({
+        profileId: auditProfileFilter === 'all' ? undefined : auditProfileFilter,
+        sensitiveOnly: auditSensitiveOnly ? true : undefined,
+        limit: 100,
+      });
+      if (res?.success && Array.isArray(res.data)) {
+        setAuditLogs(res.data);
+      }
+    } catch {
+      // Ignored
+    }
+  }, [auditProfileFilter, auditSensitiveOnly]);
 
   useEffect(() => {
     // Load safety auto-approve settings from bridge
@@ -76,10 +113,21 @@ export const BrowserAutomationSettings: React.FC = () => {
         const fb = await window.electronAPI.browserGetSocialDailyCount('facebook');
         if (fb.success && typeof fb.data === 'number') setTodayFbCount(fb.data);
       }
+
+      if (window.electronAPI?.browserGetAuditRetentionDays) {
+        const rDays = await window.electronAPI.browserGetAuditRetentionDays();
+        if (rDays?.success && typeof rDays.data === 'number') {
+          setRetentionDays(rDays.data);
+        }
+      }
     };
 
     void loadSettings();
   }, []);
+
+  useEffect(() => {
+    void loadAuditLogs();
+  }, [loadAuditLogs]);
 
   const handleToggleAutoApprove = async (actionType: SafetyActionType, enabled: boolean) => {
     if (window.electronAPI?.browserSetSafetyAutoApprove) {
@@ -110,12 +158,53 @@ export const BrowserAutomationSettings: React.FC = () => {
     }
   };
 
+  const handleUpdateRetentionDays = async () => {
+    if (window.electronAPI?.browserSetAuditRetentionDays) {
+      await window.electronAPI.browserSetAuditRetentionDays(retentionDays);
+      Message.success(`Updated audit log retention to ${retentionDays} days`);
+      void loadAuditLogs();
+    }
+  };
+
+  const handleClearAuditLogs = async () => {
+    if (window.electronAPI?.browserClearAuditLogs) {
+      await window.electronAPI.browserClearAuditLogs();
+      setAuditLogs([]);
+      Message.success('Audit logs cleared');
+    }
+  };
+
   const handleCreateProfileSubmit = async () => {
     try {
       const values = await form.validate();
+      const allowedDomains = values.allowedDomains
+        ? (values.allowedDomains as string)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+
+      const assignedTeamIds = values.assignedTeamIds
+        ? (values.assignedTeamIds as string)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+
+      const assignedProjectIds = values.assignedProjectIds
+        ? (values.assignedProjectIds as string)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+
       await createProfile({
         name: values.name,
         backend: values.backend,
+        mode: values.mode || 'act',
+        allowedDomains,
+        assignedTeamIds,
+        assignedProjectIds,
         externalChrome: {
           port: values.port ? Number(values.port) : 9222,
         },
@@ -165,6 +254,19 @@ export const BrowserAutomationSettings: React.FC = () => {
                       ? 'Embedded Session'
                       : `Chrome CDP :${profile.externalChrome?.port || 9222}`}
                   </Tag>
+                  <Tag color={profile.mode === 'research' ? 'orange' : 'blue'} size='small'>
+                    {profile.mode === 'research' ? 'Research (Read-Only)' : 'Act (Full)'}
+                  </Tag>
+                  {profile.allowedDomains && profile.allowedDomains.length > 0 && (
+                    <Tag color='cyan' size='small'>
+                      Allowlist: {profile.allowedDomains.join(', ')}
+                    </Tag>
+                  )}
+                  {profile.sessionHealth === 'relogin_needed' && (
+                    <Tag color='red' size='small'>
+                      Re-login needed
+                    </Tag>
+                  )}
                   {profile.id === activeProfile.id && (
                     <Tag color='green' size='small'>
                       Active
@@ -357,6 +459,42 @@ export const BrowserAutomationSettings: React.FC = () => {
           </FormItem>
 
           <FormItem
+            label='Operating Mode'
+            field='mode'
+            initialValue='act'
+            extra='Research mode prohibits all form submits, uploads, and state-changing actions'
+          >
+            <Select>
+              <Select.Option value='act'>Act (Full Automation Actions)</Select.Option>
+              <Select.Option value='research'>Research (Read-Only / No Form Submits)</Select.Option>
+            </Select>
+          </FormItem>
+
+          <FormItem
+            label='Allowed Domains'
+            field='allowedDomains'
+            extra='Comma-separated domain patterns, e.g. *.youtube.com, youtube.com. Unlisted domains will be blocked.'
+          >
+            <Input placeholder='*.youtube.com, youtube.com' />
+          </FormItem>
+
+          <FormItem
+            label='Assigned Team IDs'
+            field='assignedTeamIds'
+            extra='Comma-separated team IDs. If specified, only these teams may use this profile.'
+          >
+            <Input placeholder='team-media, team-social' />
+          </FormItem>
+
+          <FormItem
+            label='Assigned Project IDs'
+            field='assignedProjectIds'
+            extra='Comma-separated project IDs. If specified, only these projects may use this profile.'
+          >
+            <Input placeholder='project-alpha, project-beta' />
+          </FormItem>
+
+          <FormItem
             label='Chrome Remote Debugging Port'
             field='port'
             initialValue={9222}
@@ -366,6 +504,176 @@ export const BrowserAutomationSettings: React.FC = () => {
           </FormItem>
         </Form>
       </Modal>
+
+      {/* 5. Browser Automation Audit Trail */}
+      <Card
+        title={
+          <Space>
+            <FileText size='18' />
+            <Text bold>Browser Action Audit Trail & Forensic Logs</Text>
+          </Space>
+        }
+        extra={
+          <Space>
+            <Button size='small' icon={<Refresh />} onClick={loadAuditLogs}>
+              Refresh
+            </Button>
+            <Popconfirm title='Clear all browser audit records?' onOk={handleClearAuditLogs}>
+              <Button size='small' status='danger' icon={<Delete />}>
+                Clear Logs
+              </Button>
+            </Popconfirm>
+          </Space>
+        }
+      >
+        <div className='flex flex-col gap-4'>
+          <div className='flex items-center justify-between p-3 bg-[var(--color-fill-2)] rounded border border-[var(--color-border-2)] flex-wrap gap-2'>
+            <div className='flex items-center gap-3'>
+              <Text className='text-xs'>Filter Profile:</Text>
+              <Select size='small' value={auditProfileFilter} onChange={setAuditProfileFilter} style={{ width: 160 }}>
+                <Select.Option value='all'>All Profiles</Select.Option>
+                {profiles.map((p) => (
+                  <Select.Option key={p.id} value={p.id}>
+                    {p.name}
+                  </Select.Option>
+                ))}
+              </Select>
+
+              <Checkbox checked={auditSensitiveOnly} onChange={setAuditSensitiveOnly}>
+                <Text className='text-xs'>Sensitive Actions Only</Text>
+              </Checkbox>
+            </div>
+
+            <div className='flex items-center gap-2'>
+              <Text className='text-xs'>Retention (Days):</Text>
+              <InputNumber
+                size='small'
+                min={1}
+                max={365}
+                value={retentionDays}
+                onChange={(v) => setRetentionDays(v || 30)}
+                style={{ width: 80 }}
+              />
+              <Button size='small' type='primary' onClick={handleUpdateRetentionDays}>
+                Save Retention
+              </Button>
+            </div>
+          </div>
+
+          <Table
+            data={auditLogs}
+            rowKey='id'
+            pagination={{ pageSize: 10, size: 'small' }}
+            columns={[
+              {
+                title: 'Time',
+                dataIndex: 'timestamp',
+                width: 140,
+                render: (val: number) => <Text className='text-xs'>{new Date(val).toLocaleTimeString()}</Text>,
+              },
+              {
+                title: 'Profile',
+                dataIndex: 'profileId',
+                width: 120,
+                render: (p: string) => <Tag size='small'>{p}</Tag>,
+              },
+              {
+                title: 'Action',
+                dataIndex: 'action',
+                width: 110,
+                render: (a: string) => (
+                  <Text code className='text-xs'>
+                    {a}
+                  </Text>
+                ),
+              },
+              {
+                title: 'URL / Target',
+                dataIndex: 'url',
+                render: (u: string, row: BrowserAuditEntry) => (
+                  <div className='flex flex-col text-xs'>
+                    <Text className='font-mono break-all'>{u}</Text>
+                    {row.targetSummary && (
+                      <Text type='secondary' className='text-[10px]'>
+                        {row.targetSummary}
+                      </Text>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                title: 'Sensitive',
+                dataIndex: 'sensitive',
+                width: 90,
+                render: (s: boolean) =>
+                  s ? (
+                    <Tag color='orange' size='small'>
+                      Sensitive
+                    </Tag>
+                  ) : (
+                    <Tag color='gray' size='small'>
+                      Normal
+                    </Tag>
+                  ),
+              },
+              {
+                title: 'Status',
+                dataIndex: 'status',
+                width: 90,
+                render: (st: string) => {
+                  const color = st === 'success' ? 'green' : st === 'blocked' ? 'orange' : 'red';
+                  return (
+                    <Tag color={color} size='small'>
+                      {st}
+                    </Tag>
+                  );
+                },
+              },
+              {
+                title: 'Screenshots',
+                width: 130,
+                render: (_col: unknown, row: BrowserAuditEntry) => (
+                  <Space size='mini'>
+                    {row.screenshotBefore && (
+                      <Button
+                        size='mini'
+                        icon={<PreviewOpen />}
+                        onClick={() => setPreviewScreenshot(row.screenshotBefore!)}
+                      >
+                        Before
+                      </Button>
+                    )}
+                    {row.screenshotAfter && (
+                      <Button
+                        size='mini'
+                        icon={<PreviewOpen />}
+                        onClick={() => setPreviewScreenshot(row.screenshotAfter!)}
+                      >
+                        After
+                      </Button>
+                    )}
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </Card>
+
+      {/* Screenshot Preview Modal */}
+      {previewScreenshot && (
+        <Modal
+          visible={Boolean(previewScreenshot)}
+          title='Action Forensic Screenshot'
+          footer={null}
+          onCancel={() => setPreviewScreenshot(null)}
+          style={{ width: '80vw', maxWidth: 900 }}
+        >
+          <div className='flex justify-center p-2'>
+            <Image src={previewScreenshot} alt='Forensic Screenshot' style={{ maxWidth: '100%', maxHeight: '70vh' }} />
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

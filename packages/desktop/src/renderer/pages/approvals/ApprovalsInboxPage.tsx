@@ -70,6 +70,18 @@ export const ApprovalsInboxPage: React.FC = () => {
     if (selected.length === 0) return;
     setProcessing(true);
     try {
+      for (const item of selected) {
+        if (item.publishPreview && window.electronAPI?.publishApprove) {
+          const idempotencyKey = item.callId || item.id;
+          await window.electronAPI.publishApprove(idempotencyKey, {
+            title: item.publishPreview.title,
+            description: item.publishPreview.description,
+            platform: item.publishPreview.platform,
+            thumbnailUrl: item.publishPreview.thumbnailUrl,
+            videoUrl: item.publishPreview.videoUrl,
+          }).catch((err) => console.warn('[ApprovalsInbox] Batch publish approve error:', err));
+        }
+      }
       await batchApprove(selected);
       setSelectedIds([]);
       Message.success(t('approvals.batchApproveSuccess', { defaultValue: 'Approved selected items' }));
@@ -83,6 +95,14 @@ export const ApprovalsInboxPage: React.FC = () => {
     if (selected.length === 0) return;
     setProcessing(true);
     try {
+      for (const item of selected) {
+        if (item.publishPreview && window.electronAPI?.publishReject) {
+          const idempotencyKey = item.callId || item.id;
+          await window.electronAPI.publishReject(idempotencyKey, 'Batch rejected from Approvals Inbox').catch((err) =>
+            console.warn('[ApprovalsInbox] Batch publish reject error:', err)
+          );
+        }
+      }
       await batchDeny(selected);
       setSelectedIds([]);
       Message.info(t('approvals.batchDenySuccess', { defaultValue: 'Denied selected items' }));
@@ -95,6 +115,16 @@ export const ApprovalsInboxPage: React.FC = () => {
     async (item: InboxApprovalItem) => {
       setProcessing(true);
       try {
+        if (item.publishPreview && window.electronAPI?.publishApprove) {
+          const idempotencyKey = item.callId || item.id;
+          await window.electronAPI.publishApprove(idempotencyKey, {
+            title: item.publishPreview.title,
+            description: item.publishPreview.description,
+            platform: item.publishPreview.platform,
+            thumbnailUrl: item.publishPreview.thumbnailUrl,
+            videoUrl: item.publishPreview.videoUrl,
+          });
+        }
         await approve(item);
         setSelectedIds((prev) => prev.filter((id) => id !== item.id));
         Message.success(t('approvals.approved', { defaultValue: 'Action approved' }));
@@ -109,6 +139,10 @@ export const ApprovalsInboxPage: React.FC = () => {
     async (item: InboxApprovalItem) => {
       setProcessing(true);
       try {
+        if (item.publishPreview && window.electronAPI?.publishReject) {
+          const idempotencyKey = item.callId || item.id;
+          await window.electronAPI.publishReject(idempotencyKey, 'Rejected from Approvals Inbox');
+        }
         await deny(item);
         setSelectedIds((prev) => prev.filter((id) => id !== item.id));
         Message.info(t('approvals.denied', { defaultValue: 'Action denied' }));

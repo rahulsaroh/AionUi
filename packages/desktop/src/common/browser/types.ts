@@ -5,6 +5,8 @@
  */
 
 export type BrowserBackendType = 'embedded' | 'external-chrome';
+export type BrowserProfileMode = 'research' | 'act';
+export type BrowserSessionHealthStatus = 'healthy' | 'relogin_needed';
 
 export type ExternalChromeConfig = {
   chromePath?: string;
@@ -17,6 +19,14 @@ export type BrowserProfile = {
   name: string;
   backend: BrowserBackendType;
   partition: string;
+  mode?: BrowserProfileMode;
+  allowedDomains?: string[];
+  autoApproveActions?: string[];
+  assignedTeamIds?: string[];
+  assignedProjectIds?: string[];
+  sensitiveUrlPatterns?: string[];
+  sessionHealth?: BrowserSessionHealthStatus;
+  encryptedVault?: string;
   externalChrome?: ExternalChromeConfig;
   isDefault?: boolean;
   createdAt: number;
@@ -26,6 +36,12 @@ export type BrowserProfile = {
 export type CreateProfileInput = {
   name: string;
   backend?: BrowserBackendType;
+  mode?: BrowserProfileMode;
+  allowedDomains?: string[];
+  autoApproveActions?: string[];
+  assignedTeamIds?: string[];
+  assignedProjectIds?: string[];
+  sensitiveUrlPatterns?: string[];
   externalChrome?: Partial<ExternalChromeConfig>;
 };
 
@@ -33,7 +49,58 @@ export type UpdateProfileInput = {
   id: string;
   name?: string;
   backend?: BrowserBackendType;
+  mode?: BrowserProfileMode;
+  allowedDomains?: string[];
+  autoApproveActions?: string[];
+  assignedTeamIds?: string[];
+  assignedProjectIds?: string[];
+  sensitiveUrlPatterns?: string[];
+  sessionHealth?: BrowserSessionHealthStatus;
   externalChrome?: Partial<ExternalChromeConfig>;
+};
+
+export type BrowserProfileAssignment = {
+  id: string;
+  profileId: string;
+  scopeType: 'project' | 'team';
+  scopeId: string;
+  createdAt: number;
+};
+
+export type BrowserAuditEntry = {
+  id: string;
+  runId?: string;
+  agentId?: string;
+  profileId: string;
+  url: string;
+  action: string;
+  targetSummary?: string;
+  sensitive: boolean;
+  approved: boolean;
+  screenshotBefore?: string;
+  screenshotAfter?: string;
+  timestamp: number;
+  status: 'success' | 'failed' | 'blocked' | 'pending_approval' | 'paused';
+  error?: string;
+};
+
+export type BrowserAuditFilter = {
+  profileId?: string;
+  action?: string;
+  sensitiveOnly?: boolean;
+  agentId?: string;
+  runId?: string;
+  fromTimestamp?: number;
+  toTimestamp?: number;
+  limit?: number;
+};
+
+export type BrowserSessionHealthEvent = {
+  profileId: string;
+  url: string;
+  status: BrowserSessionHealthStatus;
+  reason?: string;
+  timestamp: number;
 };
 
 export type ClearProfileDataResult = {

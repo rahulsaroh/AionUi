@@ -5,6 +5,12 @@
  */
 
 export * from './BrowserProfileService';
+export * from './BrowserAssignmentService';
+export * from './BrowserSafetyPolicyService';
+export * from './BrowserSensitiveActionService';
+export * from './BrowserContentSanitizer';
+export * from './BrowserAuditService';
+export * from './BrowserSessionHealthService';
 export * from './ExternalChromeLauncher';
 export * from './BrowserAutomationEngine';
 export * from './BrowserDownloadManager';
