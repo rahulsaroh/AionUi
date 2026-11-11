@@ -539,7 +539,7 @@ export function useOrgStore() {
   }, []);
 
   const addOrgConversation = useCallback((conv: OrgConversation) => {
-    const nextConversations = [conv, ...globalState.conversations];
+    const nextConversations = [conv, ...globalState.conversations.filter((c) => c.id !== conv.id)];
     globalState = { ...globalState, conversations: nextConversations };
     saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
     notify();

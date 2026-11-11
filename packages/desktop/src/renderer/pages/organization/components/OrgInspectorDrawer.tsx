@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { Drawer, Button, Tag, Tabs, Input, Message } from '@arco-design/web-react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { Drawer, Button, Tag, Tabs, Input, Message, Select, Spin } from '@arco-design/web-react';
 import {
   Peoples,
   Workbench,
@@ -18,12 +18,14 @@ import {
   Edit,
   LinkOne,
   User,
+  Plus,
+  Remind,
 } from '@icon-park/react';
 import { useOrgStore } from '../store/useOrgStore';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { validateWithinMaster } from '../utils/orgPathUtils';
-import type { OrgProject, OrgAgentMember } from '@/types/organization';
+import type { OrgProject, OrgAgentMember, OrgConversation, OrgConversationMessage } from '@/types/organization';
 
 export type OrgNodeType = 'ceo' | 'department' | 'team' | 'project' | 'member';
 
@@ -39,6 +41,27 @@ type OrgInspectorDrawerProps = {
   initialDirective?: string;
   getPopupContainer?: () => HTMLElement;
 };
+
+function cleanErrorText(raw: string): string {
+  try {
+    const jsonStart = raw.indexOf('{');
+    const jsonEnd = raw.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd > jsonStart) {
+      const jsonStr = raw.substring(jsonStart, jsonEnd + 1);
+      const parsed = JSON.parse(jsonStr);
+      const parts: string[] = [];
+      if (parsed.code) parts.push(`[${parsed.code}]`);
+      if (parsed.message) parts.push(parsed.message);
+      if (parsed.detail) {
+        parts.push(String(parsed.detail).split('\n')[0].slice(0, 180));
+      }
+      if (parts.length > 0) return parts.join(' - ');
+    }
+  } catch {
+    // ignore
+  }
+  return raw.length > 240 ? `${raw.slice(0, 240)}...` : raw;
+}
 
 export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   selectedNodeId,
@@ -74,17 +97,49 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   const [expandedConvId, setExpandedConvId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (initialDirective && visible) {
       setDirectiveInput(initialDirective);
     }
   }, [initialDirective, visible]);
 
+  useEffect(() => {
+    setActiveThreadId(null);
+  }, [selectedNodeId]);
+
   const teamProjectForSelectedTeam = useMemo(() => {
     if (selectedNodeType !== 'team' || !selectedNodeId) return undefined;
     return projects.find((p) => p.teamIds.includes(selectedNodeId))?.id;
   }, [projects, selectedNodeType, selectedNodeId]);
+
+  const nodeConversations = useMemo(() => {
+    if (!selectedNodeId) return [];
+    return conversations.filter(
+      (c) =>
+        c.sourceNodeId === selectedNodeId ||
+        c.targetNodeId === selectedNodeId ||
+        (selectedNodeType === 'ceo' && c.type === 'ceo_directive') ||
+        (selectedNodeType === 'project' && c.projectId === selectedNodeId) ||
+        (selectedNodeType === 'member' && (c.targetAgentId === selectedNodeId || c.agentId === selectedNodeId))
+    );
+  }, [conversations, selectedNodeId, selectedNodeType]);
+
+  const activeConversation = useMemo(() => {
+    if (activeThreadId) {
+      const found = nodeConversations.find((c) => c.id === activeThreadId);
+      if (found) return found;
+    }
+    return nodeConversations[0] || null;
+  }, [activeThreadId, nodeConversations]);
+
+  useEffect(() => {
+    if (activeTab === 'conversations') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeConversation?.messages?.length, isExecuting, activeTab]);
 
   const handleStartDirectChat = useCallback(
     (agent: { id: string; name: string; title?: string }) => {
@@ -107,8 +162,6 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     },
     [addOrgConversation, onClose, selectedNodeId, setOrgViewMode, setSelectedConversationId]
   );
-
-  if (!visible || !selectedNodeId) return null;
 
   let nodeTitle = 'Executive Node';
   let nodeRole = 'HQ';
@@ -280,18 +333,9 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     }
   }
 
-  const currentStatus = nodeStatuses[selectedNodeId] || 'idle';
+  const currentStatus = selectedNodeId ? nodeStatuses[selectedNodeId] || 'idle' : 'idle';
   const effectiveStatus = computeLifecycleStatus(lastActiveAt, currentStatus);
   const theme = ORG_THEME_PALETTE[effectiveStatus];
-
-  const nodeConversations = conversations.filter(
-    (c) =>
-      c.sourceNodeId === selectedNodeId ||
-      c.targetNodeId === selectedNodeId ||
-      (selectedNodeType === 'ceo' && c.type === 'ceo_directive') ||
-      (selectedNodeType === 'project' && c.projectId === selectedNodeId) ||
-      (selectedNodeType === 'member' && (c.targetAgentId === selectedNodeId || c.agentId === selectedNodeId))
-  );
 
   const handleChangeFolder = async () => {
     if (!selectedNodeId || !selectedNodeType) return;
@@ -382,6 +426,46 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
             : undefined;
       const targetProjectId = selectedNodeType === 'project' ? selectedNodeId : teamProjectForSelectedTeam;
 
+      const existingMessages = activeConversation?.messages ?? [];
+      const targetConvId = activeConversation?.id ?? `conv-${selectedNodeType}-${selectedNodeId}-${Date.now()}`;
+
+      const userMessage: OrgConversationMessage = {
+        id: `msg-${Date.now()}-u`,
+        sender: 'You',
+        role: 'user',
+        content: prompt,
+        timestamp: Date.now(),
+      };
+
+      const baseConv: OrgConversation = activeConversation ?? {
+        id: targetConvId,
+        title:
+          activeConversation?.title ?? (selectedNodeType === 'ceo' ? 'Root CEO Directives' : `${nodeTitle} Thread`),
+        projectId: targetProjectId,
+        teamId: targetTeamId,
+        type:
+          selectedNodeType === 'ceo'
+            ? 'ceo_directive'
+            : selectedNodeType === 'department'
+              ? 'dept_handoff'
+              : selectedNodeType === 'member'
+                ? 'agent_direct'
+                : 'team_execution',
+        sourceNodeId: selectedNodeId,
+        targetNodeId: selectedNodeId || 'root-ceo',
+        targetAgentName: leaderName,
+        timestamp: Date.now(),
+        messages: [],
+      };
+
+      const interimConv: OrgConversation = {
+        ...baseConv,
+        timestamp: Date.now(),
+        messages: [...existingMessages, userMessage],
+      };
+      addOrgConversation(interimConv);
+      setActiveThreadId(targetConvId);
+
       const result = await engine.executeDirective(
         prompt,
         targetDeptId,
@@ -411,45 +495,58 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       }
       if (result.success) {
         Message.success('Executive directive executed successfully!');
-        const convId = `conv-exec-${Date.now()}`;
-        addOrgConversation({
-          id: convId,
-          title: `Directive: ${prompt.slice(0, 45)}...`,
-          projectId: targetProjectId,
-          teamId: targetTeamId,
-          type:
-            selectedNodeType === 'ceo'
-              ? 'ceo_directive'
-              : selectedNodeType === 'department'
-                ? 'dept_handoff'
-                : selectedNodeType === 'member'
-                  ? 'agent_direct'
-                  : 'team_execution',
-          sourceNodeId: selectedNodeId,
-          targetNodeId: result.involvedDepartmentIds[0] || selectedNodeId || 'root-ceo',
-          targetAgentName: leaderName,
-          timestamp: Date.now(),
-          summary: result.finalSynthesis,
-          messages: [
-            {
-              id: `msg-${Date.now()}-1`,
-              sender: 'Executive User',
-              role: 'user',
-              content: prompt,
-              timestamp: Date.now(),
-            },
-            {
-              id: `msg-${Date.now()}-2`,
-              sender: leaderName,
-              role: selectedNodeType === 'ceo' ? 'ceo' : 'lead',
-              content: result.finalSynthesis,
-              timestamp: Date.now(),
-            },
-          ],
-        });
       }
+
+      const agentMessage: OrgConversationMessage = {
+        id: `msg-${Date.now()}-a`,
+        sender: leaderName || 'Assistant',
+        role: selectedNodeType === 'ceo' ? 'ceo' : 'lead',
+        content:
+          result.finalSynthesis ||
+          (result.success ? 'Directive completed successfully.' : 'Directive finished without response output.'),
+        timestamp: Date.now(),
+      };
+
+      const finalConv: OrgConversation = {
+        ...interimConv,
+        timestamp: Date.now(),
+        summary: result.finalSynthesis || prompt,
+        messages: [...existingMessages, userMessage, agentMessage],
+      };
+      addOrgConversation(finalConv);
     } catch (err) {
-      Message.error(`Directive execution halted: ${err instanceof Error ? err.message : String(err)}`);
+      const errorText = err instanceof Error ? err.message : String(err);
+      Message.error(`Directive execution halted: ${errorText}`);
+      const targetConvId = activeConversation?.id ?? `conv-${selectedNodeType}-${selectedNodeId}-${Date.now()}`;
+      const existingMessages = activeConversation?.messages ?? [];
+      const userMessage: OrgConversationMessage = {
+        id: `msg-${Date.now()}-u`,
+        sender: 'You',
+        role: 'user',
+        content: prompt,
+        timestamp: Date.now(),
+      };
+      const errMessage: OrgConversationMessage = {
+        id: `msg-${Date.now()}-err`,
+        sender: leaderName || 'System',
+        role: 'system_error',
+        content: `Inference Error: ${errorText}`,
+        timestamp: Date.now(),
+      };
+      addOrgConversation({
+        ...(activeConversation ?? {
+          id: targetConvId,
+          title: prompt.slice(0, 40),
+          projectId: selectedNodeType === 'project' ? selectedNodeId : teamProjectForSelectedTeam,
+          type: selectedNodeType === 'ceo' ? 'ceo_directive' : 'team_execution',
+          sourceNodeId: selectedNodeId,
+          targetNodeId: selectedNodeId || 'root-ceo',
+          targetAgentName: leaderName,
+        }),
+        timestamp: Date.now(),
+        messages: [...existingMessages, userMessage, errMessage],
+      });
+      setActiveThreadId(targetConvId);
     } finally {
       setIsExecuting(false);
       updateNodeStatus(selectedNodeId, 'recently_finished');
@@ -541,7 +638,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           </div>
         </div>
       }
-      visible={visible}
+      visible={visible && Boolean(selectedNodeId)}
       onCancel={onClose}
       width={480}
       zIndex={100}
@@ -580,7 +677,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
         </div>
       }
     >
-      <div className='flex flex-col gap-14px h-full overflow-y-auto pr-2px'>
+      <div className='flex flex-col gap-12px min-w-0 pr-2px pb-16px'>
         <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center justify-between'>
           <div className='flex items-center gap-10px min-w-0'>
             <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
@@ -611,7 +708,11 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           size='small'
           icon={<MessageOne size={13} theme='outline' />}
           onClick={() => {
-            if (targetAgentMember) {
+            if (activeConversation) {
+              setSelectedConversationId(activeConversation.id);
+              setOrgViewMode('chat');
+              onClose();
+            } else if (targetAgentMember) {
               handleStartDirectChat(targetAgentMember);
             } else {
               handleStartDirectChat({ id: selectedNodeId, name: leaderName, title: leaderTitle });
@@ -619,7 +720,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           }}
           className='w-full !rounded-8px !text-12px !py-6px !font-medium'
         >
-          Chat Directly with {leaderName}
+          Open in Full Chat with {leaderName}
         </Button>
 
         {linkedProjects.length > 0 && (
@@ -660,53 +761,125 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
             title={
               <span className='flex items-center gap-5px text-12px'>
                 <MessageOne size={13} theme='outline' />
-                <span>Org Threads ({nodeConversations.length})</span>
+                <span>Chat ({activeConversation?.messages?.length || 0})</span>
               </span>
             }
           >
-            <div className='flex flex-col gap-8px mt-8px'>
-              {nodeConversations.length === 0 ? (
-                <div className='py-24px text-center text-12px text-t-tertiary italic'>
-                  No historical organization threads for this node yet.
+            <div className='flex flex-col gap-10px mt-8px min-w-0'>
+              {/* Thread switcher bar */}
+              <div className='flex items-center justify-between gap-6px p-6px px-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)]'>
+                <div className='flex items-center gap-6px flex-1 min-w-0'>
+                  <span className='text-10px uppercase tracking-wider text-t-tertiary shrink-0 font-semibold'>
+                    Thread:
+                  </span>
+                  {nodeConversations.length > 1 ? (
+                    <Select
+                      size='mini'
+                      value={activeConversation?.id}
+                      onChange={(val) => setActiveThreadId(val)}
+                      className='flex-1 min-w-0 !h-24px'
+                      bordered={false}
+                    >
+                      {nodeConversations.map((c) => (
+                        <Select.Option key={c.id} value={c.id}>
+                          <span className='truncate'>
+                            {c.title || 'Untitled'} ({c.messages?.length || 0} msgs)
+                          </span>
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <span className='text-11px font-medium text-t-primary truncate min-w-0'>
+                      {activeConversation?.title || 'Active Thread'} ({activeConversation?.messages?.length || 0} msgs)
+                    </span>
+                  )}
+                </div>
+                <Button
+                  size='mini'
+                  type='text'
+                  icon={<Plus size={11} />}
+                  onClick={() => {
+                    const newId = `conv-${selectedNodeType}-${selectedNodeId}-${Date.now()}`;
+                    setActiveThreadId(newId);
+                    Message.info('Started a new thread. Type your message below.');
+                  }}
+                  title='Start a new conversation thread'
+                  className='!text-11px !px-6px !h-22px shrink-0 text-primary'
+                >
+                  New Thread
+                </Button>
+              </div>
+
+              {/* Message stream */}
+              {!activeConversation?.messages || activeConversation.messages.length === 0 ? (
+                <div className='py-28px text-center flex flex-col items-center gap-6px text-t-tertiary'>
+                  <MessageOne size={24} className='opacity-30' />
+                  <span className='text-12px font-medium text-t-secondary'>No messages in this thread</span>
+                  <span className='text-11px max-w-260px'>
+                    Send directives or questions in the chatbar below to converse with {leaderName}.
+                  </span>
                 </div>
               ) : (
-                nodeConversations.map((conv) => {
-                  const isExpanded = expandedConvId === conv.id;
+                <div className='flex flex-col gap-10px min-w-0'>
+                  {activeConversation.messages.map((m) => {
+                    const isUser = m.role === 'user' || m.sender === 'You' || m.sender === 'Executive User';
+                    const isError =
+                      m.role === 'system_error' ||
+                      m.content.includes('Inference Error') ||
+                      m.content.includes('USER_LLM_PROVIDER_GATEWAY_ERROR');
 
-                  return (
-                    <div
-                      key={conv.id}
-                      onClick={() => setExpandedConvId(isExpanded ? null : conv.id)}
-                      className='p-10px rounded-8px bg-fill-1 hover:bg-fill-2 border border-[var(--color-border-2)] cursor-pointer transition-colors flex flex-col gap-6px'
-                    >
-                      <div className='flex items-center justify-between'>
-                        <span className='text-12px font-semibold text-t-primary truncate'>{conv.title}</span>
-                        <span className='text-10px font-mono text-t-tertiary shrink-0'>
-                          {new Date(conv.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      {conv.summary ? (
-                        <span className='text-11px text-t-secondary line-clamp-2'>{conv.summary}</span>
-                      ) : null}
-                      {isExpanded && conv.messages && conv.messages.length > 0 && (
-                        <div className='flex flex-col gap-6px pt-6px mt-4px border-t border-[var(--color-border-2)]'>
-                          {conv.messages.map((m) => (
-                            <div key={m.id} className='flex flex-col gap-2px text-11px bg-fill-2 p-6px rounded-6px'>
-                              <div className='flex items-center justify-between font-semibold text-t-primary'>
-                                <span>{m.sender}</span>
-                                <span className='text-9px text-t-tertiary font-mono'>
-                                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                              <span className='text-t-secondary whitespace-pre-wrap leading-relaxed'>{m.content}</span>
-                            </div>
-                          ))}
+                    return (
+                      <div
+                        key={m.id}
+                        className={`flex flex-col gap-3px min-w-0 ${isUser ? 'items-end' : 'items-start'}`}
+                      >
+                        <div className='flex items-center gap-6px text-10px text-t-tertiary px-4px'>
+                          {!isUser && <Robot size={11} className='text-primary shrink-0' />}
+                          <span className='font-medium'>{isUser ? 'You' : m.sender}</span>
+                          <span>•</span>
+                          <span className='font-mono'>
+                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+
+                        <div
+                          className={`max-w-[94%] rounded-12px text-12px px-12px py-8px break-words leading-relaxed ${
+                            isUser
+                              ? 'bg-primary/15 border border-primary/30 text-t-primary rounded-br-2px'
+                              : isError
+                                ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-bl-2px font-mono text-11px'
+                                : 'bg-fill-2 border border-[var(--color-border-2)] text-t-primary rounded-bl-2px'
+                          }`}
+                        >
+                          {isError ? (
+                            <div className='flex flex-col gap-4px'>
+                              <div className='flex items-center gap-5px text-rose-400 font-semibold'>
+                                <Remind size={13} className='shrink-0' />
+                                <span>Model Provider Error</span>
+                              </div>
+                              <div className='whitespace-pre-wrap text-10px leading-normal'>
+                                {cleanErrorText(m.content)}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className='whitespace-pre-wrap'>{m.content}</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
+
+              {isExecuting && (
+                <div className='flex items-center gap-8px p-10px rounded-10px bg-fill-2 border border-primary/30 text-primary text-12px animate-pulse'>
+                  <Spin size={12} />
+                  <span className='text-11px font-mono truncate'>
+                    {executionLogs[0] || `Executing directive with ${leaderName}...`}
+                  </span>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
           </Tabs.TabPane>
 
