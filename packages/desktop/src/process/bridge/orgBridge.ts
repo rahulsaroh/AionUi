@@ -7,6 +7,7 @@
 import { ipcMain } from 'electron';
 import { assertWithinScope, type ScopeCheckResult } from '../services/org/pathGuard';
 import { orgStorageService } from '../services/org/orgStorageService';
+import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 
 export function registerOrgBridge(): void {
   ipcMain.handle(
@@ -20,6 +21,18 @@ export function registerOrgBridge(): void {
           reason: err instanceof Error ? err.message : String(err),
           resolved: params.targetPath,
         };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'org:discoverProjects',
+    async (_event, params: { folderPath: string; allowedRoot?: string }): Promise<DiscoveredProject[]> => {
+      try {
+        return await discoverProjectsInFolder(params.folderPath, params.allowedRoot);
+      } catch (err) {
+        console.error('[OrgBridge] discoverProjects failed:', err);
+        return [];
       }
     }
   );

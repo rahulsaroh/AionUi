@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   extractDepartmentCreationIntent,
+  extractDepartmentDeletionIntent,
+  extractProjectDiscoveryOrBatchIntent,
   extractTeamCreationIntent,
   extractProjectCreationIntent,
   parseOrgActions,
@@ -90,5 +92,71 @@ All assets have been configured and leadership assigned.`;
     expect(result.createdDepartments).toHaveLength(1);
     expect(result.createdDepartments![0].name).toBe('App Developing');
     expect(result.finalSynthesis).toContain('App Developing');
+  });
+
+  it('rejects creating department when prompt is asking to add/create projects in a department', () => {
+    const prompt1 = 'search for my different projects in this folder and create multiple projects in this department';
+    expect(extractDepartmentCreationIntent(prompt1)).toBeNull();
+
+    const prompt2 = 'create multiple projects in this department';
+    expect(extractDepartmentCreationIntent(prompt2)).toBeNull();
+
+    const prompt3 = 'create a project in this department';
+    expect(extractDepartmentCreationIntent(prompt3)).toBeNull();
+
+    const prompt4 = 'create 3 teams in this department';
+    expect(extractDepartmentCreationIntent(prompt4)).toBeNull();
+  });
+
+  it('correctly extracts project discovery intent for searching projects in folder', () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    appDept.workspacePath = 'G:\\My Drive\\Life\\Money\\Apps';
+    hierarchy.departments.push(appDept);
+
+    const prompt = 'search for my different projects in this folder and create multiple projects in this department';
+    const result = extractProjectDiscoveryOrBatchIntent(prompt, hierarchy.departments);
+
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe('discover');
+    expect(result?.targetDepartment.id).toBe(appDept.id);
+    expect(result?.folderPath).toBe('G:\\My Drive\\Life\\Money\\Apps');
+  });
+
+  it('executes directive to discover and create projects instead of creating a bogus department', async () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    appDept.workspacePath = 'G:\\My Drive\\Life\\Money\\Apps';
+    hierarchy.departments.push(appDept);
+
+    const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, { simulationMode: true });
+    const prompt = 'search for my different projects in this folder and create multiple projects in this department';
+    const result = await engine.executeDirective(prompt);
+
+    expect(result.success).toBe(true);
+    expect(result.createdDepartments).toBeUndefined();
+    expect(result.createdProjects).toBeDefined();
+    expect(result.createdProjects!.length).toBeGreaterThan(0);
+    expect(result.createdProjects![0].departmentId).toBe(appDept.id);
+    expect(appDept.linkedProjects.length).toBeGreaterThan(0);
+    expect(result.finalSynthesis).not.toContain('multiple projects in this');
+    expect(result.finalSynthesis).toContain('app development');
+  });
+
+  it('extracts department deletion intent and removes department', async () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const bogusDept = createDepartmentShell('multiple projects in this');
+    hierarchy.departments.push(bogusDept);
+
+    const prompt = 'delete department multiple projects in this';
+    const intent = extractDepartmentDeletionIntent(prompt, hierarchy.departments);
+    expect(intent).not.toBeNull();
+    expect(intent?.department.id).toBe(bogusDept.id);
+
+    const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, { simulationMode: true });
+    const result = await engine.executeDirective(prompt);
+    expect(result.success).toBe(true);
+    expect(result.deletedDepartmentIds).toContain(bogusDept.id);
+    expect(hierarchy.departments.some((d) => d.id === bogusDept.id)).toBe(false);
   });
 });

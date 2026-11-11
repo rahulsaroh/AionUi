@@ -40,6 +40,7 @@ export const OrgChatView: React.FC = () => {
     setOrgViewMode,
     addOrgConversation,
     addDepartment,
+    removeDepartment,
     addSubTeam,
     addOrgProject,
     addTeamMember,
@@ -213,6 +214,13 @@ export const OrgChatView: React.FC = () => {
         if (result.createdDepartments && result.createdDepartments.length > 0) {
           for (const dept of result.createdDepartments) {
             addDepartment(dept);
+          }
+        }
+
+        // Decommission any deleted departments requested
+        if (result.deletedDepartmentIds && result.deletedDepartmentIds.length > 0) {
+          for (const deptId of result.deletedDepartmentIds) {
+            removeDepartment(deptId);
           }
         }
 

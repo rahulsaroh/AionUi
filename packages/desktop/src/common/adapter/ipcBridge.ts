@@ -2757,6 +2757,12 @@ export const org = {
       resolved: targetPath,
     };
   },
+  discoverProjects: async (folderPath: string, allowedRoot?: string) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgDiscoverProjects) {
+      return window.electronAPI.orgDiscoverProjects({ folderPath, allowedRoot });
+    }
+    return [];
+  },
   saveData: async (key: string, value: string): Promise<boolean> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgSaveData) {
       return window.electronAPI.orgSaveData({ key, value });

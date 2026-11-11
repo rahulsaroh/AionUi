@@ -40,6 +40,7 @@ export interface DelegationExecutionResult {
   createdTeams?: Array<{ departmentId: string; team: OrgTeamNode }>;
   createdProjects?: Array<import('@/types/organization').OrgProject>;
   createdMembers?: Array<{ teamId: string; member: OrgAgentMember }>;
+  deletedDepartmentIds?: string[];
 }
 
 export interface OrgActionPayload {
@@ -69,6 +70,82 @@ function extractPathFromPrompt(prompt: string): string | undefined {
   return match?.[1]?.trim()?.replace(/^["']|["']$/g, '');
 }
 
+export function isValidDepartmentName(name: string): boolean {
+  if (!name) return false;
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 50) return false;
+  if (
+    /\b(?:in|into|inside|under|within|for|to|at|from)\s+(?:this|that|the|our|my|a|an|each|every|current)?\b/i.test(
+      trimmed
+    )
+  ) {
+    return false;
+  }
+  if (/\b(?:in|into|inside|under|within|for|to|at|from|with|on|of|and|or)$/i.test(trimmed)) {
+    return false;
+  }
+  if (
+    /\b(?:projects?|sub-?teams?|teams?|members?|specialists?|bots?|agents?|tasks?|files?|folders?)\b/i.test(trimmed)
+  ) {
+    return false;
+  }
+  if (/\b(?:multiple|several|different|various|these|those|this|that|many|few|each|every|all)\b/i.test(trimmed)) {
+    return false;
+  }
+  if (/\b(?:search|find|scan|look|import|discover|detect|create|add|assign|setup|build)\b/i.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
+
+export function isValidTeamName(name: string): boolean {
+  if (!name) return false;
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 50) return false;
+  if (
+    /\b(?:in|into|inside|under|within|for|to|at|from)\s+(?:this|that|the|our|my|a|an|each|every|current)?\b/i.test(
+      trimmed
+    )
+  ) {
+    return false;
+  }
+  if (/\b(?:in|into|inside|under|within|for|to|at|from|with|on|of|and|or)$/i.test(trimmed)) {
+    return false;
+  }
+  if (
+    /\b(?:projects?|depar?t?ments?|dept|members?|specialists?|bots?|agents?|tasks?|files?|folders?)\b/i.test(trimmed)
+  ) {
+    return false;
+  }
+  if (/\b(?:multiple|several|different|various|these|those|this|that|many|few|each|every|all)\b/i.test(trimmed)) {
+    return false;
+  }
+  if (/\b(?:search|find|scan|look|import|discover|detect|create|add|assign|setup|build)\b/i.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
+
+export function isValidProjectName(name: string): boolean {
+  if (!name) return false;
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 60) return false;
+  if (
+    /\b(?:in|into|inside|under|within|for|to|at|from)\s+(?:this|that|the|our|my|a|an|each|every|current)?\b/i.test(
+      trimmed
+    )
+  ) {
+    return false;
+  }
+  if (/\b(?:in|into|inside|under|within|for|to|at|from|with|on|of|and|or)$/i.test(trimmed)) {
+    return false;
+  }
+  if (/\b(?:multiple|several|different|various|all|each|every)\b/i.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
+
 export function extractDepartmentCreationIntent(userPrompt: string): { name: string; workspacePath?: string } | null {
   const path = extractPathFromPrompt(userPrompt);
 
@@ -79,7 +156,7 @@ export function extractDepartmentCreationIntent(userPrompt: string): { name: str
     let rawName = cleanTrailingClauses(match1[1].trim());
     rawName = rawName.replace(/^["']|["']$/g, '').trim();
     rawName = rawName.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || rawName;
-    if (rawName) {
+    if (isValidDepartmentName(rawName)) {
       return { name: rawName, workspacePath: path };
     }
   }
@@ -91,9 +168,141 @@ export function extractDepartmentCreationIntent(userPrompt: string): { name: str
     let rawName = cleanTrailingClauses(match2[1].trim());
     rawName = rawName.replace(/^["']|["']$/g, '').trim();
     rawName = rawName.replace(/^(?:the|a|an|first)\s+/i, '').trim();
-    if (rawName && !/^(?:new|sub)$/i.test(rawName)) {
+    if (isValidDepartmentName(rawName) && !/^(?:new|sub)$/i.test(rawName)) {
       return { name: rawName, workspacePath: path };
     }
+  }
+
+  return null;
+}
+
+export function extractDepartmentDeletionIntent(
+  userPrompt: string,
+  departments: OrgDepartmentNode[]
+): { department: OrgDepartmentNode } | null {
+  const match =
+    userPrompt.match(
+      /(?:delete|remove|destroy|archive|drop)\s+(?:the\s+)?(?:depar?t?ments?|dept|departmnts?)\s+[:"']?([^"'\n\r.,;]+)/i
+    ) ||
+    userPrompt.match(
+      /(?:delete|remove|destroy|archive|drop)\s+[:"']?([^"'\n\r.,;]+?)\s+(?:depar?t?ments?|dept|departmnts?)/i
+    );
+
+  if (match && match[1]?.trim()) {
+    let query = cleanTrailingClauses(match[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    query = query.replace(/^(?:the|a|an)\s+/i, '').trim();
+    const lowerQuery = query.toLowerCase();
+
+    const targetDept = departments.find(
+      (d) =>
+        d.id.toLowerCase() === lowerQuery ||
+        d.name.toLowerCase() === lowerQuery ||
+        d.name.toLowerCase().includes(lowerQuery) ||
+        lowerQuery.includes(d.name.toLowerCase())
+    );
+
+    if (targetDept) {
+      return { department: targetDept };
+    }
+  }
+
+  return null;
+}
+
+export type ProjectDiscoveryOrBatchIntent = {
+  type: 'discover' | 'batch_create';
+  targetDepartment: OrgDepartmentNode;
+  folderPath?: string;
+  projectNames?: string[];
+};
+
+export function extractProjectDiscoveryOrBatchIntent(
+  userPrompt: string,
+  departments: OrgDepartmentNode[],
+  targetDeptId?: string,
+  rootWorkspacePath?: string
+): ProjectDiscoveryOrBatchIntent | null {
+  if (departments.length === 0) return null;
+
+  let targetDept: OrgDepartmentNode | undefined;
+  if (targetDeptId) {
+    targetDept = departments.find((d) => d.id === targetDeptId);
+  }
+
+  const lowerPrompt = userPrompt.toLowerCase();
+  for (const dept of departments) {
+    if (lowerPrompt.includes(dept.name.toLowerCase())) {
+      targetDept = dept;
+      break;
+    }
+  }
+
+  if (
+    !targetDept &&
+    /\b(?:in|under|to|for|into)\s+(?:this|the|that|our|current)?\s*depar?t?ments?\b/i.test(userPrompt)
+  ) {
+    targetDept = departments[departments.length - 1];
+  }
+
+  if (!targetDept && departments.length === 1) {
+    targetDept = departments[0];
+  }
+
+  if (!targetDept) {
+    targetDept = departments[departments.length - 1];
+  }
+
+  const isDiscovery =
+    /(?:search|find|scan|discover|detect|import|list|look)\s+(?:for\s+)?(?:all\s+|my\s+|our\s+)?(?:different\s+|multiple\s+)?projects?\b/i.test(
+      userPrompt
+    ) ||
+    /(?:from|in)\s+(?:this\s+|the\s+)?(?:folder|directory|workspace|path)\s+.*?\b(?:create|add|register|import)\s+(?:multiple\s+|all\s+|different\s+)?projects?\b/i.test(
+      userPrompt
+    ) ||
+    /(?:create|add|register|import)\s+(?:multiple\s+|all\s+|different\s+)?projects?\b.*?\b(?:from|in)\s+(?:this\s+|the\s+)?(?:folder|directory|workspace|path)\b/i.test(
+      userPrompt
+    );
+
+  if (isDiscovery) {
+    const explicitPath = extractPathFromPrompt(userPrompt);
+    const folderPath = explicitPath || targetDept.workspacePath || rootWorkspacePath;
+    return {
+      type: 'discover',
+      targetDepartment: targetDept,
+      folderPath,
+    };
+  }
+
+  const batchListMatch = userPrompt.match(
+    /(?:create|add|register)\s+(?:multiple\s+)?projects?[:\s]+([a-zA-Z0-9_\-\s,]+?)(?:\s+(?:in|under|for|to)\s+(?:(?:depar?t?ments?|dept)\s+)?.*)?$/i
+  );
+  if (batchListMatch && batchListMatch[1]?.includes(',')) {
+    const names = batchListMatch[1]
+      .split(',')
+      .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+      .filter((s) => s.length >= 2 && !/^(?:and|or|in|to|for)$/i.test(s));
+    if (names.length > 0) {
+      return {
+        type: 'batch_create',
+        targetDepartment: targetDept,
+        folderPath: targetDept.workspacePath || rootWorkspacePath,
+        projectNames: names,
+      };
+    }
+  }
+
+  if (
+    /(?:create|add|register|setup|set\s+up)\s+(?:multiple|several|different|\d+)\s+projects?\b/i.test(userPrompt) &&
+    /\b(?:in|under|to|for)\s+(?:this|the|that|our|current|[\w\s]+)?\s*depar?t?ments?\b/i.test(userPrompt)
+  ) {
+    const folderPath = extractPathFromPrompt(userPrompt) || targetDept.workspacePath || rootWorkspacePath;
+    return {
+      type: 'discover',
+      targetDepartment: targetDept,
+      folderPath,
+    };
   }
 
   return null;
@@ -117,7 +326,7 @@ export function extractTeamCreationIntent(
     deptQuery = deptQuery.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || deptQuery;
 
     const lowerDeptQuery = deptQuery.toLowerCase();
-    const targetDept = departments.find(
+    let targetDept = departments.find(
       (d) =>
         d.id.toLowerCase() === lowerDeptQuery ||
         d.name.toLowerCase() === lowerDeptQuery ||
@@ -125,7 +334,13 @@ export function extractTeamCreationIntent(
         lowerDeptQuery.includes(d.name.toLowerCase())
     );
 
-    if (teamName && targetDept) {
+    if (!targetDept && /^(?:this|the|that|our|current)$/i.test(lowerDeptQuery)) {
+      targetDept =
+        (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+        (departments.length > 0 ? departments[departments.length - 1] : undefined);
+    }
+
+    if (isValidTeamName(teamName) && targetDept) {
       return { name: teamName, department: targetDept };
     }
   }
@@ -143,14 +358,19 @@ export function extractTeamCreationIntent(
     teamName = teamName.replace(/\s+(?:sub-?team|team)$/i, '').trim() || teamName;
 
     const lowerDeptQuery = deptQuery.toLowerCase();
-    const targetDept = departments.find(
+    let targetDept = departments.find(
       (d) =>
         d.id.toLowerCase() === lowerDeptQuery ||
         d.name.toLowerCase() === lowerDeptQuery ||
         d.name.toLowerCase().includes(lowerDeptQuery) ||
         lowerDeptQuery.includes(d.name.toLowerCase())
     );
-    if (teamName && targetDept) {
+    if (!targetDept && /^(?:this|the|that|our|current)$/i.test(lowerDeptQuery)) {
+      targetDept =
+        (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+        (departments.length > 0 ? departments[departments.length - 1] : undefined);
+    }
+    if (isValidTeamName(teamName) && targetDept) {
       return { name: teamName, department: targetDept };
     }
   }
@@ -168,7 +388,7 @@ export function extractTeamCreationIntent(
       (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
       (departments.length === 1 ? departments[0] : undefined);
 
-    if (teamName && targetDept) {
+    if (isValidTeamName(teamName) && targetDept) {
       return { name: teamName, department: targetDept };
     }
   }
@@ -198,7 +418,7 @@ export function extractProjectCreationIntent(
     deptQuery = deptQuery.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || deptQuery;
 
     const lowerDeptQuery = deptQuery.toLowerCase();
-    const targetDept = departments.find(
+    let targetDept = departments.find(
       (d) =>
         d.id.toLowerCase() === lowerDeptQuery ||
         d.name.toLowerCase() === lowerDeptQuery ||
@@ -206,7 +426,13 @@ export function extractProjectCreationIntent(
         lowerDeptQuery.includes(d.name.toLowerCase())
     );
 
-    if (projName && targetDept) {
+    if (!targetDept && /^(?:this|the|that|our|current)$/i.test(lowerDeptQuery)) {
+      targetDept =
+        (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+        (departments.length > 0 ? departments[departments.length - 1] : undefined);
+    }
+
+    if (isValidProjectName(projName) && targetDept) {
       return { name: projName, department: targetDept, workspacePath: path };
     }
   }
@@ -222,9 +448,48 @@ export function extractProjectCreationIntent(
 
     const targetDept =
       (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
-      (departments.length > 0 ? departments[0] : undefined);
+      (departments.length > 0 ? departments[departments.length - 1] : undefined);
 
-    if (projName && targetDept) {
+    if (isValidProjectName(projName) && targetDept) {
+      return { name: projName, department: targetDept, workspacePath: path };
+    }
+  }
+
+  const pattern3 =
+    /(?:create|add|new|register|start|setup|set\s+up)\s+(?:a\s+|an\s+)?(?:new\s+)?([^"'\n\r.,;]+?)\s+project(?:\s+(?:in|under|for|to)\s+(?:(?:depar?t?ments?|dept|departmnts?)\s+)?[:"']?([^"'\n\r.,;]+))?/i;
+  const match3 = userPrompt.match(pattern3);
+  if (match3 && match3[1]?.trim()) {
+    let projName = cleanTrailingClauses(match3[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    projName = projName.replace(/\s+project$/i, '').trim() || projName;
+
+    let targetDept: OrgDepartmentNode | undefined;
+    if (match3[2]?.trim()) {
+      let deptQuery = cleanTrailingClauses(match3[2].trim())
+        .replace(/^["']|["']$/g, '')
+        .trim();
+      deptQuery = deptQuery.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || deptQuery;
+      const lowerDeptQuery = deptQuery.toLowerCase();
+      targetDept = departments.find(
+        (d) =>
+          d.id.toLowerCase() === lowerDeptQuery ||
+          d.name.toLowerCase() === lowerDeptQuery ||
+          d.name.toLowerCase().includes(lowerDeptQuery) ||
+          lowerDeptQuery.includes(d.name.toLowerCase())
+      );
+      if (!targetDept && /^(?:this|the|that|our|current)$/i.test(lowerDeptQuery)) {
+        targetDept =
+          (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+          (departments.length > 0 ? departments[departments.length - 1] : undefined);
+      }
+    } else {
+      targetDept =
+        (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+        (departments.length > 0 ? departments[departments.length - 1] : undefined);
+    }
+
+    if (isValidProjectName(projName) && targetDept) {
       return { name: projName, department: targetDept, workspacePath: path };
     }
   }
@@ -639,6 +904,194 @@ export class OrgDelegationEngine {
     }
 
     // -------------------------------------------------------------
+    // Intent check 0B: Department Decommission / Removal Request
+    // -------------------------------------------------------------
+    const deleteDeptIntent = extractDepartmentDeletionIntent(userPrompt, this.hierarchy.departments);
+    if (deleteDeptIntent && deleteDeptIntent.department) {
+      const targetDept = deleteDeptIntent.department;
+      this.hierarchy.departments = this.hierarchy.departments.filter((d) => d.id !== targetDept.id);
+
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: 'Executive Operations',
+        toRole: 'Chief of Staff',
+        message: `Decommissioning department "${targetDept.name}" and unlinking its resources.`,
+        status: 'completed',
+      });
+
+      this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
+      return {
+        success: true,
+        directiveId,
+        userPrompt,
+        logs,
+        finalSynthesis: `Global Organization CEO: I have decommissioned the "${targetDept.name}" department and unlinked its associated resources.`,
+        involvedDepartmentIds: [targetDept.id],
+        involvedTeamIds: [],
+        deletedDepartmentIds: [targetDept.id],
+      };
+    }
+
+    // -------------------------------------------------------------
+    // Intent check 0C: Project Discovery & Batch Creation Request
+    // -------------------------------------------------------------
+    const batchOrDiscovery = extractProjectDiscoveryOrBatchIntent(
+      userPrompt,
+      this.hierarchy.departments,
+      targetDeptId,
+      rootCeo.workspacePath
+    );
+    if (batchOrDiscovery) {
+      const targetDept = batchOrDiscovery.targetDepartment;
+      const targetFolder = batchOrDiscovery.folderPath;
+      let createdProjects: OrgProject[] = [];
+
+      if (batchOrDiscovery.type === 'discover' && targetFolder) {
+        addLog({
+          depth: 1,
+          fromName: rootCeo.ceoAgent.name,
+          fromRole: 'Root CEO',
+          toName: targetDept.departmentCeoAgent.name,
+          toRole: 'Department CEO',
+          message: `Scanning workspace folder "${targetFolder}" to discover projects for department "${targetDept.name}".`,
+          status: 'working',
+        });
+
+        let discovered: Array<{ name: string; path: string; description?: string }> = [];
+        try {
+          discovered = await ipcBridge.org.discoverProjects(targetFolder, rootCeo.workspacePath || targetFolder);
+        } catch {
+          discovered = [];
+        }
+
+        if (discovered.length > 0) {
+          createdProjects = discovered.map((p, idx) => ({
+            id: `proj-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+            name: p.name,
+            departmentId: targetDept.id,
+            teamIds: targetDept.teams.length > 0 ? [targetDept.teams[0].id] : [],
+            description: p.description || `Discovered project from "${p.path}"`,
+            status: 'active',
+            path: p.path,
+            workspacePath: p.path,
+          }));
+
+          for (const proj of createdProjects) {
+            targetDept.linkedProjects.push({ id: proj.id, name: proj.name, path: proj.path });
+          }
+
+          addLog({
+            depth: 2,
+            fromName: targetDept.departmentCeoAgent.name,
+            fromRole: 'Department CEO',
+            toName: 'User / Executive Board',
+            toRole: 'User',
+            message: `Discovered and registered ${createdProjects.length} projects under department "${targetDept.name}".`,
+            status: 'completed',
+          });
+
+          this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
+          return {
+            success: true,
+            directiveId,
+            userPrompt,
+            logs,
+            finalSynthesis: `Global Organization CEO: I have scanned \`${targetFolder}\` and established ${createdProjects.length} projects under the "${targetDept.name}" department:\n\n${createdProjects.map((p) => `• **${p.name}** (\`${p.path}\`)`).join('\n')}\n\nYou can now assign teams or issue directives to these projects.`,
+            involvedDepartmentIds: [targetDept.id],
+            involvedTeamIds: [],
+            createdProjects,
+          };
+        } else if (this.simulationMode) {
+          const sampleProjects = ['Web App', 'API Service', 'Mobile Client'];
+          createdProjects = sampleProjects.map((name, idx) => {
+            const projPath = getDefaultProjectPath(targetFolder, name);
+            return {
+              id: `proj-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+              name,
+              departmentId: targetDept.id,
+              teamIds: targetDept.teams.length > 0 ? [targetDept.teams[0].id] : [],
+              description: `Project initialized in "${targetFolder}"`,
+              status: 'active',
+              path: projPath,
+              workspacePath: projPath,
+            };
+          });
+
+          for (const proj of createdProjects) {
+            targetDept.linkedProjects.push({ id: proj.id, name: proj.name, path: proj.path });
+          }
+
+          addLog({
+            depth: 2,
+            fromName: targetDept.departmentCeoAgent.name,
+            fromRole: 'Department CEO',
+            toName: 'User / Executive Board',
+            toRole: 'User',
+            message: `Initialized ${createdProjects.length} projects under department "${targetDept.name}".`,
+            status: 'completed',
+          });
+
+          this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
+          return {
+            success: true,
+            directiveId,
+            userPrompt,
+            logs,
+            finalSynthesis: `Global Organization CEO: Initialized ${createdProjects.length} projects under the "${targetDept.name}" department in \`${targetFolder}\`:\n\n${createdProjects.map((p) => `• **${p.name}** (\`${p.path}\`)`).join('\n')}`,
+            involvedDepartmentIds: [targetDept.id],
+            involvedTeamIds: [],
+            createdProjects,
+          };
+        }
+      } else if (batchOrDiscovery.type === 'batch_create' && batchOrDiscovery.projectNames) {
+        createdProjects = batchOrDiscovery.projectNames.map((name, idx) => {
+          const projPath = targetFolder ? getDefaultProjectPath(targetFolder, name) : undefined;
+          return {
+            id: `proj-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+            name,
+            departmentId: targetDept.id,
+            teamIds: targetDept.teams.length > 0 ? [targetDept.teams[0].id] : [],
+            description: `Project initialized via Root CEO directive: "${userPrompt}"`,
+            status: 'active',
+            path: projPath,
+            workspacePath: projPath,
+          };
+        });
+
+        for (const proj of createdProjects) {
+          targetDept.linkedProjects.push({ id: proj.id, name: proj.name, path: proj.path });
+        }
+
+        addLog({
+          depth: 1,
+          fromName: rootCeo.ceoAgent.name,
+          fromRole: 'Root CEO',
+          toName: targetDept.departmentCeoAgent.name,
+          toRole: 'Department CEO',
+          message: `Provisioned ${createdProjects.length} projects in department "${targetDept.name}".`,
+          status: 'completed',
+        });
+
+        this.updateNodeStatus?.('root-ceo', 'recently_finished');
+
+        return {
+          success: true,
+          directiveId,
+          userPrompt,
+          logs,
+          finalSynthesis: `Global Organization CEO: Established ${createdProjects.length} projects in the "${targetDept.name}" department:\n\n${createdProjects.map((p) => `• **${p.name}**`).join('\n')}`,
+          involvedDepartmentIds: [targetDept.id],
+          involvedTeamIds: [],
+          createdProjects,
+        };
+      }
+    }
+
     // -------------------------------------------------------------
     // Intent check A: Direct Department Creation Request
     // -------------------------------------------------------------
@@ -937,7 +1390,15 @@ export class OrgDelegationEngine {
     // -------------------------------------------------------------
     // Direct Root CEO level execution (No departments or HQ directive)
     // -------------------------------------------------------------
-    if (!targetDept) {
+    const isStructureDirective =
+      /(?:create|add|new|setup|set\s+up|build|register|search|find|scan|import|discover|recruit|hire)\s+.*?\b(?:projects?|depar?t?ments?|sub-?teams?|teams?|specialists?|members?|bots?|agents?)\b/i.test(
+        userPrompt
+      ) ||
+      /\b(?:projects?|sub-?teams?|teams?|specialists?|members?)\b.*?\b(?:in|under|to|for)\s+(?:this|the|that|our|current)?\s*depar?t?ments?/i.test(
+        userPrompt
+      );
+
+    if (!targetDept || isStructureDirective) {
       addLog({
         depth: 1,
         fromName: rootCeo.ceoAgent.name,
@@ -1077,13 +1538,16 @@ Never reply saying you cannot create departments or that you need more info if t
           const projName = action.name.trim();
           const deptQuery = (action.department || '').toLowerCase();
           const targetDeptCandidate =
-            this.hierarchy.departments.find(
-              (d) =>
-                d.id.toLowerCase() === deptQuery ||
-                d.name.toLowerCase() === deptQuery ||
-                d.name.toLowerCase().includes(deptQuery) ||
-                (deptQuery && deptQuery.includes(d.name.toLowerCase()))
-            ) ||
+            (deptQuery
+              ? this.hierarchy.departments.find(
+                  (d) =>
+                    d.id.toLowerCase() === deptQuery ||
+                    d.name.toLowerCase() === deptQuery ||
+                    d.name.toLowerCase().includes(deptQuery) ||
+                    (deptQuery && deptQuery.includes(d.name.toLowerCase()))
+                )
+              : undefined) ||
+            targetDept ||
             (this.hierarchy.departments.length > 0
               ? this.hierarchy.departments[this.hierarchy.departments.length - 1]
               : undefined);

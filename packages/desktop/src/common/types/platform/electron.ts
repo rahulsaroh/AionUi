@@ -312,6 +312,10 @@ export interface ElectronBridgeAPI {
     targetPath: string;
     allowedRoot: string;
   }) => Promise<{ allowed: boolean; reason?: string; resolved: string }>;
+  orgDiscoverProjects?: (params: {
+    folderPath: string;
+    allowedRoot?: string;
+  }) => Promise<Array<{ name: string; path: string; projectType?: string; description?: string }>>;
   orgSaveData?: (params: { key: string; value: string }) => Promise<boolean>;
   orgLoadData?: (params: { key: string }) => Promise<string | null>;
   // Pipeline & Resumable Publishing APIs

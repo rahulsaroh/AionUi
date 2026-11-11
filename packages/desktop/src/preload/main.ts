@@ -232,6 +232,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Org Mode APIs
   orgAssertWithinScope: (params: { targetPath: string; allowedRoot: string }) =>
     ipcRenderer.invoke('org:assertWithinScope', params),
+  orgDiscoverProjects: (params: { folderPath: string; allowedRoot?: string }) =>
+    ipcRenderer.invoke('org:discoverProjects', params),
   orgSaveData: (params: { key: string; value: string }) => ipcRenderer.invoke('org:saveData', params),
   orgLoadData: (params: { key: string }) => ipcRenderer.invoke('org:loadData', params),
   // Pipeline & Resumable Publishing APIs
