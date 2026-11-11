@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as Sentry from '@sentry/electron/main';
 import { app, type BrowserWindow } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -13,6 +12,15 @@ import { getOrCreateAnalyticsId } from './process/utils/analyticsId';
 import { readAutoUpdateDiagnostics } from './process/services/autoUpdateDiagnostics';
 import { collectBackendInstallDiagnostics } from './process/startup/backendInstallDiagnostics';
 import { classifyBackendStartupFailure } from './process/startup/backendStartupFailure';
+
+let Sentry: typeof import('@sentry/electron/main') | null = null;
+
+async function loadSentry() {
+  if (!Sentry) {
+    Sentry = await import('@sentry/electron/main');
+  }
+  return Sentry;
+}
 
 // 抑制 Chromium GPU 崩溃噪声（参见 ELECTRON-9A / ELECTRON-9D）：
 // 自愈逻辑在 gpuRecovery 中处理，事件流量已无价值。
@@ -113,7 +121,8 @@ function isBackendStartupSecondaryEvent(event: { tags?: Record<string, unknown> 
   );
 }
 
-export function initSentry(): void {
+export async function initSentry(): Promise<void> {
+  const Sentry = await loadSentry();
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: app.isPackaged ? 'production' : 'development',
@@ -142,7 +151,8 @@ export function initSentry(): void {
  * so every subsequent event (crashes, feedback, startup log report) carries
  * a stable device identifier.
  */
-export function setSentryDeviceId(): void {
+export async function setSentryDeviceId(): Promise<void> {
+  const Sentry = await loadSentry();
   const id = getOrCreateAnalyticsId();
   Sentry.setUser({ id });
   Sentry.setTag('device_id', id);
@@ -236,6 +246,7 @@ function getSecondsSince(timestamp: string | undefined): string | undefined {
 const BACKEND_STARTUP_FLUSH_TIMEOUT_MS = 2000;
 
 export async function captureBackendStartupFailure(error: unknown): Promise<void> {
+  const Sentry = await loadSentry();
   (globalThis as typeof globalThis & { __backendStartupFailed?: boolean }).__backendStartupFailed = true;
   const capturedError = error instanceof Error ? error : new Error(String(error));
   const details = getBackendStartupDetails(error);
@@ -471,6 +482,7 @@ class UnretryableError extends Error {}
 class RetryableError extends Error {}
 
 async function runStartupLogReport(): Promise<void> {
+  const Sentry = await loadSentry();
   const now = Date.now();
   const state = readState();
 

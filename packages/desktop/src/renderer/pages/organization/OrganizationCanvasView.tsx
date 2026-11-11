@@ -29,7 +29,7 @@ import TeamNode from './components/TeamNode';
 import DelegationEdge from './components/DelegationEdge';
 import SharedMemberTetherEdge from './components/SharedMemberTetherEdge';
 import OrgCanvasToolbar from './components/OrgCanvasToolbar';
-import OrgInspectorDrawer from './components/OrgInspectorDrawer';
+import OrgInspectorDrawer, { type OrgNodeType } from './components/OrgInspectorDrawer';
 import OrgSeedModal from './components/OrgSeedModal';
 import OrgProjectModal from './components/OrgProjectModal';
 import OrgDepartmentModal from './components/OrgDepartmentModal';
@@ -78,11 +78,12 @@ const CanvasInner: React.FC = () => {
 
   const navigate = useNavigate();
   const { fitView, setCenter, getNode } = useReactFlow();
+  const canvasContainerRef = React.useRef<HTMLDivElement>(null);
 
   const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
   const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedNodeType, setSelectedNodeType] = useState<'ceo' | 'department' | 'team' | null>(null);
+  const [selectedNodeType, setSelectedNodeType] = useState<OrgNodeType | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isSeedModalOpen, setIsSeedModalOpen] = useState(false);
   const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
@@ -135,7 +136,7 @@ const CanvasInner: React.FC = () => {
   }, [collapsedBranchIds.size, hierarchy.departments]);
 
   const handleSelectNode = useCallback(
-    (nodeId: string, nodeType: 'ceo' | 'department' | 'team') => {
+    (nodeId: string, nodeType: OrgNodeType) => {
       setSelectedNodeId(nodeId);
       setSelectedNodeType(nodeType);
       if (nodeType === 'department') {
@@ -147,10 +148,17 @@ const CanvasInner: React.FC = () => {
         setSelectedTeam(nodeId);
         if (team) setSelectedDepartment(team.departmentId);
         setSelectedProject(null);
+      } else if (nodeType === 'project') {
+        const proj = projects.find((p) => p.id === nodeId);
+        setSelectedProject(nodeId);
+        if (proj) {
+          setSelectedDepartment(proj.departmentId);
+          if (proj.teamIds?.[0]) setSelectedTeam(proj.teamIds[0]);
+        }
       }
       setIsInspectorOpen(true);
     },
-    [hierarchy.departments, setSelectedDepartment, setSelectedTeam, setSelectedProject]
+    [hierarchy.departments, projects, setSelectedDepartment, setSelectedTeam, setSelectedProject]
   );
 
   const handleDispatchToCeo = useCallback(
@@ -169,7 +177,7 @@ const CanvasInner: React.FC = () => {
   }, []);
 
   const handleSetFolder = useCallback(
-    (nodeId: string, nodeType: 'ceo' | 'department' | 'team') => {
+    (nodeId: string, nodeType: OrgNodeType) => {
       if (nodeType === 'ceo' || nodeId === 'root-ceo') {
         setIsMasterModalOpen(true);
       } else if (nodeType === 'department') {
@@ -182,10 +190,19 @@ const CanvasInner: React.FC = () => {
           data: team ?? null,
           context: { departmentId: team?.departmentId, teamId: nodeId },
         });
+      } else if (nodeType === 'project') {
+        const proj = projects.find((p) => p.id === nodeId);
+        if (proj) {
+          setEditEntity({
+            type: 'project',
+            data: proj,
+            context: { departmentId: proj.departmentId, teamId: proj.teamIds?.[0] },
+          });
+        }
       }
       setIsInspectorOpen(false);
     },
-    [hierarchy.departments]
+    [hierarchy.departments, projects]
   );
 
   const handleEditSave = () => {
@@ -204,6 +221,7 @@ const CanvasInner: React.FC = () => {
         orientation: direction,
         onDispatchToCeo: handleDispatchToCeo,
         onSelectNode: (id: string, type: 'ceo') => handleSelectNode(id, type),
+        onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
         onSetFolder: (id: string) => handleSetFolder(id, 'ceo'),
       },
       position: { x: 0, y: 0 },
@@ -231,6 +249,7 @@ const CanvasInner: React.FC = () => {
           onEditDepartment: (deptId: string) => setEditingDepartmentId(deptId),
           onRunTask: (d: { id: string }) => handleSelectNode(d.id, 'department'),
           onSelectNode: (id: string, type: 'department') => handleSelectNode(id, type),
+          onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
           onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'department'),
           onEditMember: (memberId: string) => {
             const member = dept.teams.flatMap((t) => t.specialistMembers).find((m) => m.id === memberId);
@@ -266,6 +285,7 @@ const CanvasInner: React.FC = () => {
               orientation: direction,
               sharedCountsMap,
               onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
+              onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
               onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'team'),
               onEditMember: (memberId: string) => {
                 const member = team.specialistMembers.find((m) => m.id === memberId);
@@ -296,13 +316,12 @@ const CanvasInner: React.FC = () => {
                 team,
                 department: dept,
                 orientation: direction,
-                onSelectNode: (id: string, type: 'project') => {
-                  setSelectedProject(id.replace(/^project-/, ''));
-                  setIsInspectorOpen(true);
+                onSelectNode: (id: string, _type: 'project') => {
+                  const cleanId = id.replace(/^project-/, '');
+                  handleSelectNode(cleanId, 'project');
                 },
                 onEditProject: () => openProjectModal(dept.id, team.id, proj),
-                onSetFolder: () =>
-                  setEditEntity({ type: 'project', data: proj, context: { departmentId: dept.id, teamId: team.id } }),
+                onSetFolder: () => handleSetFolder(proj.id, 'project'),
               },
               position: { x: 0, y: 0 },
               className:
@@ -384,7 +403,7 @@ const CanvasInner: React.FC = () => {
     : null;
 
   return (
-    <div className='relative size-full overflow-hidden bg-[var(--color-bg-1)]'>
+    <div ref={canvasContainerRef} className='relative size-full overflow-hidden bg-[var(--color-bg-1)]'>
       <OrgCanvasToolbar
         direction={direction}
         onToggleDirection={() => setDirection((d) => (d === 'TB' ? 'LR' : 'TB'))}
@@ -435,6 +454,7 @@ const CanvasInner: React.FC = () => {
         onEditDepartment={(deptId) => setEditingDepartmentId(deptId)}
         onEditProject={(project) => openProjectModal(project.departmentId, project.teamIds?.[0], project)}
         onSetFolder={(nodeId, nodeType) => handleSetFolder(nodeId, nodeType)}
+        getPopupContainer={() => canvasContainerRef.current || document.body}
       />
 
       <OrgSeedModal visible={isSeedModalOpen} onClose={() => setIsSeedModalOpen(false)} />

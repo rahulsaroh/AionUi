@@ -8,11 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import {
-  PipelineRepository,
-  PipelineRunService,
-  PublishService,
-} from '@/process/services/pipeline';
+import { PipelineRepository, PipelineRunService, PublishService } from '@/process/services/pipeline';
 import { createInMemoryTestDb } from './testDbHelper';
 import type { ISqliteDriver } from '@/process/services/database/drivers/ISqliteDriver';
 import type { PublishRequest } from '@/common/types/pipeline/pipelineTypes';
@@ -80,7 +76,9 @@ describe('Adversarial & Security Tests for Pipeline & Publishing', () => {
     // A secure implementation should reject or block publishing while an approval is pending.
     // We document the actual behavior here.
     if (bypassRes.success) {
-      console.warn('[VULNERABILITY DETECTED]: Pending approval was bypassed because subsequent request omitted requireApproval!');
+      console.warn(
+        '[VULNERABILITY DETECTED]: Pending approval was bypassed because subsequent request omitted requireApproval!'
+      );
     }
     // We assert that the publisher was NOT called (i.e. security boundary holds)
     expect(mockPublisher).not.toHaveBeenCalled();

@@ -14,5 +14,5 @@ import { LIGHT_THEME_ID, DARK_THEME_ID, SYSTEM_THEME_ID } from './constants';
  */
 export function resolveActiveTheme(activeId: string, themes: Theme[], prefersDark?: boolean): Theme {
   const targetId = activeId === SYSTEM_THEME_ID ? (prefersDark ? DARK_THEME_ID : LIGHT_THEME_ID) : activeId;
-  return themes.find((t) => t.id === targetId) ?? themes.find((t) => t.id === LIGHT_THEME_ID) ?? themes[0];
+  return themes.find((t) => t.id === targetId) ?? themes.find((t) => t.id === DARK_THEME_ID) ?? themes[0];
 }

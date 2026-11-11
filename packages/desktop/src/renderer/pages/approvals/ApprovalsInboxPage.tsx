@@ -73,13 +73,15 @@ export const ApprovalsInboxPage: React.FC = () => {
       for (const item of selected) {
         if (item.publishPreview && window.electronAPI?.publishApprove) {
           const idempotencyKey = item.callId || item.id;
-          await window.electronAPI.publishApprove(idempotencyKey, {
-            title: item.publishPreview.title,
-            description: item.publishPreview.description,
-            platform: item.publishPreview.platform,
-            thumbnailUrl: item.publishPreview.thumbnailUrl,
-            videoUrl: item.publishPreview.videoUrl,
-          }).catch((err) => console.warn('[ApprovalsInbox] Batch publish approve error:', err));
+          await window.electronAPI
+            .publishApprove(idempotencyKey, {
+              title: item.publishPreview.title,
+              description: item.publishPreview.description,
+              platform: item.publishPreview.platform,
+              thumbnailUrl: item.publishPreview.thumbnailUrl,
+              videoUrl: item.publishPreview.videoUrl,
+            })
+            .catch((err) => console.warn('[ApprovalsInbox] Batch publish approve error:', err));
         }
       }
       await batchApprove(selected);
@@ -98,9 +100,9 @@ export const ApprovalsInboxPage: React.FC = () => {
       for (const item of selected) {
         if (item.publishPreview && window.electronAPI?.publishReject) {
           const idempotencyKey = item.callId || item.id;
-          await window.electronAPI.publishReject(idempotencyKey, 'Batch rejected from Approvals Inbox').catch((err) =>
-            console.warn('[ApprovalsInbox] Batch publish reject error:', err)
-          );
+          await window.electronAPI
+            .publishReject(idempotencyKey, 'Batch rejected from Approvals Inbox')
+            .catch((err) => console.warn('[ApprovalsInbox] Batch publish reject error:', err));
         }
       }
       await batchDeny(selected);

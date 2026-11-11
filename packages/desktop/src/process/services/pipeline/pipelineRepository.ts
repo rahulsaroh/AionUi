@@ -274,9 +274,7 @@ export class PipelineRepository {
       ? 'SELECT * FROM publish_records WHERE project_id = ? ORDER BY created_at DESC'
       : 'SELECT * FROM publish_records ORDER BY created_at DESC';
 
-    const rows = (
-      projectId ? this.db.prepare(query).all(projectId) : this.db.prepare(query).all()
-    ) as PublishRow[];
+    const rows = (projectId ? this.db.prepare(query).all(projectId) : this.db.prepare(query).all()) as PublishRow[];
 
     return rows.map((r) => this.mapPublishRow(r));
   }

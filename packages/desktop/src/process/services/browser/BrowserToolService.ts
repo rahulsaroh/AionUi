@@ -5,12 +5,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import type {
-  LocatorTarget,
-  SnapshotOptions,
-  ScreenshotOptions,
-  DownloadOptions,
-} from '@/common/browser/types';
+import type { LocatorTarget, SnapshotOptions, ScreenshotOptions, DownloadOptions } from '@/common/browser/types';
 import { getBrowserAutomationEngine } from './BrowserAutomationEngine';
 import { getBrowserDownloadManager } from './BrowserDownloadManager';
 import { getBrowserProfileService } from './BrowserProfileService';

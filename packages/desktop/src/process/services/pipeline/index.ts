@@ -55,8 +55,7 @@ export async function getPipelineServices(customDb?: ISqliteDriver): Promise<{
     const { BetterSqlite3Driver } = await import('@process/services/database/drivers/BetterSqlite3Driver');
     driver = new BetterSqlite3Driver(dbPath);
   } catch {
-    const { createInMemoryTestDb } = await import('../../../../../tests/unit/pipeline/testDbHelper');
-    driver = createInMemoryTestDb();
+    throw new Error('BetterSqlite3Driver failed to load. This is required for production use.');
   }
 
   const { initSchema } = await import('../database/schema');

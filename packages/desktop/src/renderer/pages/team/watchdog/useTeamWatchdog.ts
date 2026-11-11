@@ -376,8 +376,8 @@ export function useTeamWatchdog({ team_id, teamRun, statusMap, assistants }: Use
       const isWaitingForApproval =
         Boolean(
           teamRunRef.current.state.activeRun &&
-            ((teamRunRef.current.state.activeRun as unknown as { status?: string }).status === 'waiting_for_approval' ||
-              (teamRunRef.current.state.activeRun as unknown as { status?: string }).status === 'waiting')
+          ((teamRunRef.current.state.activeRun as unknown as { status?: string }).status === 'waiting_for_approval' ||
+            (teamRunRef.current.state.activeRun as unknown as { status?: string }).status === 'waiting')
         ) ||
         Object.values(teamRunRef.current.state.slotWorkBySlot || {}).some(
           (w) =>

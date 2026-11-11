@@ -92,15 +92,7 @@ describe('Resumable Pipelines & Idempotent Publishing - Verification Suite', () 
 
     // 5. Verify CLI does not accept --force to bypass pending approval
     const cliRes = await executePipelineCliCommand(
-      [
-        'publish',
-        '--project',
-        'proj-monotone',
-        '--platform',
-        'youtube',
-        '--title',
-        'First Video',
-      ],
+      ['publish', '--project', 'proj-monotone', '--platform', 'youtube', '--title', 'First Video'],
       { runService, publishService }
     );
     expect(cliRes.data).toMatchObject({ status: 'pending_approval' });
@@ -360,16 +352,20 @@ describe('Resumable Pipelines & Idempotent Publishing - Verification Suite', () 
 
     // Insert a legacy v29/v31 record with old-style colon-concatenated key
     const legacyKey = hashContent('proj-legacy:youtube:content-hash-abc');
-    freshDb.prepare(`
+    freshDb
+      .prepare(`
       INSERT INTO publish_records (id, idempotency_key, project_id, platform, content_hash, status, post_id, url, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'published', 'legacy-post-1', 'https://youtube.com/legacy-1', ?, ?)
-    `).run('rec_legacy_1', legacyKey, 'proj-legacy', 'youtube', 'content-hash-abc', Date.now(), Date.now());
+    `)
+      .run('rec_legacy_1', legacyKey, 'proj-legacy', 'youtube', 'content-hash-abc', Date.now(), Date.now());
 
     // 2. Run migration v32 up
     v32.up(freshDb);
 
     // 3. Verify backup table exists
-    const backupRow = freshDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='publish_records_backup_v29'").get();
+    const backupRow = freshDb
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='publish_records_backup_v29'")
+      .get();
     expect(backupRow).toBeDefined();
 
     // 4. Verify dual-lookup: looking up with either old legacyKey or new key works

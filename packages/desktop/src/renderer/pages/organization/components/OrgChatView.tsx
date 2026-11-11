@@ -131,12 +131,16 @@ export const OrgChatView: React.FC = () => {
     setInputPrompt('');
     setIsExecuting(true);
 
-    const isDirectAgent = activeConversation?.type === 'agent_direct' && !!activeTargetAgent;
+    const isDirectSubAgent =
+      activeConversation?.type === 'agent_direct' &&
+      !!activeTargetAgent &&
+      activeTargetAgent.id !== hierarchy.rootCeo.ceoAgent.id &&
+      activeTargetAgent.role !== 'root_ceo';
     const targetAgent = activeTargetAgent || hierarchy.rootCeo.ceoAgent;
     const activeWorkspace = targetAgent.workspacePath || hierarchy.rootCeo.workspacePath || 'workspace';
 
     setLiveStepText(
-      isDirectAgent
+      isDirectSubAgent
         ? `Communicating with ${targetAgent.name} [Model: ${targetAgent.model?.modelId || 'standard'}]...`
         : 'Evaluating directive at Global Executive HQ...'
     );
@@ -152,17 +156,17 @@ export const OrgChatView: React.FC = () => {
 
     const targetConvId =
       activeConversation?.id ??
-      (isDirectAgent ? `conv-direct-${targetAgent.id}-${Date.now()}` : `conv-ceo-${Date.now()}`);
+      (isDirectSubAgent ? `conv-direct-${targetAgent.id}-${Date.now()}` : `conv-ceo-${Date.now()}`);
     const initialConvTitle =
       activeConversation?.title ??
-      (isDirectAgent ? `Chat with ${targetAgent.name}` : `Directive: ${prompt.slice(0, 36)}...`);
+      (isDirectSubAgent ? `Chat with ${targetAgent.name}` : `Directive: ${prompt.slice(0, 36)}...`);
 
     // Optimistically update conversation with user message
     const existingMessages = activeConversation?.messages ?? [];
     const interimConversation: OrgConversation = {
       id: targetConvId,
       title: initialConvTitle,
-      type: isDirectAgent ? 'agent_direct' : 'ceo_directive',
+      type: isDirectSubAgent ? 'agent_direct' : 'ceo_directive',
       sourceNodeId: activeConversation?.sourceNodeId || 'root-ceo',
       targetNodeId: activeConversation?.targetNodeId || 'root-ceo',
       targetAgentId: targetAgent.id,
@@ -184,7 +188,7 @@ export const OrgChatView: React.FC = () => {
         updateNodeStatus
       );
 
-      if (isDirectAgent) {
+      if (isDirectSubAgent) {
         const agentResponse = await engine.executeDirectMessage(targetAgent, prompt, activeWorkspace, true);
 
         const agentMessage: OrgConversationMessage = {

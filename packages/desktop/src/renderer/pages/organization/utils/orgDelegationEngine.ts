@@ -42,6 +42,282 @@ export interface DelegationExecutionResult {
   createdMembers?: Array<{ teamId: string; member: OrgAgentMember }>;
 }
 
+export interface OrgActionPayload {
+  action: 'create_department' | 'create_team' | 'create_project' | 'create_member';
+  name: string;
+  department?: string;
+  team?: string;
+  role?: string;
+  title?: string;
+  workspacePath?: string;
+  description?: string;
+}
+
+function cleanTrailingClauses(str: string): string {
+  return str
+    .replace(
+      /\s+(?:and\s+then|and\s+we\s+will|and\s+assign|and\s+add|and\s+we|with\s+a\s+team|with\s+team|files\s+of\s+which|stored\s+in|in\s+folder|at\s+path|where\s+files|to\s+handle|for\s+handling|which\s+is)[\s\S]*$/i,
+      ''
+    )
+    .trim();
+}
+
+function extractPathFromPrompt(prompt: string): string | undefined {
+  const match = prompt.match(
+    /(?:folder|path|stored\s+in|directory|at)\s*(?:is|into|to|in|=|:)?\s*[:"']?([a-zA-Z]:\\[^"'\n\r,;]+|(?:\/[a-zA-Z0-9._-]+)+)/i
+  );
+  return match?.[1]?.trim()?.replace(/^["']|["']$/g, '');
+}
+
+export function extractDepartmentCreationIntent(userPrompt: string): { name: string; workspacePath?: string } | null {
+  const path = extractPathFromPrompt(userPrompt);
+
+  const pattern1 =
+    /(?:create|add|new|setup|set\s+up|start|instantiate|build|establish|open)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:depar?t?ments?|dept|departmnts?)(?:\s+(?:called|named|name|for|with\s+name|titled|:))?\s+[:"']?([^"'\n\r.,;]+)/i;
+  const match1 = userPrompt.match(pattern1);
+  if (match1 && match1[1]?.trim()) {
+    let rawName = cleanTrailingClauses(match1[1].trim());
+    rawName = rawName.replace(/^["']|["']$/g, '').trim();
+    rawName = rawName.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || rawName;
+    if (rawName) {
+      return { name: rawName, workspacePath: path };
+    }
+  }
+
+  const pattern2 =
+    /(?:create|add|new|setup|set\s+up|start|instantiate|build|establish|open)\s+(?:a\s+|an\s+)?(?:new\s+)?([^"'\n\r.,;]+?)\s+(?:depar?t?ments?|dept|departmnts?)(?:["']|\.|\n|,|$)/i;
+  const match2 = userPrompt.match(pattern2);
+  if (match2 && match2[1]?.trim()) {
+    let rawName = cleanTrailingClauses(match2[1].trim());
+    rawName = rawName.replace(/^["']|["']$/g, '').trim();
+    rawName = rawName.replace(/^(?:the|a|an|first)\s+/i, '').trim();
+    if (rawName && !/^(?:new|sub)$/i.test(rawName)) {
+      return { name: rawName, workspacePath: path };
+    }
+  }
+
+  return null;
+}
+
+export function extractTeamCreationIntent(
+  userPrompt: string,
+  departments: OrgDepartmentNode[],
+  targetDeptId?: string
+): { name: string; department: OrgDepartmentNode } | null {
+  const pattern1 =
+    /(?:create|add|new|setup|set\s+up|start|instantiate|build|assign)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:sub-?team|team)(?:\s+(?:called|named|name|for|with\s+name|titled|:))?\s+[:"']?([^"'\n\r.,;]+?)(?:["']\s+|\s+)?(?:in|under|for|to)\s+(?:(?:depar?t?ments?|dept|departmnts?)\s+)?[:"']?([^"'\n\r.,;]+)/i;
+  const match1 = userPrompt.match(pattern1);
+  if (match1 && match1[1]?.trim() && match1[2]?.trim()) {
+    let teamName = cleanTrailingClauses(match1[1].trim());
+    teamName = teamName.replace(/^["']|["']$/g, '').trim();
+    teamName = teamName.replace(/\s+(?:sub-?team|team)$/i, '').trim() || teamName;
+
+    let deptQuery = cleanTrailingClauses(match1[2].trim());
+    deptQuery = deptQuery.replace(/^["']|["']$/g, '').trim();
+    deptQuery = deptQuery.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || deptQuery;
+
+    const lowerDeptQuery = deptQuery.toLowerCase();
+    const targetDept = departments.find(
+      (d) =>
+        d.id.toLowerCase() === lowerDeptQuery ||
+        d.name.toLowerCase() === lowerDeptQuery ||
+        d.name.toLowerCase().includes(lowerDeptQuery) ||
+        lowerDeptQuery.includes(d.name.toLowerCase())
+    );
+
+    if (teamName && targetDept) {
+      return { name: teamName, department: targetDept };
+    }
+  }
+
+  const pattern2 =
+    /(?:in|under|for|to)\s+(?:(?:depar?t?ments?|dept|departmnts?)\s+)?[:"']?([^"'\n\r.,;]+?)(?:["']\s+|\s+)?(?:create|add|new|setup|set\s+up|start|instantiate|build|assign)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:sub-?team|team)(?:\s+(?:called|named|name|for|with\s+name|titled|:))?\s+[:"']?([^"'\n\r.,;]+)/i;
+  const match2 = userPrompt.match(pattern2);
+  if (match2 && match2[1]?.trim() && match2[2]?.trim()) {
+    const deptQuery = cleanTrailingClauses(match2[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    let teamName = cleanTrailingClauses(match2[2].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    teamName = teamName.replace(/\s+(?:sub-?team|team)$/i, '').trim() || teamName;
+
+    const lowerDeptQuery = deptQuery.toLowerCase();
+    const targetDept = departments.find(
+      (d) =>
+        d.id.toLowerCase() === lowerDeptQuery ||
+        d.name.toLowerCase() === lowerDeptQuery ||
+        d.name.toLowerCase().includes(lowerDeptQuery) ||
+        lowerDeptQuery.includes(d.name.toLowerCase())
+    );
+    if (teamName && targetDept) {
+      return { name: teamName, department: targetDept };
+    }
+  }
+
+  const pattern3 =
+    /(?:create|add|new|setup|set\s+up|start|instantiate|build)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:sub-?team|team)(?:\s+(?:called|named|name|for|with\s+name|titled|:))?\s+[:"']?([^"'\n\r.,;]+)/i;
+  const match3 = userPrompt.match(pattern3);
+  if (match3 && match3[1]?.trim()) {
+    let teamName = cleanTrailingClauses(match3[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    teamName = teamName.replace(/\s+(?:sub-?team|team)$/i, '').trim() || teamName;
+
+    const targetDept =
+      (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+      (departments.length === 1 ? departments[0] : undefined);
+
+    if (teamName && targetDept) {
+      return { name: teamName, department: targetDept };
+    }
+  }
+
+  return null;
+}
+
+export function extractProjectCreationIntent(
+  userPrompt: string,
+  departments: OrgDepartmentNode[],
+  targetDeptId?: string
+): { name: string; department: OrgDepartmentNode; workspacePath?: string } | null {
+  const path = extractPathFromPrompt(userPrompt);
+
+  const pattern1 =
+    /(?:create|add|new|register|start|setup|set\s+up)\s+(?:a\s+|an\s+)?(?:new\s+)?project(?:\s+(?:called|named|name|for|with\s+name|titled|:))?\s+[:"']?([^"'\n\r.,;]+?)(?:["']\s+|\s+)?(?:in|under|for|to)\s+(?:(?:depar?t?ments?|dept|departmnts?)\s+)?[:"']?([^"'\n\r.,;]+)/i;
+  const match1 = userPrompt.match(pattern1);
+  if (match1 && match1[1]?.trim() && match1[2]?.trim()) {
+    let projName = cleanTrailingClauses(match1[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    projName = projName.replace(/\s+project$/i, '').trim() || projName;
+
+    let deptQuery = cleanTrailingClauses(match1[2].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    deptQuery = deptQuery.replace(/\s+(?:depar?t?ments?|dept|departmnts?)$/i, '').trim() || deptQuery;
+
+    const lowerDeptQuery = deptQuery.toLowerCase();
+    const targetDept = departments.find(
+      (d) =>
+        d.id.toLowerCase() === lowerDeptQuery ||
+        d.name.toLowerCase() === lowerDeptQuery ||
+        d.name.toLowerCase().includes(lowerDeptQuery) ||
+        lowerDeptQuery.includes(d.name.toLowerCase())
+    );
+
+    if (projName && targetDept) {
+      return { name: projName, department: targetDept, workspacePath: path };
+    }
+  }
+
+  const pattern2 =
+    /(?:create|add|new|register|start|setup|set\s+up)\s+(?:a\s+|an\s+)?(?:new\s+)?project(?:\s+(?:called|named|name|for|with\s+name|titled|:))?\s+[:"']?([^"'\n\r.,;]+)/i;
+  const match2 = userPrompt.match(pattern2);
+  if (match2 && match2[1]?.trim()) {
+    let projName = cleanTrailingClauses(match2[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    projName = projName.replace(/\s+project$/i, '').trim() || projName;
+
+    const targetDept =
+      (targetDeptId ? departments.find((d) => d.id === targetDeptId) : undefined) ||
+      (departments.length > 0 ? departments[0] : undefined);
+
+    if (projName && targetDept) {
+      return { name: projName, department: targetDept, workspacePath: path };
+    }
+  }
+
+  return null;
+}
+
+export function extractMemberCreationIntent(
+  userPrompt: string,
+  departments: OrgDepartmentNode[]
+): { name: string; role: string; team: OrgTeamNode } | null {
+  const allTeams = departments.flatMap((d) => d.teams);
+  const pattern1 =
+    /(?:create|add|new|hire|recruit)\s+(?:a\s+|an\s+)?(?:member|specialist|bot|agent|engineer|designer|manager)(?:\s+(?:called|named|name|with\s+name))?\s+[:"']?([^"'\n\r.,;]+?)(?:["']\s+|\s+)?(?:(?:as|role)\s+[:"']?([^"'\n\r.,;]+?)(?:["']\s+|\s+)?)?(?:to|in|for|under)\s+(?:team\s+)?[:"']?([^"'\n\r.,;]+)/i;
+  const match1 = userPrompt.match(pattern1);
+  if (match1 && match1[1]?.trim() && match1[3]?.trim()) {
+    const memberName = cleanTrailingClauses(match1[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    const memberRole = match1[2]?.trim().replace(/^["']|["']$/g, '') || 'specialist';
+    const teamQuery = cleanTrailingClauses(match1[3].trim())
+      .replace(/^["']|["']$/g, '')
+      .toLowerCase();
+
+    const targetTeam = allTeams.find(
+      (t) =>
+        t.id.toLowerCase() === teamQuery ||
+        t.name.toLowerCase() === teamQuery ||
+        t.name.toLowerCase().includes(teamQuery) ||
+        teamQuery.includes(t.name.toLowerCase())
+    );
+
+    if (memberName && targetTeam) {
+      return { name: memberName, role: memberRole, team: targetTeam };
+    }
+  }
+
+  const pattern2 = /(?:add|hire|create|recruit)\s+(?:specialist|member|bot|agent)\s+[:"']?([^"'\n\r.,;]+)/i;
+  const match2 = userPrompt.match(pattern2);
+  if (match2 && match2[1]?.trim()) {
+    const memberName = cleanTrailingClauses(match2[1].trim())
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    if (memberName && allTeams.length > 0) {
+      return { name: memberName, role: 'specialist', team: allTeams[0] };
+    }
+  }
+
+  return null;
+}
+
+export function parseOrgActions(rawText: string): { actions: OrgActionPayload[]; cleanText: string } {
+  const actions: OrgActionPayload[] = [];
+  let cleanText = rawText;
+
+  const blockRegex = /```(?:org-action|json)?\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = blockRegex.exec(rawText)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        if (item && typeof item === 'object' && typeof item.action === 'string' && typeof item.name === 'string') {
+          actions.push(item as OrgActionPayload);
+        }
+      }
+      cleanText = cleanText.replace(match[0], '').trim();
+    } catch {
+      // Ignore non-matching block
+    }
+  }
+
+  if (actions.length === 0) {
+    const rawJsonMatch = rawText.match(/\[\s*\{\s*"action"\s*:[\s\S]*?\}\s*\]/);
+    if (rawJsonMatch) {
+      try {
+        const parsed = JSON.parse(rawJsonMatch[0]);
+        for (const item of parsed) {
+          if (item && typeof item === 'object' && typeof item.action === 'string' && typeof item.name === 'string') {
+            actions.push(item as OrgActionPayload);
+          }
+        }
+        cleanText = cleanText.replace(rawJsonMatch[0], '').trim();
+      } catch {
+        // Ignore JSON parse failure
+      }
+    }
+  }
+
+  return { actions, cleanText };
+}
+
 export interface AgentExecutionOptions {
   agent: OrgAgentMember;
   systemPrompt: string;
@@ -363,15 +639,16 @@ export class OrgDelegationEngine {
     }
 
     // -------------------------------------------------------------
+    // -------------------------------------------------------------
     // Intent check A: Direct Department Creation Request
     // -------------------------------------------------------------
-    const deptCreationMatch = userPrompt.match(
-      /(?:create|add|new|setup|set up|start|instantiate|build)\s+(?:a\s+|an\s+)?department(?:\s+(?:called|named|for))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-    );
-    if (deptCreationMatch && deptCreationMatch[1]?.trim()) {
-      const deptName = deptCreationMatch[1].trim().replace(/^["']|["']$/g, '');
+    const deptIntent = extractDepartmentCreationIntent(userPrompt);
+    if (deptIntent && deptIntent.name) {
+      const deptName = deptIntent.name;
       const newDept = createDepartmentShell(deptName);
-      if (rootCeo.workspacePath) {
+      if (deptIntent.workspacePath) {
+        newDept.workspacePath = deptIntent.workspacePath;
+      } else if (rootCeo.workspacePath) {
         newDept.workspacePath = getDefaultDeptPath(rootCeo.workspacePath, deptName);
       }
 
@@ -412,40 +689,10 @@ export class OrgDelegationEngine {
     // -------------------------------------------------------------
     // Intent check B: Direct Team Creation Request
     // -------------------------------------------------------------
-    const teamCreationMatch = userPrompt.match(
-      /(?:create|add|new|setup|set up)\s+(?:a\s+|an\s+)?team(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']\s+|\s+)?(?:in|under|for|to)\s+(?:department\s+)?[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-    );
-
-    let explicitTeamName: string | null = null;
-    let explicitDeptTarget: OrgDepartmentNode | undefined;
-
-    if (teamCreationMatch) {
-      explicitTeamName = teamCreationMatch[1]?.trim()?.replace(/^["']|["']$/g, '') || null;
-      const deptTargetName =
-        teamCreationMatch[2]
-          ?.trim()
-          ?.replace(/^["']|["']$/g, '')
-          .toLowerCase() || '';
-      explicitDeptTarget = this.hierarchy.departments.find(
-        (d) =>
-          d.id.toLowerCase() === deptTargetName ||
-          d.name.toLowerCase().includes(deptTargetName) ||
-          deptTargetName.includes(d.name.toLowerCase())
-      );
-    } else {
-      // Shorter format: "Create team Mobile" when targetDeptId is given or only 1 department exists
-      const shortTeamMatch = userPrompt.match(
-        /(?:create|add|new)\s+(?:a\s+|an\s+)?team(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-      );
-      if (shortTeamMatch && shortTeamMatch[1]?.trim()) {
-        explicitTeamName = shortTeamMatch[1].trim().replace(/^["']|["']$/g, '');
-        explicitDeptTarget =
-          (targetDeptId ? this.hierarchy.departments.find((d) => d.id === targetDeptId) : undefined) ||
-          (this.hierarchy.departments.length === 1 ? this.hierarchy.departments[0] : undefined);
-      }
-    }
-
-    if (explicitTeamName && explicitDeptTarget) {
+    const teamIntent = extractTeamCreationIntent(userPrompt, this.hierarchy.departments, targetDeptId);
+    if (teamIntent && teamIntent.name && teamIntent.department) {
+      const explicitTeamName = teamIntent.name;
+      const explicitDeptTarget = teamIntent.department;
       const newTeam = createTeamShell(explicitDeptTarget.id, explicitTeamName);
       if (rootCeo.workspacePath) {
         newTeam.workspacePath = getDefaultTeamPath(rootCeo.workspacePath, explicitDeptTarget.name, explicitTeamName);
@@ -488,40 +735,15 @@ export class OrgDelegationEngine {
     // -------------------------------------------------------------
     // Intent check C: Project Creation Request
     // -------------------------------------------------------------
-    const projectCreationMatch = userPrompt.match(
-      /(?:create|add|new|setup|set up|start)\s+(?:a\s+|an\s+)?project(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']\s+|\s+)?(?:in|under|for|to)\s+(?:department\s+)?[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-    );
-
-    let explicitProjectName: string | null = null;
-    let explicitProjectDeptTarget: OrgDepartmentNode | undefined;
-
-    if (projectCreationMatch) {
-      explicitProjectName = projectCreationMatch[1]?.trim()?.replace(/^["']|["']$/g, '') || null;
-      const deptTargetName =
-        projectCreationMatch[2]
-          ?.trim()
-          ?.replace(/^["']|["']$/g, '')
-          .toLowerCase() || '';
-      explicitProjectDeptTarget = this.hierarchy.departments.find(
-        (d) =>
-          d.id.toLowerCase() === deptTargetName ||
-          d.name.toLowerCase().includes(deptTargetName) ||
-          deptTargetName.includes(d.name.toLowerCase())
-      );
-    } else {
-      const shortProjectMatch = userPrompt.match(
-        /(?:create|add|new)\s+(?:a\s+|an\s+)?project(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-      );
-      if (shortProjectMatch && shortProjectMatch[1]?.trim()) {
-        explicitProjectName = shortProjectMatch[1].trim().replace(/^["']|["']$/g, '');
-        explicitProjectDeptTarget =
-          (targetDeptId ? this.hierarchy.departments.find((d) => d.id === targetDeptId) : undefined) ||
-          (this.hierarchy.departments.length > 0 ? this.hierarchy.departments[0] : undefined);
-      }
-    }
-
-    if (explicitProjectName && explicitProjectDeptTarget) {
+    const projectIntent = extractProjectCreationIntent(userPrompt, this.hierarchy.departments, targetDeptId);
+    if (projectIntent && projectIntent.name && projectIntent.department) {
+      const explicitProjectName = projectIntent.name;
+      const explicitProjectDeptTarget = projectIntent.department;
       const newProjectId = `proj-${Date.now()}`;
+      const projectPath =
+        projectIntent.workspacePath ||
+        (rootCeo.workspacePath ? getDefaultProjectPath(rootCeo.workspacePath, explicitProjectName) : undefined);
+
       const newProject: OrgProject = {
         id: newProjectId,
         name: explicitProjectName,
@@ -529,7 +751,8 @@ export class OrgDelegationEngine {
         teamIds: explicitProjectDeptTarget.teams.length > 0 ? [explicitProjectDeptTarget.teams[0].id] : [],
         description: `Project initialized via Root CEO directive: "${userPrompt}"`,
         status: 'active',
-        path: rootCeo.workspacePath ? getDefaultProjectPath(rootCeo.workspacePath, explicitProjectName) : undefined,
+        path: projectPath,
+        workspacePath: projectPath,
       };
 
       addLog({
@@ -569,44 +792,11 @@ export class OrgDelegationEngine {
     // -------------------------------------------------------------
     // Intent check D: Member / Specialist / Bot Creation Request
     // -------------------------------------------------------------
-    const memberCreationMatch = userPrompt.match(
-      /(?:create|add|new|hire|recruit)\s+(?:a\s+|an\s+)?(?:member|specialist|bot|agent|engineer|designer|manager)(?:\s+(?:called|named))?\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']\s+|\s+)?(?:(?:as|role)\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']\s+|\s+)?)?(?:to|in|for|under)\s+(?:team\s+)?[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-    );
-
-    let explicitMemberName: string | null = null;
-    let explicitMemberRole: string = 'specialist';
-    let explicitTeamTarget: OrgTeamNode | undefined;
-
-    if (memberCreationMatch) {
-      explicitMemberName = memberCreationMatch[1]?.trim()?.replace(/^["']|["']$/g, '') || null;
-      explicitMemberRole = memberCreationMatch[2]?.trim()?.replace(/^["']|["']$/g, '') || 'specialist';
-      const teamTargetName =
-        memberCreationMatch[3]
-          ?.trim()
-          ?.replace(/^["']|["']$/g, '')
-          .toLowerCase() || '';
-      explicitTeamTarget = this.hierarchy.departments
-        .flatMap((d) => d.teams)
-        .find(
-          (t) =>
-            t.id.toLowerCase() === teamTargetName ||
-            t.name.toLowerCase().includes(teamTargetName) ||
-            teamTargetName.includes(t.name.toLowerCase())
-        );
-    } else {
-      const shortMemberMatch = userPrompt.match(
-        /(?:add|hire|create|recruit)\s+(?:specialist|member|bot|agent)\s+[:"']?([A-Za-z0-9\s&/_-]+?)(?:["']|$|\.|\n)/i
-      );
-      if (shortMemberMatch && shortMemberMatch[1]?.trim()) {
-        explicitMemberName = shortMemberMatch[1].trim().replace(/^["']|["']$/g, '');
-        explicitTeamTarget =
-          (targetTeamId
-            ? this.hierarchy.departments.flatMap((d) => d.teams).find((t) => t.id === targetTeamId)
-            : undefined) || this.hierarchy.departments.flatMap((d) => d.teams)[0];
-      }
-    }
-
-    if (explicitMemberName && explicitTeamTarget) {
+    const memberIntent = extractMemberCreationIntent(userPrompt, this.hierarchy.departments);
+    if (memberIntent && memberIntent.name && memberIntent.team) {
+      const explicitMemberName = memberIntent.name;
+      const explicitMemberRole = memberIntent.role || 'specialist';
+      const explicitTeamTarget = memberIntent.team;
       // Check if user requested a specific model (e.g. "with model gpt-4o" or "using claude-3-7-sonnet")
       const modelMatch = userPrompt.match(
         /(?:with|using|model)\s+(claude-[a-z0-9.-]+|gpt-[a-z0-9.-]+|gemini-[a-z0-9.-]+|deepseek-[a-z0-9.-]+|qwen[a-z0-9.-]*)/i
@@ -744,6 +934,7 @@ export class OrgDelegationEngine {
     }
 
     // -------------------------------------------------------------
+    // -------------------------------------------------------------
     // Direct Root CEO level execution (No departments or HQ directive)
     // -------------------------------------------------------------
     if (!targetDept) {
@@ -757,13 +948,36 @@ export class OrgDelegationEngine {
         status: 'working',
       });
 
+      const deptSummary = this.hierarchy.departments
+        .map((d) => `- ${d.name} (id: ${d.id}, teams: ${d.teams.map((t) => t.name).join(', ') || 'none'})`)
+        .join('\n');
+
+      const ceoSystemPrompt = `You are the Global Organization CEO (${rootCeo.ceoAgent.name}).
+You have full executive authority to direct strategy and establish or modify the organization's structure.
+
+Current Organization Structure:
+${deptSummary || 'No departments established yet.'}
+Root Workspace: ${rootCeo.workspacePath || 'None configured'}
+
+When the user asks you to create or set up departments, teams, projects, or team members, you MUST execute the action by outputting an \`\`\`org-action code block containing a JSON array of actions:
+\`\`\`org-action
+[
+  { "action": "create_department", "name": "Department Name", "workspacePath": "optional/path", "description": "brief description" },
+  { "action": "create_team", "department": "Department Name", "name": "Team Name", "description": "brief description" },
+  { "action": "create_project", "department": "Department Name", "team": "optional Team Name", "name": "Project Name", "workspacePath": "optional/path" },
+  { "action": "create_member", "team": "Team Name", "name": "Specialist Name", "role": "specialist", "title": "Role Title" }
+]
+\`\`\`
+
+Always provide an executive confirmation message explaining the structure you created or plan to lead.
+Never reply saying you cannot create departments or that you need more info if the user explicitly asked to create one. Output the \`\`\`org-action block and confirm the creation.`;
+
       let ceoSynthesis = '';
       if (!this.simulationMode) {
         try {
           ceoSynthesis = await this.runOrgAgentStep({
             agent: rootCeo.ceoAgent,
-            systemPrompt:
-              'You are the Global Organization CEO. Direct strategic planning, department structuring, and organizational leadership.',
+            systemPrompt: ceoSystemPrompt,
             userDirective: userPrompt,
             workspacePath: rootCeo.workspacePath || '',
             onStreamUpdate: (text) => this.onAgentStream?.(text),
@@ -776,13 +990,181 @@ export class OrgDelegationEngine {
         ceoSynthesis = `Global Organization CEO: Executive directive acknowledged for "${userPrompt}". I have evaluated the organizational requirements. You can instruct me to instantiate departments (e.g. 'Create department Engineering') or use the '+ Add Department' button on the canvas to begin building the team structure.`;
       }
 
+      const { actions, cleanText } = parseOrgActions(ceoSynthesis);
+      const createdDepartments: OrgDepartmentNode[] = [];
+      const createdTeams: Array<{ departmentId: string; team: OrgTeamNode }> = [];
+      const createdProjects: OrgProject[] = [];
+      const createdMembers: Array<{ teamId: string; member: OrgAgentMember }> = [];
+      const involvedDepartmentIds: string[] = [];
+      const involvedTeamIds: string[] = [];
+
+      for (const action of actions) {
+        if (action.action === 'create_department' && action.name?.trim()) {
+          const deptName = action.name.trim();
+          const existing = this.hierarchy.departments.find((d) => d.name.toLowerCase() === deptName.toLowerCase());
+          if (!existing) {
+            const newDept = createDepartmentShell(deptName);
+            if (action.workspacePath) {
+              newDept.workspacePath = action.workspacePath;
+            } else if (rootCeo.workspacePath) {
+              newDept.workspacePath = getDefaultDeptPath(rootCeo.workspacePath, deptName);
+            }
+            if (action.description) {
+              newDept.description = action.description;
+            }
+            createdDepartments.push(newDept);
+            this.hierarchy.departments.push(newDept);
+            involvedDepartmentIds.push(newDept.id);
+            addLog({
+              depth: 1,
+              fromName: rootCeo.ceoAgent.name,
+              fromRole: 'Root CEO',
+              toName: 'Executive Operations',
+              toRole: 'Chief of Staff',
+              message: `Instantiating new department "${deptName}" via executive action.`,
+              status: 'working',
+            });
+            addLog({
+              depth: 1,
+              fromName: rootCeo.ceoAgent.name,
+              fromRole: 'Root CEO',
+              toName: 'User / Executive Board',
+              toRole: 'User',
+              message: `Department "${deptName}" successfully instantiated.`,
+              status: 'completed',
+            });
+          }
+        } else if (action.action === 'create_team' && action.name?.trim()) {
+          const teamName = action.name.trim();
+          const deptQuery = (action.department || '').toLowerCase();
+          const targetDeptCandidate =
+            this.hierarchy.departments.find(
+              (d) =>
+                d.id.toLowerCase() === deptQuery ||
+                d.name.toLowerCase() === deptQuery ||
+                d.name.toLowerCase().includes(deptQuery) ||
+                (deptQuery && deptQuery.includes(d.name.toLowerCase()))
+            ) ||
+            (this.hierarchy.departments.length > 0
+              ? this.hierarchy.departments[this.hierarchy.departments.length - 1]
+              : undefined);
+
+          if (targetDeptCandidate) {
+            const newTeam = createTeamShell(targetDeptCandidate.id, teamName);
+            if (action.workspacePath) {
+              newTeam.workspacePath = action.workspacePath;
+            } else if (rootCeo.workspacePath) {
+              newTeam.workspacePath = getDefaultTeamPath(rootCeo.workspacePath, targetDeptCandidate.name, teamName);
+            }
+            if (action.description) {
+              newTeam.description = action.description;
+            }
+            targetDeptCandidate.teams.push(newTeam);
+            createdTeams.push({ departmentId: targetDeptCandidate.id, team: newTeam });
+            involvedDepartmentIds.push(targetDeptCandidate.id);
+            involvedTeamIds.push(newTeam.id);
+            addLog({
+              depth: 1,
+              fromName: rootCeo.ceoAgent.name,
+              fromRole: 'Root CEO',
+              toName: targetDeptCandidate.departmentCeoAgent.name,
+              toRole: 'Department CEO',
+              message: `Creating sub-team "${teamName}" in department "${targetDeptCandidate.name}".`,
+              status: 'completed',
+            });
+          }
+        } else if (action.action === 'create_project' && action.name?.trim()) {
+          const projName = action.name.trim();
+          const deptQuery = (action.department || '').toLowerCase();
+          const targetDeptCandidate =
+            this.hierarchy.departments.find(
+              (d) =>
+                d.id.toLowerCase() === deptQuery ||
+                d.name.toLowerCase() === deptQuery ||
+                d.name.toLowerCase().includes(deptQuery) ||
+                (deptQuery && deptQuery.includes(d.name.toLowerCase()))
+            ) ||
+            (this.hierarchy.departments.length > 0
+              ? this.hierarchy.departments[this.hierarchy.departments.length - 1]
+              : undefined);
+
+          if (targetDeptCandidate) {
+            const newProjPath =
+              action.workspacePath ||
+              (rootCeo.workspacePath ? getDefaultProjectPath(rootCeo.workspacePath, projName) : undefined);
+            const newProj: OrgProject = {
+              id: `proj-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+              name: projName,
+              departmentId: targetDeptCandidate.id,
+              teamIds: targetDeptCandidate.teams.length > 0 ? [targetDeptCandidate.teams[0].id] : [],
+              description: action.description || `Project initialized via Root CEO directive: "${userPrompt}"`,
+              status: 'active',
+              path: newProjPath,
+              workspacePath: newProjPath,
+            };
+            createdProjects.push(newProj);
+            targetDeptCandidate.linkedProjects.push({ id: newProj.id, name: newProj.name, path: newProj.path });
+            involvedDepartmentIds.push(targetDeptCandidate.id);
+            addLog({
+              depth: 1,
+              fromName: rootCeo.ceoAgent.name,
+              fromRole: 'Root CEO',
+              toName: targetDeptCandidate.departmentCeoAgent.name,
+              toRole: 'Department CEO',
+              message: `Allocating new strategic project "${projName}" to department "${targetDeptCandidate.name}".`,
+              status: 'completed',
+            });
+          }
+        } else if (action.action === 'create_member' && action.name?.trim()) {
+          const memberName = action.name.trim();
+          const teamQuery = (action.team || '').toLowerCase();
+          const allTeams = this.hierarchy.departments.flatMap((d) => d.teams);
+          const targetTeamCandidate =
+            allTeams.find(
+              (t) =>
+                t.id.toLowerCase() === teamQuery ||
+                t.name.toLowerCase() === teamQuery ||
+                t.name.toLowerCase().includes(teamQuery) ||
+                (teamQuery && teamQuery.includes(t.name.toLowerCase()))
+            ) || (allTeams.length > 0 ? allTeams[0] : undefined);
+
+          if (targetTeamCandidate) {
+            const newMember = createMemberShell(
+              memberName,
+              action.role || 'specialist',
+              action.title || `${memberName} (${action.role || 'specialist'})`,
+              targetTeamCandidate.id
+            );
+            targetTeamCandidate.specialistMembers.push(newMember);
+            createdMembers.push({ teamId: targetTeamCandidate.id, member: newMember });
+            involvedDepartmentIds.push(targetTeamCandidate.departmentId);
+            involvedTeamIds.push(targetTeamCandidate.id);
+            addLog({
+              depth: 2,
+              fromName: targetTeamCandidate.teamLeadAgent.name,
+              fromRole: 'Team Lead',
+              toName: 'Executive Operations',
+              toRole: 'Operations',
+              message: `Recruited specialist "${memberName}" into team "${targetTeamCandidate.name}".`,
+              status: 'completed',
+            });
+          }
+        }
+      }
+
+      const displaySynthesis =
+        cleanText ||
+        (actions.length > 0
+          ? `Global Organization CEO: Executed organizational restructuring (${actions.map((a) => `${a.action}: ${a.name}`).join(', ')}).`
+          : ceoSynthesis);
+
       addLog({
         depth: 1,
         fromName: rootCeo.ceoAgent.name,
         fromRole: 'Root CEO',
         toName: 'User / Executive Board',
         toRole: 'User',
-        message: ceoSynthesis,
+        message: displaySynthesis,
         status: 'completed',
       });
 
@@ -793,9 +1175,13 @@ export class OrgDelegationEngine {
         directiveId,
         userPrompt,
         logs,
-        finalSynthesis: ceoSynthesis,
-        involvedDepartmentIds: [],
-        involvedTeamIds: [],
+        finalSynthesis: displaySynthesis,
+        involvedDepartmentIds,
+        involvedTeamIds,
+        createdDepartments: createdDepartments.length > 0 ? createdDepartments : undefined,
+        createdTeams: createdTeams.length > 0 ? createdTeams : undefined,
+        createdProjects: createdProjects.length > 0 ? createdProjects : undefined,
+        createdMembers: createdMembers.length > 0 ? createdMembers : undefined,
       };
     }
 

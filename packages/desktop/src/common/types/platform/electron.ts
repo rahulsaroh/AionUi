@@ -317,10 +317,7 @@ export interface ElectronBridgeAPI {
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;
-  pipelineResume?: (
-    runId: string,
-    baseDir?: string
-  ) => Promise<import('@/process/services/pipeline').ResumeResult>;
+  pipelineResume?: (runId: string, baseDir?: string) => Promise<import('@/process/services/pipeline').ResumeResult>;
   pipelineRerun?: (runId: string, stepIndex: number) => Promise<import('../pipeline/pipelineTypes').IPipelineRun>;
   publishApprove?: (
     idempotencyKey: string,

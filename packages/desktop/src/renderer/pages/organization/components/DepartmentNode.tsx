@@ -35,6 +35,7 @@ export type DepartmentNodeData = {
   onEditDepartment?: (deptId: string) => void;
   onRunTask?: (dept: OrgDepartmentNode) => void;
   onSelectNode?: (nodeId: string, nodeType: 'department') => void;
+  onSelectMember?: (memberId: string) => void;
 };
 
 export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boolean }> = ({
@@ -52,6 +53,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
     onEditDepartment,
     onRunTask,
     onSelectNode,
+    onSelectMember,
   } = data;
 
   const { nodeStatuses } = useOrgStore();
@@ -130,7 +132,14 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
       </div>
 
       <div className='p-10px flex flex-col gap-8px bg-[var(--color-bg-2)]'>
-        <div className='flex items-center justify-between px-8px py-5px rounded-8px bg-purple-500/10 border border-purple-500/20 text-11px'>
+        <div
+          className='flex items-center justify-between px-8px py-5px rounded-8px bg-purple-500/10 border border-purple-500/20 text-11px cursor-pointer hover:border-purple-400/50 transition-colors'
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectMember?.(department.departmentCeoAgent.id);
+          }}
+          title={`Chat with ${department.departmentCeoAgent.name} (Department Head)`}
+        >
           <div className='flex items-center gap-6px truncate'>
             <Workbench size={14} theme='outline' className='text-purple-400 shrink-0' />
             <div className='flex flex-col truncate'>

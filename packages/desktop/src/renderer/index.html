@@ -1,5 +1,5 @@
 <!doctype html>
-<html data-theme="light" data-color-scheme="default">
+<html data-theme="dark" data-color-scheme="default">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -17,7 +17,7 @@
       // Synchronously restore theme appearance from localStorage to prevent theme flash
       (function () {
         try {
-          var theme = localStorage.getItem('__aionui_theme');
+          var theme = localStorage.getItem('__aionui_theme') || 'dark';
           if (theme) document.documentElement.setAttribute('data-theme', theme);
         } catch (e) {}
       })();
@@ -38,7 +38,7 @@
     <script>
       // Set arco-theme on body synchronously
       try {
-        var t = localStorage.getItem('__aionui_theme');
+        var t = localStorage.getItem('__aionui_theme') || 'dark';
         if (t) document.body.setAttribute('arco-theme', t);
       } catch (e) {}
     </script>

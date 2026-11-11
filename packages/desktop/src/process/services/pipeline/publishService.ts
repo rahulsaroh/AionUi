@@ -12,11 +12,7 @@ import type {
   PublishResult,
   PublishStatus,
 } from '@/common/types/pipeline/pipelineTypes';
-import {
-  computePreviewBindingHash,
-  computePublishContentHash,
-  hashContent,
-} from './artifactHasher';
+import { computePreviewBindingHash, computePublishContentHash, hashContent } from './artifactHasher';
 import type { PipelineRepository } from './pipelineRepository';
 
 export type PlatformPublisher = (request: PublishRequest) => Promise<{

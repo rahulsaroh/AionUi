@@ -7,11 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { IPipelineManifest, IPipelineRun, IPipelineStep } from '@/common/types/pipeline/pipelineTypes';
-import {
-  computeArtifactsHash,
-  validateArtifactPath,
-  verifyArtifacts,
-} from './artifactHasher';
+import { computeArtifactsHash, validateArtifactPath, verifyArtifacts } from './artifactHasher';
 import type { PipelineRepository } from './pipelineRepository';
 
 export type ResumeResult = {

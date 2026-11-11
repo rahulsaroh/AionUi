@@ -23,18 +23,21 @@ import { useOrgStore } from '../store/useOrgStore';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { validateWithinMaster } from '../utils/orgPathUtils';
-import type { OrgProject } from '@/types/organization';
+import type { OrgProject, OrgAgentMember } from '@/types/organization';
+
+export type OrgNodeType = 'ceo' | 'department' | 'team' | 'project' | 'member';
 
 type OrgInspectorDrawerProps = {
   selectedNodeId: string | null;
-  selectedNodeType: 'ceo' | 'department' | 'team' | null;
+  selectedNodeType: OrgNodeType | null;
   visible: boolean;
   onClose: () => void;
   onOpenConversation?: (convId: string) => void;
   onEditDepartment?: (departmentId: string) => void;
   onEditProject?: (project: OrgProject) => void;
-  onSetFolder?: (nodeId: string, nodeType: 'ceo' | 'department' | 'team') => void;
+  onSetFolder?: (nodeId: string, nodeType: OrgNodeType) => void;
   initialDirective?: string;
+  getPopupContainer?: () => HTMLElement;
 };
 
 export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
@@ -42,11 +45,12 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   selectedNodeType,
   visible,
   onClose,
-  onOpenConversation,
+  onOpenConversation: _onOpenConversation,
   onEditDepartment,
   onEditProject,
   onSetFolder,
   initialDirective,
+  getPopupContainer,
 }) => {
   const {
     hierarchy,
@@ -60,10 +64,10 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     addDepartment,
     addSubTeam,
     addTeamMember,
-    upsertOrgProject,
     updateRootCeo,
-    setOrgViewMode,
     setSelectedConversationId,
+    setOrgViewMode,
+    upsertOrgProject,
   } = useOrgStore();
   const [activeTab, setActiveTab] = useState<'conversations' | 'terminal' | 'members'>('conversations');
   const [directiveInput, setDirectiveInput] = useState('');
@@ -191,6 +195,89 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
         break;
       }
     }
+  } else if (selectedNodeType === 'project') {
+    const proj = projects.find((p) => p.id === selectedNodeId);
+    if (proj) {
+      nodeTitle = proj.name;
+      nodeRole = 'Project';
+      nodeWorkspacePath = proj.workspacePath ?? proj.path ?? null;
+      linkedProjects = [{ id: proj.id, name: proj.name, path: proj.path || proj.workspacePath || undefined }];
+
+      const parentDept = hierarchy.departments.find((d) => d.id === proj.departmentId);
+      const parentTeam = parentDept?.teams.find((t) => proj.teamIds?.includes(t.id));
+
+      if (parentTeam) {
+        leaderName = parentTeam.teamLeadAgent.name;
+        leaderTitle = parentTeam.teamLeadAgent.title || 'Team Lead';
+        leaderRole = `Project Lead (${parentTeam.name})`;
+        targetAgentMember = parentTeam.teamLeadAgent;
+        specialists = parentTeam.specialistMembers.map((s) => ({ id: s.id, name: s.name, title: s.title || s.role }));
+      } else if (parentDept) {
+        leaderName = parentDept.departmentCeoAgent.name;
+        leaderTitle = parentDept.departmentCeoAgent.title || 'Department Head';
+        leaderRole = `Project Lead (${parentDept.name})`;
+        targetAgentMember = parentDept.departmentCeoAgent;
+      } else {
+        leaderName = hierarchy.rootCeo.ceoAgent.name;
+        leaderTitle = 'CEO';
+        leaderRole = 'Project Overseer';
+        targetAgentMember = hierarchy.rootCeo.ceoAgent;
+      }
+    }
+  } else if (selectedNodeType === 'member') {
+    let foundMember: OrgAgentMember | null = null;
+    let foundTeamName = '';
+    let foundWorkspace: string | null = null;
+
+    if (hierarchy.rootCeo.chiefOfStaffAgent?.id === selectedNodeId) {
+      foundMember = hierarchy.rootCeo.chiefOfStaffAgent;
+      foundTeamName = 'Executive HQ';
+      foundWorkspace = hierarchy.rootCeo.workspacePath ?? null;
+    } else {
+      for (const d of hierarchy.departments) {
+        if (d.departmentCeoAgent?.id === selectedNodeId) {
+          foundMember = d.departmentCeoAgent;
+          foundTeamName = d.name;
+          foundWorkspace = d.workspacePath ?? null;
+          break;
+        }
+        for (const t of d.teams) {
+          if (t.teamLeadAgent?.id === selectedNodeId) {
+            foundMember = t.teamLeadAgent;
+            foundTeamName = t.name;
+            foundWorkspace = t.workspacePath ?? d.workspacePath ?? null;
+            break;
+          }
+          if (t.hrCoordinatorAgent?.id === selectedNodeId) {
+            foundMember = t.hrCoordinatorAgent;
+            foundTeamName = t.name;
+            foundWorkspace = t.workspacePath ?? d.workspacePath ?? null;
+            break;
+          }
+          const spec = t.specialistMembers.find(
+            (m) => m.id === selectedNodeId || m.canonicalAgentId === selectedNodeId
+          );
+          if (spec) {
+            foundMember = spec;
+            foundTeamName = t.name;
+            foundWorkspace = spec.workspacePath ?? t.workspacePath ?? d.workspacePath ?? null;
+            break;
+          }
+        }
+        if (foundMember) break;
+      }
+    }
+
+    if (foundMember) {
+      nodeTitle = foundMember.name;
+      nodeRole = foundMember.title || foundMember.role || 'Specialist';
+      lastActiveAt = foundMember.lastActiveAt;
+      leaderName = foundMember.name;
+      leaderTitle = foundMember.title || foundMember.role || 'Specialist';
+      leaderRole = foundTeamName ? `${foundMember.role} (${foundTeamName})` : foundMember.role || 'Specialist';
+      nodeWorkspacePath = foundWorkspace;
+      targetAgentMember = foundMember;
+    }
   }
 
   const currentStatus = nodeStatuses[selectedNodeId] || 'idle';
@@ -201,7 +288,9 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     (c) =>
       c.sourceNodeId === selectedNodeId ||
       c.targetNodeId === selectedNodeId ||
-      (selectedNodeType === 'ceo' && c.type === 'ceo_directive')
+      (selectedNodeType === 'ceo' && c.type === 'ceo_directive') ||
+      (selectedNodeType === 'project' && c.projectId === selectedNodeId) ||
+      (selectedNodeType === 'member' && (c.targetAgentId === selectedNodeId || c.agentId === selectedNodeId))
   );
 
   const handleChangeFolder = async () => {
@@ -241,6 +330,12 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
             break;
           }
         }
+      } else if (selectedNodeType === 'project') {
+        const proj = projects.find((p) => p.id === selectedNodeId);
+        if (proj) {
+          upsertOrgProject({ ...proj, workspacePath: chosenPath, path: chosenPath });
+          Message.success(`Project workspace folder set to: ${chosenPath}`);
+        }
       }
     } catch (err) {
       console.error('[OrgInspectorDrawer] selectDirectory failed:', err);
@@ -272,11 +367,26 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     );
 
     try {
+      const targetProj = selectedNodeType === 'project' ? projects.find((p) => p.id === selectedNodeId) : undefined;
+      const targetDeptId =
+        selectedNodeType === 'department'
+          ? selectedNodeId
+          : selectedNodeType === 'project'
+            ? targetProj?.departmentId
+            : undefined;
+      const targetTeamId =
+        selectedNodeType === 'team'
+          ? selectedNodeId
+          : selectedNodeType === 'project'
+            ? targetProj?.teamIds?.[0]
+            : undefined;
+      const targetProjectId = selectedNodeType === 'project' ? selectedNodeId : teamProjectForSelectedTeam;
+
       const result = await engine.executeDirective(
         prompt,
-        selectedNodeType === 'department' ? selectedNodeId : undefined,
-        selectedNodeType === 'team' ? selectedNodeId : undefined,
-        teamProjectForSelectedTeam,
+        targetDeptId,
+        targetTeamId,
+        targetProjectId,
         true // useRealExecution
       );
       if (result.createdDepartments && result.createdDepartments.length > 0) {
@@ -301,12 +411,23 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       }
       if (result.success) {
         Message.success('Executive directive executed successfully!');
+        const convId = `conv-exec-${Date.now()}`;
         addOrgConversation({
-          id: `conv-exec-${Date.now()}`,
+          id: convId,
           title: `Directive: ${prompt.slice(0, 45)}...`,
-          type: selectedNodeType === 'ceo' ? 'ceo_directive' : 'dept_handoff',
+          projectId: targetProjectId,
+          teamId: targetTeamId,
+          type:
+            selectedNodeType === 'ceo'
+              ? 'ceo_directive'
+              : selectedNodeType === 'department'
+                ? 'dept_handoff'
+                : selectedNodeType === 'member'
+                  ? 'agent_direct'
+                  : 'team_execution',
           sourceNodeId: selectedNodeId,
-          targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
+          targetNodeId: result.involvedDepartmentIds[0] || selectedNodeId || 'root-ceo',
+          targetAgentName: leaderName,
           timestamp: Date.now(),
           summary: result.finalSynthesis,
           messages: [
@@ -346,81 +467,91 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   return (
     <Drawer
       title={
-        <div className='flex items-center justify-between w-full pr-12px select-none'>
-          <div className='flex flex-col gap-2px min-w-0'>
-            <div className='flex items-center gap-6px'>
-              <span className='size-20px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
+        <div className='flex flex-col gap-4px w-full min-w-0 pr-8px select-none overflow-hidden'>
+          <div className='flex items-center justify-between gap-8px min-w-0 w-full'>
+            <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
+              <span className='size-22px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
                 {selectedNodeType === 'ceo' ? (
-                  <Peoples size={12} theme='outline' fill='currentColor' />
+                  <Peoples size={13} theme='outline' fill='currentColor' />
                 ) : selectedNodeType === 'department' ? (
-                  <Workbench size={12} theme='outline' fill='currentColor' />
+                  <Workbench size={13} theme='outline' fill='currentColor' />
+                ) : selectedNodeType === 'project' ? (
+                  <FolderClose size={13} theme='outline' fill='currentColor' />
                 ) : (
-                  <User size={12} theme='outline' fill='currentColor' />
+                  <User size={13} theme='outline' fill='currentColor' />
                 )}
               </span>
-              <span className='font-bold text-14px text-t-primary truncate' title={nodeTitle}>
+              <span className='font-bold text-13px text-t-primary truncate min-w-0' title={nodeTitle}>
                 {nodeTitle}
               </span>
-              <Tag size='small' color='arcoblue' className='text-10px font-medium px-5px py-0.5px rounded-full'>
+              <Tag
+                size='small'
+                color='arcoblue'
+                className='text-10px font-medium px-5px py-0.5px rounded-full shrink-0'
+              >
                 {nodeRole}
               </Tag>
             </div>
-            <div className='flex items-center gap-8px text-10px font-mono'>
-              <Tag
-                size='small'
-                className='text-t-secondary px-4px py-0.5px rounded-full border border-[var(--color-border-2)]'
-              >
-                💬 Chatting with: {leaderRole} ({leaderName})
-              </Tag>
+            <Tag
+              size='small'
+              style={{ borderColor: theme.borderColor, color: theme.textColor, backgroundColor: theme.backgroundColor }}
+              className='text-10px font-medium px-5px py-0.5px rounded-full shrink-0'
+            >
+              {theme.badgeText}
+            </Tag>
+          </div>
+          <div className='flex items-center justify-between gap-6px min-w-0 text-10px font-mono text-t-secondary'>
+            <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
+              <span className='truncate' title={`Chatting with: ${leaderRole} (${leaderName})`}>
+                💬 {leaderRole}: <span className='text-t-primary font-medium'>{leaderName}</span>
+              </span>
               {nodeWorkspacePath ? (
-                <div className='flex items-center gap-3px text-t-primary px-5px py-0.5px rounded bg-amber-500/10 border border-amber-500/20 shrink-0'>
+                <div
+                  className='flex items-center gap-3px text-t-primary px-5px py-0.5px rounded bg-amber-500/10 border border-amber-500/20 shrink-0 max-w-160px'
+                  title={nodeWorkspacePath}
+                >
                   <FolderClose size={10} theme='outline' className='text-amber-400 shrink-0' />
-                  <span className='truncate max-w-160px' title={nodeWorkspacePath}>
-                    {nodeWorkspacePath}
-                  </span>
+                  <span className='truncate'>{nodeWorkspacePath}</span>
                 </div>
               ) : null}
             </div>
+            <div className='flex items-center gap-2px shrink-0'>
+              {onSetFolder && (
+                <Button
+                  size='mini'
+                  type='text'
+                  icon={<LinkOne size={11} />}
+                  onClick={handleChangeFolder}
+                  disabled={!selectedNodeId}
+                  className='!px-4px !text-10px'
+                  title='Change Folder'
+                />
+              )}
+              {selectedNodeType === 'department' && editableDepartmentId && (
+                <Button
+                  size='mini'
+                  type='text'
+                  icon={<Edit size={11} />}
+                  onClick={() => onEditDepartment?.(editableDepartmentId)}
+                  className='!px-4px !text-10px'
+                  title='Quick Edit'
+                />
+              )}
+            </div>
           </div>
-          <div className='flex items-center gap-3px'>
-            {onSetFolder && (
-              <Button
-                size='mini'
-                type='text'
-                icon={<LinkOne size={11} />}
-                onClick={handleChangeFolder}
-                disabled={!selectedNodeId}
-              >
-                Change Folder
-              </Button>
-            )}
-            <Button
-              size='mini'
-              type='text'
-              icon={<Edit size={11} />}
-              onClick={() => {
-                if (selectedNodeType === 'department' && editableDepartmentId) {
-                  onEditDepartment?.(editableDepartmentId);
-                }
-              }}
-            >
-              Quick Edit
-            </Button>
-          </div>
-          <Tag
-            size='small'
-            style={{ borderColor: theme.borderColor, color: theme.textColor, backgroundColor: theme.backgroundColor }}
-            className='text-10px font-medium px-5px py-0.5px rounded-full'
-          >
-            {theme.badgeText}
-          </Tag>
         </div>
       }
       visible={visible}
       onCancel={onClose}
-      width={520}
+      width={480}
+      zIndex={100}
+      getPopupContainer={getPopupContainer}
+      className='org-inspector-drawer'
+      wrapClassName='org-inspector-drawer-wrapper'
+      headerStyle={{ height: 'auto', minHeight: '52px', padding: '10px 16px', overflow: 'hidden' }}
+      bodyStyle={{ padding: '12px 16px', overflowX: 'hidden' }}
       footer={
-        <div className='flex items-center gap-8px w-full'>
+        <div className='flex items-center gap-8px w-full min-w-0'>
           <Input
             value={directiveInput}
             onChange={setDirectiveInput}
@@ -428,17 +559,21 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
             placeholder={
               selectedNodeType === 'ceo'
                 ? "Ask Root CEO, plan structure, or type 'Create department Engineering'..."
-                : `Dispatch directive to ${leaderName}...`
+                : selectedNodeType === 'project'
+                  ? `Dispatch directive to ${nodeTitle} team...`
+                  : selectedNodeType === 'member'
+                    ? `Message ${leaderName}...`
+                    : `Dispatch directive to ${leaderName}...`
             }
             disabled={isExecuting}
-            className='!rounded-8px text-12px'
+            className='flex-1 min-w-0 !rounded-8px text-12px'
           />
           <Button
             type='primary'
             loading={isExecuting}
             icon={<Send size={13} />}
             onClick={() => void handleDispatchDirective()}
-            className='!rounded-8px !px-12px'
+            className='shrink-0 !rounded-8px !px-14px'
           >
             Send
           </Button>

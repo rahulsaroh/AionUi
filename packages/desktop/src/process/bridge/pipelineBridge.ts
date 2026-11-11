@@ -50,15 +50,12 @@ export function registerPipelineBridge(): void {
     }
   );
 
-  ipcMain.handle(
-    'publish:reject',
-    async (_event, params: { idempotencyKey: string; reason?: string }) => {
-      const { publishService } = await getPipelineServices();
-      return publishService.rejectPublish(params.idempotencyKey, params.reason, {
-        auditUser: 'desktop_user',
-      });
-    }
-  );
+  ipcMain.handle('publish:reject', async (_event, params: { idempotencyKey: string; reason?: string }) => {
+    const { publishService } = await getPipelineServices();
+    return publishService.rejectPublish(params.idempotencyKey, params.reason, {
+      auditUser: 'desktop_user',
+    });
+  });
 
   ipcMain.handle('publish:listRecords', async (_event, projectId?: string) => {
     try {

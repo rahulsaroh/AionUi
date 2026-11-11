@@ -115,7 +115,8 @@ export async function executePipelineCliCommand(
         if (!projectId || !platform) {
           return {
             success: false,
-            error: 'Usage: publish --project <id> --platform <platform> [--hash <hash>] [--title <title>] [--media <path>]',
+            error:
+              'Usage: publish --project <id> --platform <platform> [--hash <hash>] [--title <title>] [--media <path>]',
           };
         }
 

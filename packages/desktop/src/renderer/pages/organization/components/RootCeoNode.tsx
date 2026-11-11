@@ -17,11 +17,12 @@ export interface RootCeoNodeData {
   orientation?: 'TB' | 'LR';
   onDispatchToCeo?: (rootCeo: RootCEO) => void;
   onSelectNode?: (nodeId: string, nodeType: 'ceo') => void;
+  onSelectMember?: (memberId: string) => void;
   onSetFolder?: (nodeId: string) => void;
 }
 
 export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({ data, selected = false }) => {
-  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode, onSetFolder } = data;
+  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode, onSelectMember, onSetFolder } = data;
   const { nodeStatuses, isSimulating } = useOrgStore();
 
   const currentStatus = nodeStatuses[rootCeo.id] || rootCeo.status || 'idle';
@@ -86,8 +87,15 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
 
         {/* Chief of Staff / HR */}
         {rootCeo.chiefOfStaffAgent && (
-          <div className='px-10px py-6px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-11px'>
-            <div className='flex items-center gap-6px text-t-secondary'>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectMember?.(rootCeo.chiefOfStaffAgent.id);
+            }}
+            className='px-10px py-6px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-11px hover:border-primary/50 cursor-pointer transition-colors group'
+            title={`Chat with ${rootCeo.chiefOfStaffAgent.name} (Chief of Staff)`}
+          >
+            <div className='flex items-center gap-6px text-t-secondary group-hover:text-t-primary'>
               <Peoples size={14} theme='outline' className='text-primary shrink-0' />
               <span className='font-medium'>{rootCeo.chiefOfStaffAgent.name}</span>
             </div>

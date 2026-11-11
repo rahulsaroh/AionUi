@@ -20,10 +20,11 @@ export interface TeamNodeData {
   orientation?: 'TB' | 'LR';
   sharedCountsMap?: Record<string, number>;
   onSelectNode?: (nodeId: string, nodeType: 'team') => void;
+  onSelectMember?: (memberId: string) => void;
 }
 
 export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({ data, selected = false }) => {
-  const { team, departmentName = '', orientation = 'TB', sharedCountsMap = {}, onSelectNode } = data;
+  const { team, departmentName = '', orientation = 'TB', sharedCountsMap = {}, onSelectNode, onSelectMember } = data;
   const { nodeStatuses, setHoveredCanonicalAgentId, setSelectedCanonicalAgentId } = useOrgStore();
 
   const currentStatus: OrgNodeStatus = nodeStatuses[team.id] || team.status || 'idle';
@@ -98,11 +99,25 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
       <div className='p-10px flex flex-col gap-8px bg-[var(--color-bg-2)]'>
         {/* Team Manager & HR pill */}
         <div className='flex items-center justify-between px-8px py-4px rounded-6px bg-blue-500/10 border border-blue-500/20 text-10px'>
-          <div className='flex items-center gap-5px truncate min-w-0'>
+          <div
+            className='flex items-center gap-5px truncate min-w-0 cursor-pointer hover:underline'
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectMember?.(team.teamLeadAgent.id);
+            }}
+            title={`Chat with ${team.teamLeadAgent.name} (Team Lead)`}
+          >
             <Workbench size={12} theme='outline' className='text-blue-400 shrink-0' />
             <span className='text-blue-300 font-semibold truncate'>{team.teamLeadAgent.name}</span>
           </div>
-          <span className='text-blue-400/80 text-9px font-mono shrink-0'>
+          <span
+            className='text-blue-400/80 text-9px font-mono shrink-0 cursor-pointer hover:underline'
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectMember?.(team.hrCoordinatorAgent.id);
+            }}
+            title={`Chat with ${team.hrCoordinatorAgent.name} (HR Coordinator)`}
+          >
             HR: {team.hrCoordinatorAgent.name.split(' ')[0]}
           </span>
         </div>
@@ -131,7 +146,10 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
                   currentDepartmentName={departmentName}
                   sharedCount={sharedCountsMap[spec.canonicalAgentId] || 1}
                   onHover={(id) => setHoveredCanonicalAgentId(id)}
-                  onClick={(id) => setSelectedCanonicalAgentId(id)}
+                  onClick={(id) => {
+                    setSelectedCanonicalAgentId(id);
+                    onSelectMember?.(spec.id);
+                  }}
                 />
               ))
             )}

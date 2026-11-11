@@ -1,6 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
-import { ArrowCircleLeft, ArrowLeft, ArrowRight, ExpandLeft, ExpandRight, Peoples, Search } from '@icon-park/react';
+import {
+  ArrowCircleLeft,
+  ArrowLeft,
+  ArrowRight,
+  Briefcase,
+  ExpandLeft,
+  ExpandRight,
+  LinkCloudSucess,
+  NetworkTree,
+  Peoples,
+  Remind,
+  Search,
+} from '@icon-park/react';
 import { Tooltip } from '@arco-design/web-react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -18,6 +30,7 @@ import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
 import { resolveFeedbackModule } from '@/renderer/services/feedback/resolveFeedbackModule';
 import { isElectronDesktop, isMacOS } from '@/renderer/utils/platform';
 import { IS_DISCONTINUED_BUILD } from '@/renderer/utils/discontinuedBuild';
+import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
 import MigrationInviteCapsule from './MigrationInviteCapsule';
 import './titlebar.css';
 
@@ -112,6 +125,26 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const lastNonSettingsPathRef = useRef('/guid');
+
+  const { activeScope, setActiveScope } = useOrgStore();
+  const isOrgActive = activeScope === 'organization' || location.pathname.startsWith('/organization');
+
+  const handleSelectScope = useCallback(
+    (scope: 'workplace' | 'organization') => {
+      if (scope === 'organization') {
+        if (activeScope !== 'organization') setActiveScope('organization');
+        if (!location.pathname.startsWith('/organization')) {
+          void navigate('/organization');
+        }
+      } else {
+        if (activeScope !== 'workplace') setActiveScope('workplace');
+        if (location.pathname.startsWith('/organization')) {
+          void navigate('/guid');
+        }
+      }
+    },
+    [activeScope, location.pathname, navigate, setActiveScope]
+  );
 
   // 监听工作空间折叠状态，保持按钮图标一致 / Sync workspace collapsed state for toggle button
   useEffect(() => {
@@ -318,70 +351,9 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         'app-titlebar--mac': isMacRuntime,
       })}
     >
-      <div ref={menuRef} className='app-titlebar__menu' style={menuStyle}>
-        <div
-          className='bg-black shrink-0 size-24px relative rd-0.5rem flex items-center justify-center'
-          style={{ marginRight: 6 }}
-        >
-          <svg className='w-4 h-4' viewBox='0 0 80 80' fill='none'>
-            <path
-              d='M40 20 Q38 22 25 40 Q23 42 26 42 L30 42 Q32 40 40 30 Q48 40 50 42 L54 42 Q57 42 55 40 Q42 22 40 20'
-              fill='white'
-            />
-            <circle cx='40' cy='46' r='3' fill='white' />
-            <path d='M18 50 Q40 70 62 50' stroke='white' strokeWidth='3.5' fill='none' strokeLinecap='round' />
-          </svg>
-        </div>
-        <span
-          className='app-titlebar__brand-text'
-          style={{ marginRight: 8, fontWeight: 600, fontSize: 13, pointerEvents: 'auto' }}
-        >
-          AionUi
-        </span>
-        {showBackToChatButton && (
-          <button
-            type='button'
-            className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
-            onClick={handleBackToChat}
-            aria-label={backToChatTooltip}
-          >
-            <ArrowCircleLeft theme='outline' size={iconSize} fill='currentColor' />
-          </button>
-        )}
-        {showSiderToggle && (
-          <button
-            type='button'
-            className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
-            onClick={handleSiderToggle}
-            aria-label={siderTooltip}
-          >
-            <SidebarIcon size={iconSize} strokeWidth={desktopIconStroke} />
-          </button>
-        )}
-        {showSearchButton && (
-          <ConversationSearchPopover
-            renderTrigger={({ onClick }) => (
-              <button
-                type='button'
-                className='app-titlebar__button'
-                onClick={onClick}
-                aria-label={searchTooltip}
-                title={searchTooltip}
-              >
-                <Search
-                  theme='outline'
-                  size={iconSize}
-                  fill='currentColor'
-                  strokeWidth={desktopIconStroke}
-                  className='block leading-none'
-                  style={{ lineHeight: 0 }}
-                />
-              </button>
-            )}
-          />
-        )}
+      <div ref={menuRef} className='app-titlebar__menu flex items-center' style={menuStyle}>
         {showHistoryNav && (
-          <>
+          <div className='flex items-center gap-2px mr-8px'>
             <button
               type='button'
               className='app-titlebar__button app-titlebar__button--nav'
@@ -402,7 +374,84 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             >
               <ArrowRight theme='outline' size={iconSize} fill='currentColor' strokeWidth={desktopIconStroke} />
             </button>
-          </>
+          </div>
+        )}
+
+        <div
+          className='flex items-center gap-8px cursor-pointer select-none mr-10px'
+          onClick={() => void navigate('/guid')}
+          title='AionUi'
+        >
+          <div className='shrink-0 size-22px rounded-6px bg-[#00e676]/15 border border-[#00e676]/40 flex items-center justify-center shadow-[0_0_8px_rgba(0,230,118,0.25)]'>
+            <svg className='w-3.5 h-3.5' viewBox='0 0 80 80' fill='none'>
+              <path
+                d='M40 20 Q38 22 25 40 Q23 42 26 42 L30 42 Q32 40 40 30 Q48 40 50 42 L54 42 Q57 42 55 40 Q42 22 40 20'
+                fill='#00e676'
+              />
+              <circle cx='40' cy='46' r='3' fill='#00e676' />
+              <path d='M18 50 Q40 70 62 50' stroke='#00e676' strokeWidth='3.5' fill='none' strokeLinecap='round' />
+            </svg>
+          </div>
+          <span className='font-semibold text-14px text-white tracking-wide select-none'>AionUi</span>
+        </div>
+
+        {/* Workplace & Organization segmented capsule toggle */}
+        <div className='flex items-center p-2px rounded-full bg-[#0a120e] border border-[#16241d] ml-4px mr-6px select-none'>
+          <button
+            type='button'
+            onClick={() => handleSelectScope('workplace')}
+            className={classNames(
+              'flex items-center gap-6px px-12px py-3px rounded-full text-12px font-medium transition-all duration-200 cursor-pointer border-none',
+              !isOrgActive
+                ? 'bg-[#00e676]/15 text-[#00e676] shadow-[0_0_10px_rgba(0,230,118,0.25)] ring-1 ring-[#00e676]/50'
+                : 'bg-transparent text-[#8ea396] hover:text-white'
+            )}
+          >
+            <Briefcase
+              theme={!isOrgActive ? 'filled' : 'outline'}
+              size={13}
+              fill={!isOrgActive ? '#00e676' : 'currentColor'}
+            />
+            <span>Workplace</span>
+          </button>
+          <button
+            type='button'
+            onClick={() => handleSelectScope('organization')}
+            className={classNames(
+              'flex items-center gap-6px px-12px py-3px rounded-full text-12px font-medium transition-all duration-200 cursor-pointer border-none',
+              isOrgActive
+                ? 'bg-[#00e676]/15 text-[#00e676] shadow-[0_0_10px_rgba(0,230,118,0.25)] ring-1 ring-[#00e676]/50'
+                : 'bg-transparent text-[#8ea396] hover:text-white'
+            )}
+          >
+            <NetworkTree
+              theme={isOrgActive ? 'filled' : 'outline'}
+              size={13}
+              fill={isOrgActive ? '#00e676' : 'currentColor'}
+            />
+            <span>Organization</span>
+          </button>
+        </div>
+
+        {showBackToChatButton && (
+          <button
+            type='button'
+            className={classNames('app-titlebar__button ml-4px', layout?.isMobile && 'app-titlebar__button--mobile')}
+            onClick={handleBackToChat}
+            aria-label={backToChatTooltip}
+          >
+            <ArrowCircleLeft theme='outline' size={iconSize} fill='currentColor' />
+          </button>
+        )}
+        {showSiderToggle && (
+          <button
+            type='button'
+            className={classNames('app-titlebar__button ml-2px', layout?.isMobile && 'app-titlebar__button--mobile')}
+            onClick={handleSiderToggle}
+            aria-label={siderTooltip}
+          >
+            <SidebarIcon size={iconSize} strokeWidth={desktopIconStroke} />
+          </button>
         )}
       </div>
       <div
@@ -432,9 +481,50 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             );
           })()}
       </div>
-      <div ref={toolbarRef} className='app-titlebar__toolbar'>
+      <div ref={toolbarRef} className='app-titlebar__toolbar flex items-center gap-6px'>
         {layout?.isMobile && <div id='app-titlebar-actions-slot' className='app-titlebar__actions-slot' />}
         {IS_DISCONTINUED_BUILD && <MigrationInviteCapsule />}
+
+        {/* Conversation Search Button */}
+        {showSearchButton && (
+          <ConversationSearchPopover
+            renderTrigger={({ onClick }) => (
+              <button
+                type='button'
+                className='app-titlebar__button'
+                onClick={onClick}
+                aria-label={searchTooltip}
+                title={searchTooltip}
+              >
+                <Search
+                  theme='outline'
+                  size={iconSize}
+                  fill='currentColor'
+                  strokeWidth={desktopIconStroke}
+                  className='block leading-none'
+                  style={{ lineHeight: 0 }}
+                />
+              </button>
+            )}
+          />
+        )}
+
+        {/* Notifications / Approvals Bell with glowing green dot badge */}
+        <Tooltip content={t('titlebar.notifications', { defaultValue: 'Notifications & Approvals' })}>
+          <button
+            type='button'
+            className='app-titlebar__button relative'
+            onClick={() => void navigate('/approvals')}
+            aria-label='Notifications'
+          >
+            <Remind theme='outline' size={iconSize} fill='currentColor' strokeWidth={desktopIconStroke} />
+            <span
+              className='absolute top-8px right-8px size-6px rounded-full bg-[#00e676] shadow-[0_0_6px_#00e676]'
+              aria-hidden='true'
+            />
+          </button>
+        </Tooltip>
+
         <button
           type='button'
           className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
@@ -458,10 +548,11 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             )}
           </button>
         )}
-        <Tooltip content='Gateway Sync Status: Synced'>
-          <div className='app-titlebar__sync-indicator flex items-center gap-6px px-8px'>
-            <span className='inline-block w-8px h-8px rounded-full bg-[var(--color-success-6)]' aria-hidden='true' />
-            <span className='text-12px text-t-secondary hidden sm:inline'>Synced</span>
+        {/* Gateway Sync Status - Green icon and green text */}
+        <Tooltip content={t('titlebar.syncStatus', { defaultValue: 'Gateway Sync Status: Synced' })}>
+          <div className='app-titlebar__sync-indicator flex items-center gap-5px px-8px py-3px rounded-full bg-[#00e676]/10 border border-[#00e676]/30 cursor-default select-none'>
+            <LinkCloudSucess theme='outline' size={14} fill='#00e676' />
+            <span className='text-12px font-medium text-[#00e676] hidden sm:inline'>Synced</span>
           </div>
         </Tooltip>
         {showWindowControls && <WindowControls />}

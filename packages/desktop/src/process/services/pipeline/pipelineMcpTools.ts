@@ -38,7 +38,10 @@ export function createPipelineMcpToolDefinitions(runService: PipelineRunService,
         step: z.union([z.string(), z.number()]).describe('Step index or step name/id'),
         artifactPaths: z.array(z.string()).describe('List of output file paths produced by this step'),
         baseDir: z.string().optional().describe('Project base directory for relative artifact paths'),
-        sideEffectFree: z.boolean().optional().describe('Whether a step with no artifacts is side-effect-free and can be skipped on resume'),
+        sideEffectFree: z
+          .boolean()
+          .optional()
+          .describe('Whether a step with no artifacts is side-effect-free and can be skipped on resume'),
       }),
       execute: async (args: {
         runId: string;

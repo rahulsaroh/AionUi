@@ -75,10 +75,68 @@
 
 html[data-theme='dark'],
 body[arco-theme='dark'] {
-  --aion-overlay-bg: #0e0e0e;
-  --aion-overlay-text: #f2f3f5;
-  --aion-overlay-border: #333333;
-  --aion-overlay-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --aion-overlay-bg: #0b120e;
+  --aion-overlay-text: #f0f7f3;
+  --aion-overlay-border: #16241d;
+  --aion-overlay-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  /* Arco primary color scale overrides for emerald theme */
+  --arcoblue-1: 6, 26, 17;
+  --arcoblue-2: 8, 43, 27;
+  --arcoblue-3: 10, 69, 41;
+  --arcoblue-4: 0, 115, 62;
+  --arcoblue-5: 0, 179, 94;
+  --arcoblue-6: 0, 230, 118;
+  --arcoblue-7: 38, 235, 137;
+  --arcoblue-8: 77, 240, 156;
+  --arcoblue-9: 140, 247, 189;
+  --arcoblue-10: 204, 252, 224;
+
+  --primary-1: var(--arcoblue-1);
+  --primary-2: var(--arcoblue-2);
+  --primary-3: var(--arcoblue-3);
+  --primary-4: var(--arcoblue-4);
+  --primary-5: var(--arcoblue-5);
+  --primary-6: var(--arcoblue-6);
+  --primary-7: var(--arcoblue-7);
+  --primary-8: var(--arcoblue-8);
+  --primary-9: var(--arcoblue-9);
+  --primary-10: var(--arcoblue-10);
+
+  --color-primary-light-1: rgba(0, 230, 118, 0.12);
+  --color-primary-light-2: rgba(0, 230, 118, 0.2);
+  --color-primary-light-3: rgba(0, 230, 118, 0.3);
+  --color-primary-light-4: rgba(0, 230, 118, 0.4);
+}
+
+body[arco-theme='dark'] .arco-btn-primary:not(.arco-btn-disabled) {
+  background-color: #00e676;
+  border-color: #00e676;
+  color: #05140b;
+  font-weight: 600;
+}
+
+body[arco-theme='dark'] .arco-btn-primary:not(.arco-btn-disabled):hover {
+  background-color: #26eb89;
+  border-color: #26eb89;
+  color: #05140b;
+}
+
+body[arco-theme='dark'] .arco-btn-primary:not(.arco-btn-disabled):active {
+  background-color: #00c853;
+  border-color: #00c853;
+  color: #05140b;
+}
+
+body[arco-theme='dark'] .arco-checkbox-checked .arco-checkbox-mask,
+body[arco-theme='dark'] .arco-switch-checked,
+body[arco-theme='dark'] .arco-radio-checked .arco-radio-mask {
+  background-color: #00e676 !important;
+  border-color: #00e676 !important;
+}
+
+body[arco-theme='dark'] .arco-checkbox-checked .arco-checkbox-mask .arco-icon {
+  color: #05140b !important;
 }
 
 /* Arco's arco.css puts 'Inter' first in font-family, which causes very thin
@@ -652,4 +710,54 @@ body[arco-theme='dark'] .arco-message-error {
   padding-top: 6px;
   padding-bottom: 2px;
   background-color: var(--color-bg-popup);
+}
+
+.org-inspector-drawer-wrapper .arco-drawer {
+  max-width: 100%;
+  overflow-x: hidden !important;
+}
+
+.org-inspector-drawer .arco-drawer-inner {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.org-inspector-drawer .arco-drawer-scroll {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.org-inspector-drawer .arco-drawer-header {
+  height: auto !important;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  overflow-x: hidden;
+  flex-shrink: 0 !important;
+}
+
+.org-inspector-drawer .arco-drawer-header-title {
+  width: 100%;
+  min-width: 0;
+}
+
+.org-inspector-drawer .arco-drawer-content {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 12px 16px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+}
+
+.org-inspector-drawer .arco-drawer-footer {
+  padding: 12px 16px !important;
+  overflow-x: hidden;
+  flex-shrink: 0 !important;
 }
