@@ -23,6 +23,7 @@ import {
 } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
 import { useOrgStore } from '../store/useOrgStore';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
@@ -33,6 +34,7 @@ import type { OrgConversation, OrgConversationMessage, OrgAgentModelConfig } fro
 
 export const OrgChatView: React.FC = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const {
     hierarchy,
     projects,
@@ -151,25 +153,18 @@ export const OrgChatView: React.FC = () => {
     activeDept?.departmentCeoAgent ||
     hierarchy.rootCeo.ceoAgent;
 
-  const currentAgentModel: OrgAgentModelConfig = useMemo(() => {
-    // 1. Explicit model on current target agent (if not the stale unconfigured initial seed)
-    if (currentTargetAgent.model?.modelId) {
-      const isUnconfiguredSeed =
-        currentTargetAgent.model.modelId === 'claude-3-7-sonnet' &&
-        !providers?.some((p) => p.models?.includes('claude-3-7-sonnet') || p.id === 'anthropic');
-      if (!isUnconfiguredSeed) {
-        return currentTargetAgent.model;
-      }
+  const currentAgentModel: OrgAgentModelConfig | undefined = useMemo(() => {
+    // 1. Explicit model on current target agent (skip stale hardcoded seed — Step 1e)
+    if (currentTargetAgent.model?.modelId && currentTargetAgent.model.modelId !== 'claude-3-7-sonnet') {
+      return currentTargetAgent.model;
     }
 
-    // 2. Custom or assigned model on Root CEO
-    if (hierarchy.rootCeo.ceoAgent.model?.modelId) {
-      const isCeoUnconfiguredSeed =
-        hierarchy.rootCeo.ceoAgent.model.modelId === 'claude-3-7-sonnet' &&
-        !providers?.some((p) => p.models?.includes('claude-3-7-sonnet') || p.id === 'anthropic');
-      if (!isCeoUnconfiguredSeed) {
-        return hierarchy.rootCeo.ceoAgent.model;
-      }
+    // 2. Custom or assigned model on Root CEO (skip stale hardcoded seed — Step 1e)
+    if (
+      hierarchy.rootCeo.ceoAgent.model?.modelId &&
+      hierarchy.rootCeo.ceoAgent.model.modelId !== 'claude-3-7-sonnet'
+    ) {
+      return hierarchy.rootCeo.ceoAgent.model;
     }
 
     // 3. First available model from user's configured providers
@@ -177,14 +172,9 @@ export const OrgChatView: React.FC = () => {
       return firstAvailableConfiguredModel;
     }
 
-    return (
-      currentTargetAgent.model ||
-      hierarchy.rootCeo.ceoAgent.model || {
-        modelId: 'claude-3-7-sonnet',
-        providerId: 'anthropic',
-      }
-    );
-  }, [currentTargetAgent, hierarchy.rootCeo.ceoAgent.model, providers, firstAvailableConfiguredModel]);
+    // 4. No model configured — return undefined so the UI can show a prompt
+    return undefined;
+  }, [currentTargetAgent, hierarchy.rootCeo.ceoAgent.model, firstAvailableConfiguredModel]);
 
   const activeWorkspacePath = useMemo(() => {
     const raw =
@@ -260,6 +250,12 @@ export const OrgChatView: React.FC = () => {
     setInputPrompt('');
     setIsExecuting(true);
 
+    // Step 1b: auto-title from first user message (first 40 chars, trimmed)
+    const isNewChatTitle =
+      !activeConversation?.title ||
+      activeConversation.title === t('team.organization.newChat', { defaultValue: 'New chat' });
+    const autoTitle = isNewChatTitle ? prompt.trim().slice(0, 40) : undefined;
+
     const isProjectChat = Boolean(activeProject);
     const isTeamChat = !activeProject && (Boolean(activeTeam) || activeConversation?.type === 'team_execution');
     const isDirectMemberChat =
@@ -313,6 +309,8 @@ export const OrgChatView: React.FC = () => {
             ? `conv-direct-${targetAgent.id}-${Date.now()}`
             : `conv-ceo-${Date.now()}`);
     const initialConvTitle =
+      // Step 1b: auto-title from first user message
+      autoTitle ??
       activeConversation?.title ??
       (activeProject
         ? `${activeProject.name} - Chat`
@@ -629,12 +627,12 @@ export const OrgChatView: React.FC = () => {
               {isExecuting ? (
                 <span className='flex items-center gap-4px text-10px font-mono text-emerald-400'>
                   <span className='size-6px rounded-full bg-emerald-400 animate-ping' />
-                  <span>Executing...</span>
+                  <span>{t('team.organization.executing', { defaultValue: 'Executing�' })}</span>
                 </span>
               ) : (
                 <span className='flex items-center gap-4px text-10px font-mono text-t-tertiary'>
                   <span className='size-6px rounded-full bg-emerald-500' />
-                  <span>Ready</span>
+                  <span>{t('team.organization.ready', { defaultValue: 'Ready' })}</span>
                 </span>
               )}
             </div>
@@ -671,11 +669,11 @@ export const OrgChatView: React.FC = () => {
             className='!rounded-8px !text-12px'
           >
             {activeProject
-              ? 'New Project Chat'
+              ? t('team.organization.newProjectChat', { defaultValue: 'New Project Chat' })
               : activeTeam
-                ? 'New Team Chat'
+                ? t('team.organization.newTeamChat', { defaultValue: 'New Team Chat' })
                 : activeTargetAgent
-                  ? 'New Message'
+                  ? t('team.organization.newMessage', { defaultValue: 'New Message' })
                   : 'New Directive'}
           </Button>
 
@@ -890,21 +888,37 @@ export const OrgChatView: React.FC = () => {
       {/* Send Box */}
       <div className='p-16px border-t border-[var(--color-border-2)] bg-[var(--color-bg-2)] shrink-0 select-none'>
         <div className='max-w-860px mx-auto flex flex-col gap-8px'>
+          {/* Step 1e: Show a "Connect a model" prompt if no model is configured */}
+          {!currentAgentModel && (
+            <div className='flex items-center gap-10px px-14px py-8px rounded-10px bg-orange-500/10 border border-orange-500/30 text-13px text-orange-400'>
+              <span className='flex-1'>{t('team.organization.noModelConfigured', { defaultValue: 'No AI model connected. Connect a model in Settings to start chatting.' })}</span>
+              <Button
+                size='small'
+                type='secondary'
+                onClick={() => void navigate('/settings/models')}
+                className='!text-12px shrink-0'
+              >
+                {t('team.organization.goToSettings', { defaultValue: 'Open Settings' })}
+              </Button>
+            </div>
+          )}
           <div className='relative rounded-12px border border-[var(--color-border-2)] focus-within:border-primary bg-[var(--color-bg-1)] shadow-sm transition-colors overflow-hidden'>
             <Input.TextArea
               rows={3}
               value={inputPrompt}
               onChange={setInputPrompt}
               onKeyDown={handleKeyDown}
-              disabled={isExecuting}
+              disabled={isExecuting || !currentAgentModel}
               placeholder={
-                activeProject
-                  ? `Message ${activeProjectHead?.name || 'Project Lead'} about ${activeProject.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
-                  : activeTeam
-                    ? `Message ${activeTeam.teamLeadAgent.name} for ${activeTeam.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
-                    : activeTargetAgent
-                      ? `Message ${activeTargetAgent.name} directly (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
-                      : `Direct Root CEO (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'}) - issue strategic directives or manage structure...`
+                !currentAgentModel
+                  ? t('team.organization.connectModelPlaceholder', { defaultValue: 'Connect a model in Settings to chat…' })
+                  : activeProject
+                    ? `Message ${activeProjectHead?.name || 'Project Lead'} about ${activeProject.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+                    : activeTeam
+                      ? `Message ${activeTeam.teamLeadAgent.name} for ${activeTeam.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+                      : activeTargetAgent
+                        ? `Message ${activeTargetAgent.name} directly (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+                        : `Direct Root CEO (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'}) - issue strategic directives or manage structure...`
               }
               className='!border-none !bg-transparent !p-12px !text-13px resize-none'
               autoFocus
@@ -959,11 +973,11 @@ export const OrgChatView: React.FC = () => {
                 size='small'
                 icon={<Send size={13} theme='outline' />}
                 loading={isExecuting}
-                disabled={!inputPrompt.trim() || isExecuting}
+                disabled={!inputPrompt.trim() || isExecuting || !currentAgentModel}
                 onClick={() => void handleSendMessage()}
                 className='!rounded-8px !px-14px !h-28px !font-medium shrink-0'
               >
-                Send
+                {t('team.organization.send', { defaultValue: 'Send' })}
               </Button>
             </div>
           </div>

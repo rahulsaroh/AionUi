@@ -2774,4 +2774,40 @@ export const org = {
     }
     return null;
   },
+  getFullBundle: async (): Promise<any> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgGetFullBundle) {
+      return window.electronAPI.orgGetFullBundle();
+    }
+    return null;
+  },
+  saveFullBundle: async (bundle: unknown): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgSaveFullBundle) {
+      return window.electronAPI.orgSaveFullBundle(bundle);
+    }
+    return false;
+  },
+  getMembers: async (): Promise<any[]> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgGetMembers) {
+      return window.electronAPI.orgGetMembers();
+    }
+    return [];
+  },
+  saveMembers: async (members: unknown[]): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgSaveMembers) {
+      return window.electronAPI.orgSaveMembers(members);
+    }
+    return false;
+  },
+  getProjects: async (): Promise<any[]> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgGetProjects) {
+      return window.electronAPI.orgGetProjects();
+    }
+    return [];
+  },
+  saveProjects: async (projects: unknown[]): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgSaveProjects) {
+      return window.electronAPI.orgSaveProjects(projects);
+    }
+    return false;
+  },
 };

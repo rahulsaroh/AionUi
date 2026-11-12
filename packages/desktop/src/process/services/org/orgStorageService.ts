@@ -99,7 +99,7 @@ export class OrgStorageService {
         skills: string | null;
       }>;
 
-      return rows.map((r) => ({
+      return rows.map((r): OrgAgentMember => ({
         id: r.id,
         canonicalAgentId: r.id,
         name: r.name,
@@ -107,8 +107,8 @@ export class OrgStorageService {
         systemPrompt: r.system_prompt || undefined,
         model: r.model ? JSON.parse(r.model) : undefined,
         skills: r.skills ? JSON.parse(r.skills) : [],
-        assignedTeamIds: [],
-        lastActiveAt: null,
+        assignedTeamIds: [] as string[],
+        lastActiveAt: null as number | null,
         status: 'idle',
       }));
     } catch (err) {
@@ -214,11 +214,11 @@ export class OrgStorageService {
         context: string | null;
       }>;
 
-      return rows.map((r) => ({
+      return rows.map((r): OrgProject => ({
         id: r.id,
         name: r.name,
         departmentId: r.department_id,
-        teamIds: [],
+        teamIds: [] as string[],
         memberIds: r.member_ids ? JSON.parse(r.member_ids) : [],
         goal: r.goal || undefined,
         description: r.description || undefined,

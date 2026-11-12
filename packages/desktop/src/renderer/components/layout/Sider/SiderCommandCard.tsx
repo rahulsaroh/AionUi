@@ -8,6 +8,7 @@ import React from 'react';
 import { Button } from '@arco-design/web-react';
 import { Crown } from '@icon-park/react';
 import classNames from 'classnames';
+import { useTranslation } from 'react-i18next';
 import styles from './Sider.module.css';
 
 interface SiderCommandCardProps {
@@ -17,6 +18,7 @@ interface SiderCommandCardProps {
 }
 
 export const SiderCommandCard: React.FC<SiderCommandCardProps> = ({ onClick, shortcut, selected = false }) => {
+  const { t } = useTranslation();
   return (
     <Button
       type='text'
@@ -34,7 +36,9 @@ export const SiderCommandCard: React.FC<SiderCommandCardProps> = ({ onClick, sho
         className='shrink-0'
         style={{ color: '#D97706', lineHeight: 0 }}
       />
-      <span className='font-medium text-13px text-t-primary truncate leading-none'>Talk to Root CEO</span>
+      <span className='font-medium text-13px text-t-primary truncate leading-none'>
+        {t('team.organization.talkToRootCeo', { defaultValue: 'Talk to Root CEO' })}
+      </span>
       {Boolean(shortcut?.trim()) && (
         <span className='ms-auto text-10px font-medium px-4px py-0.5px rounded bg-fill-2 text-t-secondary border border-[var(--color-border-2)] leading-tight shrink-0'>
           {shortcut}

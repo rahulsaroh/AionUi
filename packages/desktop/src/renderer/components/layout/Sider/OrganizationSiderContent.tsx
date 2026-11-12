@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Tooltip, Modal, Input, Message } from '@arco-design/web-react';
+import { Tooltip, Modal, Input, Message, Dropdown, Menu } from '@arco-design/web-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -38,7 +38,7 @@ import SiderProjectRow from './SiderProjectRow';
 import SiderChatRow from './SiderChatRow';
 import SiderEmptyState from './SiderEmptyState';
 
-import { NetworkTree, AlarmClock, Robot, SunOne, Finance, Play } from '@icon-park/react';
+import { NetworkTree, AlarmClock, Robot, SunOne, Finance, Play, Plus } from '@icon-park/react';
 
 type OrganizationSiderContentProps = {
   collapsed: boolean;
@@ -445,7 +445,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     const newConvId = `conv-team-${team.id}-${Date.now()}`;
     addOrgConversation({
       id: newConvId,
-      title: `${team.name} - Chat ${formatChatTime(Date.now())}`,
+      // Step 1b: start as "New chat" — auto-title comes from first user message
+      title: t('team.organization.newChat', { defaultValue: 'New chat' }),
       type: 'team_execution',
       sourceNodeId: team.id,
       targetNodeId: team.id,
@@ -495,7 +496,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     const newConvId = `conv-proj-${proj.id}-${Date.now()}`;
     addOrgConversation({
       id: newConvId,
-      title: `${proj.name} - Chat ${formatChatTime(Date.now())}`,
+      title: t('team.organization.newChat', { defaultValue: 'New chat' }),
       type: 'team_execution',
       sourceNodeId: teamId || deptId,
       targetNodeId: teamId || deptId,
@@ -520,10 +521,55 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setEditEntity(null);
   };
 
+  // ---- Step 1a: ALL hooks must be above the early return ----
+
+  // Filter options with counts (moved above early return to fix Rules-of-Hooks violation)
+  const filterOptions = useMemo(() => {
+    let activeCount = 0;
+    let dormantCount = 0;
+    let sharedCount = 0;
+
+    allTeams.forEach((team) => {
+      const status = teamStatus(team);
+      if (status !== 'dormant') activeCount++;
+      if (status === 'dormant') dormantCount++;
+      if (team.specialistMembers.some((m) => m.assignedTeamIds.length > 1)) sharedCount++;
+    });
+
+    projects.forEach((proj) => {
+      if (proj.status !== 'dormant') activeCount++;
+      if (proj.status === 'dormant') dormantCount++;
+      if (proj.teamIds.length > 1) sharedCount++;
+    });
+
+    return [
+      {
+        key: 'all' as const,
+        label: t('team.organization.filterAll', { defaultValue: 'All' }),
+        count: hierarchy.departments.length,
+      },
+      {
+        key: 'active' as const,
+        label: t('team.organization.filterActive', { defaultValue: 'Active' }),
+        count: activeCount,
+      },
+      {
+        key: 'dormant' as const,
+        label: t('team.organization.filterDormant', { defaultValue: 'Dormant' }),
+        count: dormantCount,
+      },
+      {
+        key: 'shared' as const,
+        label: t('team.organization.filterShared', { defaultValue: 'Shared' }),
+        count: sharedCount,
+      },
+    ];
+  }, [hierarchy.departments, allTeams, projects, t, teamStatus]);
+
   if (collapsed) {
     return (
       <div className='flex flex-col gap-4px items-center px-4px'>
-        <Tooltip {...siderTooltipProps} content='Talk to Root CEO' position='right'>
+        <Tooltip {...siderTooltipProps} content={t('team.organization.talkToRootCeo', { defaultValue: 'Talk to Root CEO' })} position='right'>
           <SiderCommandCard onClick={handleOpenCeoChat} />
         </Tooltip>
         <Tooltip
@@ -605,55 +651,64 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     );
   }
 
-  // Filter options with counts
-  const filterOptions = useMemo(() => {
-    let activeCount = 0;
-    let dormantCount = 0;
-    let sharedCount = 0;
-
-    allTeams.forEach((team) => {
-      const status = teamStatus(team);
-      if (status !== 'dormant') activeCount++;
-      if (status === 'dormant') dormantCount++;
-      if (team.specialistMembers.some((m) => m.assignedTeamIds.length > 1)) sharedCount++;
-    });
-
-    projects.forEach((proj) => {
-      if (proj.status !== 'dormant') activeCount++;
-      if (proj.status === 'dormant') dormantCount++;
-      if (proj.teamIds.length > 1) sharedCount++;
-    });
-
-    return [
-      {
-        key: 'all' as const,
-        label: t('team.organization.filterAll', { defaultValue: 'All' }),
-        count: hierarchy.departments.length,
-      },
-      {
-        key: 'active' as const,
-        label: t('team.organization.filterActive', { defaultValue: 'Active' }),
-        count: activeCount,
-      },
-      {
-        key: 'dormant' as const,
-        label: t('team.organization.filterDormant', { defaultValue: 'Dormant' }),
-        count: dormantCount,
-      },
-      {
-        key: 'shared' as const,
-        label: t('team.organization.filterShared', { defaultValue: 'Shared' }),
-        count: sharedCount,
-      },
-    ];
-  }, [hierarchy.departments, allTeams, projects, t]);
-
   return (
     <div className='flex flex-col h-full overflow-hidden'>
       <div className='flex-1 overflow-y-auto custom-scrollbar'>
         {/* Primary Actions */}
         <div className='px-8px mb-4px flex flex-col gap-2px'>
-          <SiderCommandCard onClick={handleOpenCeoChat} selected={ceoChatModalVisible} />
+          {/* CEO button + "+ New" dropdown in a flex row */}
+          <div className='flex items-center gap-4px'>
+            <div className='flex-1 min-w-0'>
+              <SiderCommandCard onClick={handleOpenCeoChat} selected={ceoChatModalVisible} />
+            </div>
+            <Dropdown
+              trigger='click'
+              position='br'
+              droplist={
+                <Menu>
+                  <Menu.Item
+                    key='dept'
+                    onClick={() => setCreateDeptModalVisible(true)}
+                  >
+                    {t('team.organization.newDepartment', { defaultValue: 'Department' })}
+                  </Menu.Item>
+                  <Menu.Item
+                    key='project'
+                    onClick={() => openProjectModal(selectedDepartmentId ?? undefined)}
+                  >
+                    {t('team.organization.newProject', { defaultValue: 'Project' })}
+                  </Menu.Item>
+                  <Menu.Item
+                    key='chat'
+                    onClick={() => {
+                      if (selectedProjectId) {
+                        const proj = projects.find((p) => p.id === selectedProjectId);
+                        if (proj) handleNewChat(proj.departmentId, proj);
+                      } else {
+                        handleOpenCeoChat();
+                      }
+                    }}
+                  >
+                    {t('team.organization.newChat', { defaultValue: 'New chat' })}
+                  </Menu.Item>
+                </Menu>
+              }
+            >
+              <Tooltip
+                {...siderTooltipProps}
+                content={t('team.organization.newMenuLabel', { defaultValue: 'New…' })}
+                position='right'
+              >
+                <button
+                  type='button'
+                  aria-label={t('team.organization.newMenuLabel', { defaultValue: 'New…' })}
+                  className='flex items-center justify-center size-32px rounded-6px border border-[var(--color-border-2)] bg-fill-1 hover:bg-fill-2 text-t-secondary hover:text-t-primary transition-colors shrink-0 cursor-pointer'
+                >
+                  <Plus size={14} theme='outline' fill='currentColor' />
+                </button>
+              </Tooltip>
+            </Dropdown>
+          </div>
           <SiderNavRow
             icon={<NetworkTree size={14} theme='outline' fill='currentColor' />}
             label={t('team.organization.canvas', { defaultValue: 'Organization Canvas' })}
@@ -1064,4 +1119,4 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   );
 };
 
-export default React.memo(OrganizationSiderContent);
+export default React.memo(OrganizationSiderC

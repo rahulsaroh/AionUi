@@ -4,11 +4,35 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MessageOne, Robot } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import type { OrgConversation } from '@/types/organization';
+
+/** Engine-status prefixes to strip from preview text (Step 1c). */
+const ENGINE_STATUS_PREFIXES = [
+  'Executive Directive Completed:',
+  'Executive Directive',
+  'Directive executed',
+  'Halted:',
+  'Response received',
+];
+
+function getLastMessagePreview(conversation: OrgConversation): string {
+  const msgs = conversation.messages;
+  if (msgs.length === 0) return '';
+  // Walk back from the end to find the last non-system message
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const msg = msgs[i];
+    if (msg.role === 'system') continue;
+    const text = msg.content.trim();
+    // Skip engine-status text
+    if (ENGINE_STATUS_PREFIXES.some((prefix) => text.startsWith(prefix))) continue;
+    return text.replace(/\n/g, ' ');
+  }
+  return '';
+}
 
 interface SiderChatRowProps {
   conversation: OrgConversation;
@@ -26,6 +50,9 @@ export const SiderChatRow: React.FC<SiderChatRowProps> = ({
   onSelect,
 }) => {
   const { t } = useTranslation();
+
+  // Step 1c: show last user/assistant message text, never engine status text
+  const preview = useMemo(() => getLastMessagePreview(conversation), [conversation]);
 
   return (
     <div
@@ -53,7 +80,12 @@ export const SiderChatRow: React.FC<SiderChatRowProps> = ({
         </div>
         <span className='text-9px text-t-tertiary shrink-0'>{relativeTime}</span>
       </div>
-      {conversation.summary && <span className='text-10px text-t-secondary truncate'>{conversation.summary}</span>}
+      {/* Step 1c: last message preview (plain text, 1 line, no engine status) */}
+      {preview && (
+        <span className='text-10px text-t-secondary truncate leading-snug' title={preview}>
+          {preview}
+        </span>
+      )}
       {badge && <span className='text-9px text-t-tertiary shrink-0'>{badge}</span>}
     </div>
   );

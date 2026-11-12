@@ -107,7 +107,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
 
         {/* Simulation & reset */}
         <div className='flex items-center gap-6px'>
-          <Tooltip content='Run live 6-step top-down delegation simulation with telemetry glows' position='bottom'>
+          <Tooltip content='Demo animation of simulated delegation across hierarchy' position='bottom'>
             <Button
               size='small'
               type='primary'
@@ -116,7 +116,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               icon={<Lightning size={13} theme='outline' />}
               onClick={() => void runSimulation()}
             >
-              {isSimulating ? `Step ${simulationStep}/6...` : 'Demo animation (mock)'}
+              {isSimulating ? `Step ${simulationStep}/4...` : 'Demo animation'}
             </Button>
           </Tooltip>
 
@@ -128,7 +128,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               onClick={() => {
                 if (
                   !window.confirm(
-                    'Reset organization to default? A JSON backup will be saved to localStorage (aionui:org-backup-<ts>).'
+                    'Are you sure you want to reset the organization to a blank canvas (Root CEO only)? All departments and custom projects will be reset.'
                   )
                 )
                   return;
