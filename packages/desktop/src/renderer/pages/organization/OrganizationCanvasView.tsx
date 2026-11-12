@@ -95,7 +95,7 @@ const CanvasInner: React.FC = () => {
   }>({ visible: false, project: null });
   const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
   const [editEntity, setEditEntity] = useState<{
-    type: 'department' | 'team' | 'member' | 'project';
+    type: 'department' | 'team' | 'member' | 'project' | 'ceo';
     data: any;
     context: { departmentId?: string; teamId?: string };
   } | null>(null);
@@ -223,6 +223,7 @@ const CanvasInner: React.FC = () => {
         onSelectNode: (id: string, type: 'ceo') => handleSelectNode(id, type),
         onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
         onSetFolder: (id: string) => handleSetFolder(id, 'ceo'),
+        onEditCeo: () => setEditEntity({ type: 'ceo', data: hierarchy.rootCeo, context: {} }),
       },
       position: { x: 0, y: 0 },
       className:
@@ -242,13 +243,17 @@ const CanvasInner: React.FC = () => {
           orientation: direction,
           onToggleCollapse: handleToggleCollapse,
           onAddSubTeam: (deptId: string) => {
-            addSubTeam(deptId, createTeamShell(deptId, `New Team ${dept.teams.length + 1}`));
+            addSubTeam(
+              deptId,
+              createTeamShell(deptId, `New Team ${dept.teams.length + 1}`, hierarchy.rootCeo.ceoAgent.model)
+            );
             Message.success(t('team.organization.teamSaved', { defaultValue: 'Sub-team saved' }));
           },
           onAddProject: (deptId: string) => openProjectModal(deptId),
           onEditDepartment: (deptId: string) => setEditingDepartmentId(deptId),
           onRunTask: (d: { id: string }) => handleSelectNode(d.id, 'department'),
           onSelectNode: (id: string, type: 'department') => handleSelectNode(id, type),
+          onSelectProject: (projId: string) => handleSelectNode(projId, 'project'),
           onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
           onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'department'),
           onEditMember: (memberId: string) => {
@@ -337,6 +342,39 @@ const CanvasInner: React.FC = () => {
             });
           });
         });
+
+        // Direct department projects (docked directly under department if not docked below a team in this department)
+        const directDeptProjects = projects.filter(
+          (p) => p.departmentId === dept.id && !dept.teams.some((team) => p.teamIds?.includes(team.id))
+        );
+        directDeptProjects.forEach((proj) => {
+          rawNodes.push({
+            id: `project-${proj.id}`,
+            type: 'project',
+            data: {
+              project: proj,
+              department: dept,
+              orientation: direction,
+              onSelectNode: (id: string, _type: 'project') => {
+                const cleanId = id.replace(/^project-/, '');
+                handleSelectNode(cleanId, 'project');
+              },
+              onEditProject: () => openProjectModal(dept.id, undefined, proj),
+              onSetFolder: () => handleSetFolder(proj.id, 'project'),
+            },
+            position: { x: 0, y: 0 },
+            className:
+              focusedNodeId === `project-${proj.id}`
+                ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
+                : undefined,
+          });
+          rawEdges.push({
+            id: `edge-${dept.id}->project-${proj.id}`,
+            source: dept.id,
+            target: `project-${proj.id}`,
+            type: 'delegation',
+          });
+        });
       }
     });
 
@@ -392,7 +430,7 @@ const CanvasInner: React.FC = () => {
 
   const handleConfirmCreateDept = () => {
     if (!newDeptName.trim()) return;
-    addDepartment(createDepartmentShell(newDeptName));
+    addDepartment(createDepartmentShell(newDeptName, hierarchy.rootCeo.ceoAgent.model));
     setNewDeptName('');
     setCreateDeptModalVisible(false);
     Message.success(t('team.organization.departmentSaved', { defaultValue: 'Department saved' }));

@@ -159,4 +159,89 @@ All assets have been configured and leadership assigned.`;
     expect(result.deletedDepartmentIds).toContain(bogusDept.id);
     expect(hierarchy.departments.some((d) => d.id === bogusDept.id)).toBe(false);
   });
+
+  it('extracts department creation when user says "start a app development department and choose folder to work with:"', () => {
+    const prompt =
+      'hi, start a app development department and choose folder to work with: G:\\My Drive\\Life\\Money\\Apps';
+    const result = extractDepartmentCreationIntent(prompt);
+    expect(result).not.toBeNull();
+    expect(result?.name.toLowerCase()).toBe('app development');
+    expect(result?.workspacePath).toBe('G:\\My Drive\\Life\\Money\\Apps');
+  });
+
+  it('extracts project discovery when user says "in app development department folder, i have multiple apps. make each app an project and add here"', () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    appDept.workspacePath = 'G:\\My Drive\\Life\\Money\\Apps';
+    hierarchy.departments.push(appDept);
+
+    const prompt = 'in app development department folder, i have multiple apps. make each app an project and add here';
+    const result = extractProjectDiscoveryOrBatchIntent(prompt, hierarchy.departments);
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe('discover');
+    expect(result?.targetDepartment.id).toBe(appDept.id);
+    expect(result?.folderPath).toBe('G:\\My Drive\\Life\\Money\\Apps');
+  });
+
+  it('extracts project discovery using fallback path from conversation history if department has no path yet', () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    // Department has no workspacePath set yet
+    hierarchy.departments.push(appDept);
+
+    const prompt = 'in app development department folder, i have multiple apps. make each app an project and add here';
+    const fallback = 'G:\\My Drive\\Life\\Money\\Apps';
+    const result = extractProjectDiscoveryOrBatchIntent(prompt, hierarchy.departments, undefined, undefined, fallback);
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe('discover');
+    expect(result?.targetDepartment.id).toBe(appDept.id);
+    expect(result?.folderPath).toBe('G:\\My Drive\\Life\\Money\\Apps');
+  });
+
+  it('prefers fallbackPath over auto-generated departments path', () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    appDept.workspacePath = 'G:\\My Drive\\Life\\departments\\app-development';
+    hierarchy.departments.push(appDept);
+
+    const prompt = 'in app development department folder, i have multiple apps. make each app an project and add here';
+    const fallback = 'G:\\My Drive\\Life\\Money\\Apps';
+    const result = extractProjectDiscoveryOrBatchIntent(prompt, hierarchy.departments, undefined, undefined, fallback);
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe('discover');
+    expect(result?.targetDepartment.id).toBe(appDept.id);
+    expect(result?.folderPath).toBe('G:\\My Drive\\Life\\Money\\Apps');
+  });
+
+  it('extracts project discovery for "search for all apps and make a project of each app"', () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    appDept.workspacePath = 'G:\\My Drive\\Life\\Money\\Apps';
+    hierarchy.departments.push(appDept);
+
+    const prompt = 'search for all apps and make a project of each app';
+    const result = extractProjectDiscoveryOrBatchIntent(prompt, hierarchy.departments);
+    expect(result).not.toBeNull();
+    expect(result?.type).toBe('discover');
+    expect(result?.targetDepartment.id).toBe(appDept.id);
+  });
+
+  it('executes directive from prompt with multiple apps and creates projects plus default core team without blocking', async () => {
+    const hierarchy = createDefaultOrgHierarchy();
+    const appDept = createDepartmentShell('app development');
+    appDept.workspacePath = 'G:\\My Drive\\Life\\Money\\Apps';
+    hierarchy.departments.push(appDept);
+
+    const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, { simulationMode: true });
+    const prompt = 'in app development department folder, i have multiple apps. make each app an project and add here';
+    const result = await engine.executeDirective(prompt);
+
+    expect(result.success).toBe(true);
+    expect(result.createdProjects).toBeDefined();
+    expect(result.createdProjects!.length).toBeGreaterThan(0);
+    expect(result.createdTeams).toBeDefined();
+    expect(result.createdTeams![0].team.name).toBe('Core');
+    expect(result.finalSynthesis).toContain('app development');
+    expect(result.finalSynthesis).not.toContain('add a team');
+  });
 });

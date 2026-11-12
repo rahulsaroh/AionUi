@@ -318,6 +318,12 @@ export interface ElectronBridgeAPI {
   }) => Promise<Array<{ name: string; path: string; projectType?: string; description?: string }>>;
   orgSaveData?: (params: { key: string; value: string }) => Promise<boolean>;
   orgLoadData?: (params: { key: string }) => Promise<string | null>;
+  orgGetFullBundle?: () => Promise<unknown>;
+  orgSaveFullBundle?: (bundle: unknown) => Promise<boolean>;
+  orgGetMembers?: () => Promise<unknown[]>;
+  orgSaveMembers?: (members: unknown[]) => Promise<boolean>;
+  orgGetProjects?: () => Promise<unknown[]>;
+  orgSaveProjects?: (projects: unknown[]) => Promise<boolean>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

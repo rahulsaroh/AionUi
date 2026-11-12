@@ -236,6 +236,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('org:discoverProjects', params),
   orgSaveData: (params: { key: string; value: string }) => ipcRenderer.invoke('org:saveData', params),
   orgLoadData: (params: { key: string }) => ipcRenderer.invoke('org:loadData', params),
+  orgGetFullBundle: () => ipcRenderer.invoke('org:getFullBundle'),
+  orgSaveFullBundle: (bundle: unknown) => ipcRenderer.invoke('org:saveFullBundle', bundle),
+  orgGetMembers: () => ipcRenderer.invoke('org:getMembers'),
+  orgSaveMembers: (members: unknown[]) => ipcRenderer.invoke('org:saveMembers', members),
+  orgGetProjects: () => ipcRenderer.invoke('org:getProjects'),
+  orgSaveProjects: (projects: unknown[]) => ipcRenderer.invoke('org:saveProjects', projects),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),

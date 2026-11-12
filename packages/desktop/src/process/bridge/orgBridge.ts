@@ -54,4 +54,58 @@ export function registerOrgBridge(): void {
       return null;
     }
   });
+
+  ipcMain.handle('org:getFullBundle', async (): Promise<unknown> => {
+    try {
+      return await orgStorageService.getFullBundle();
+    } catch (err) {
+      console.error('[OrgBridge] getFullBundle failed:', err);
+      return null;
+    }
+  });
+
+  ipcMain.handle('org:saveFullBundle', async (_event, bundle: any): Promise<boolean> => {
+    try {
+      return await orgStorageService.saveFullBundle(bundle);
+    } catch (err) {
+      console.error('[OrgBridge] saveFullBundle failed:', err);
+      return false;
+    }
+  });
+
+  ipcMain.handle('org:getMembers', async (): Promise<unknown[]> => {
+    try {
+      return await orgStorageService.getMembers();
+    } catch (err) {
+      console.error('[OrgBridge] getMembers failed:', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('org:saveMembers', async (_event, members: any[]): Promise<boolean> => {
+    try {
+      return await orgStorageService.saveMembers(members);
+    } catch (err) {
+      console.error('[OrgBridge] saveMembers failed:', err);
+      return false;
+    }
+  });
+
+  ipcMain.handle('org:getProjects', async (): Promise<unknown[]> => {
+    try {
+      return await orgStorageService.getProjects();
+    } catch (err) {
+      console.error('[OrgBridge] getProjects failed:', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('org:saveProjects', async (_event, projects: any[]): Promise<boolean> => {
+    try {
+      return await orgStorageService.saveProjects(projects);
+    } catch (err) {
+      console.error('[OrgBridge] saveProjects failed:', err);
+      return false;
+    }
+  });
 }

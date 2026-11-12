@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo } from 'react';
-import { Button, Dropdown, Menu, Tooltip } from '@arco-design/web-react';
+import React, { useMemo, useState } from 'react';
+import { Button, Dropdown, Menu, Tooltip, Input } from '@arco-design/web-react';
 import { Brain, Down } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,22 @@ interface OrgModelSelectorProps {
   className?: string;
 }
 
+const FALLBACK_POPULAR_MODELS: RuntimeSelectorModelGroup[] = [
+  {
+    key: 'standard',
+    title: 'Standard Models',
+    models: [
+      { id: 'standard::claude-3-7-sonnet', label: 'Claude 3.7 Sonnet' },
+      { id: 'standard::claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
+      { id: 'standard::gpt-4o', label: 'GPT-4o' },
+      { id: 'standard::gpt-4o-mini', label: 'GPT-4o Mini' },
+      { id: 'standard::gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+      { id: 'standard::deepseek-chat', label: 'DeepSeek V3' },
+      { id: 'standard::deepseek-reasoner', label: 'DeepSeek R1' },
+    ],
+  },
+];
+
 export const OrgModelSelector: React.FC<OrgModelSelectorProps> = ({
   currentModel,
   onSelectModel,
@@ -32,6 +48,7 @@ export const OrgModelSelector: React.FC<OrgModelSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
+  const [customInput, setCustomInput] = useState('');
 
   const modelLookup = useMemo(() => {
     const map = new Map<string, { providerId: string; modelId: string; displayName: string }>();
@@ -46,46 +63,63 @@ export const OrgModelSelector: React.FC<OrgModelSelectorProps> = ({
     return map;
   }, [providers, getAvailableModels, formatModelLabel]);
 
-  const modelGroups = useMemo<RuntimeSelectorModelGroup[]>(() => {
+  const modelGroups: RuntimeSelectorModelGroup[] = useMemo(() => {
     const groups: RuntimeSelectorModelGroup[] = [];
     for (const provider of providers ?? []) {
       const models = getAvailableModels(provider);
-      if (!models.length) continue;
+      if (models.length === 0) continue;
       groups.push({
         key: provider.id,
-        title: provider.name,
-        models: models.map((modelName) => {
-          const id = `${provider.id}::${modelName}`;
-          return {
-            id,
-            label: formatModelLabel ? formatModelLabel(provider, modelName) : modelName,
-          };
-        }),
+        title: provider.name || provider.platform || provider.id,
+        models: models.map((modelName) => ({
+          id: `${provider.id}::${modelName}`,
+          label: formatModelLabel ? formatModelLabel(provider, modelName) : modelName,
+        })),
       });
     }
-    return groups;
-  }, [providers, getAvailableModels, formatModelLabel]);
 
-  // Identify composite key for current selection
+    // If current model is a custom/assigned model not present in providers, expose it
+    if (currentModel?.modelId) {
+      const isKnown = Array.from(modelLookup.values()).some((v) => v.modelId === currentModel.modelId);
+      if (!isKnown) {
+        groups.unshift({
+          key: 'custom',
+          title: t('common.assigned', { defaultValue: 'Assigned / Custom' }),
+          models: [
+            {
+              id: currentModel.providerId
+                ? `${currentModel.providerId}::${currentModel.modelId}`
+                : `custom::${currentModel.modelId}`,
+              label: currentModel.modelName || currentModel.modelId,
+            },
+          ],
+        });
+      }
+    }
+
+    if (groups.length === 0) {
+      return FALLBACK_POPULAR_MODELS;
+    }
+    return groups;
+  }, [providers, getAvailableModels, formatModelLabel, currentModel, modelLookup, t]);
+
   const currentCompositeId = useMemo(() => {
-    if (!currentModel?.modelId) return null;
+    if (!currentModel?.modelId) return '';
     if (currentModel.providerId) {
-      const directKey = `${currentModel.providerId}::${currentModel.modelId}`;
-      if (modelLookup.has(directKey)) return directKey;
+      return `${currentModel.providerId}::${currentModel.modelId}`;
     }
-    for (const [key, val] of modelLookup.entries()) {
-      if (val.modelId === currentModel.modelId) return key;
+    for (const [key, entry] of modelLookup.entries()) {
+      if (entry.modelId === currentModel.modelId) return key;
     }
-    return null;
+    return currentModel.modelId;
   }, [currentModel, modelLookup]);
 
   const activeDisplayLabel = useMemo(() => {
     if (!currentModel?.modelId) {
-      return t('conversation.welcome.selectModel', { defaultValue: 'Select Model' });
+      return t('conversation.selectModel', { defaultValue: 'Select Model' });
     }
-    if (currentCompositeId && modelLookup.has(currentCompositeId)) {
-      return modelLookup.get(currentCompositeId)!.displayName;
-    }
+    const found = modelLookup.get(currentCompositeId);
+    if (found) return found.displayName;
     return currentModel.modelName || currentModel.modelId;
   }, [currentModel, currentCompositeId, modelLookup, t]);
 
@@ -97,18 +131,38 @@ export const OrgModelSelector: React.FC<OrgModelSelectorProps> = ({
         modelId: found.modelId,
         modelName: found.displayName,
       });
+      return;
     }
+    if (id.includes('::')) {
+      const parts = id.split('::');
+      const prov = parts[0];
+      const mod = parts.slice(1).join('::');
+      onSelectModel({
+        providerId: prov === 'standard' || prov === 'custom' ? undefined : prov,
+        modelId: mod,
+        modelName: mod,
+      });
+      return;
+    }
+    onSelectModel({
+      modelId: id,
+      modelName: id,
+    });
   };
 
-  if (disabled || modelGroups.length === 0) {
+  const handleApplyCustomModel = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onSelectModel({
+      modelId: trimmed,
+      modelName: trimmed,
+    });
+    setCustomInput('');
+  };
+
+  if (disabled) {
     return (
-      <Tooltip
-        content={
-          modelGroups.length === 0
-            ? t('conversation.noModelConfigured', { defaultValue: 'Configure models in App Settings' })
-            : undefined
-        }
-      >
+      <Tooltip content={t('conversation.modelDisabled', { defaultValue: 'Model selection disabled' })}>
         <Button
           size='small'
           shape='round'
@@ -129,7 +183,26 @@ export const OrgModelSelector: React.FC<OrgModelSelectorProps> = ({
   return (
     <Dropdown
       trigger='click'
-      droplist={<Menu className='!max-h-360px !overflow-y-auto'>{modelListNode}</Menu>}
+      droplist={
+        <div className='p-6px bg-[var(--color-bg-2)] border border-[var(--color-border-2)] rounded-8px shadow-lg min-w-220px max-w-320px'>
+          <Menu className='!max-h-300px !overflow-y-auto'>{modelListNode}</Menu>
+          <div className='p-6px border-t border-[var(--color-border-2)] mt-6px flex flex-col gap-4px'>
+            <span className='text-10px text-t-tertiary px-2px font-medium'>
+              {t('common.customModel', { defaultValue: 'Custom Model' })}
+            </span>
+            <Input.Search
+              size='mini'
+              placeholder={t('common.enterModelId', { defaultValue: 'Type model ID...' })}
+              value={customInput}
+              onChange={setCustomInput}
+              searchButton={t('common.set', { defaultValue: 'Set' })}
+              onSearch={handleApplyCustomModel}
+              onPressEnter={() => handleApplyCustomModel(customInput)}
+              className='!text-11px'
+            />
+          </div>
+        </div>
+      }
       position='tl'
     >
       <Button

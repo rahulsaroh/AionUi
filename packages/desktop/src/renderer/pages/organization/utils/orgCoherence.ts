@@ -4,7 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { OrgDepartmentNode, OrgHierarchy, OrgProject, OrgTeamNode } from '@/types/organization';
+import type {
+  OrgAgentModelConfig,
+  OrgDepartmentNode,
+  OrgHierarchy,
+  OrgProject,
+  OrgTeamNode,
+} from '@/types/organization';
 
 export type OrgProjectPatch = Partial<Omit<OrgProject, 'id'>> & Pick<OrgProject, 'id'>;
 export type OrgDepartmentPatch = Partial<Omit<OrgDepartmentNode, 'id'>> & Pick<OrgDepartmentNode, 'id'>;
@@ -231,7 +237,7 @@ export function reconcileProjectsWithHierarchy(
   };
 }
 
-export function createDepartmentShell(name: string): OrgDepartmentNode {
+export function createDepartmentShell(name: string, defaultModel?: OrgAgentModelConfig): OrgDepartmentNode {
   const id = `dept-${Date.now()}`;
   const trimmed = name.trim();
   return {
@@ -247,7 +253,7 @@ export function createDepartmentShell(name: string): OrgDepartmentNode {
       assignedTeamIds: [],
       lastActiveAt: Date.now(),
       status: 'idle',
-      model: {
+      model: defaultModel || {
         modelId: 'claude-3-7-sonnet',
         providerId: 'anthropic',
       },
@@ -259,7 +265,7 @@ export function createDepartmentShell(name: string): OrgDepartmentNode {
   };
 }
 
-export function createTeamShell(departmentId: string, name: string): OrgTeamNode {
+export function createTeamShell(departmentId: string, name: string, defaultModel?: OrgAgentModelConfig): OrgTeamNode {
   const id = `team-${Date.now()}`;
   return {
     id,
@@ -276,7 +282,7 @@ export function createTeamShell(departmentId: string, name: string): OrgTeamNode
       assignedTeamIds: [id],
       lastActiveAt: Date.now(),
       status: 'idle',
-      model: {
+      model: defaultModel || {
         modelId: 'claude-3-7-sonnet',
         providerId: 'anthropic',
       },

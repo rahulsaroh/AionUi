@@ -60,7 +60,7 @@ export async function discoverProjectsInFolder(targetPath: string, allowedRoot?:
   try {
     resolvedPath = fs.realpathSync(resolvedPath);
   } catch {
-    return [];
+    // Virtual or cloud filesystems (e.g. Google Drive, network mounts) may throw in realpathSync; fall back to path.resolve
   }
 
   if (!fs.existsSync(resolvedPath)) {

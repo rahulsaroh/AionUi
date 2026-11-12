@@ -34,6 +34,9 @@ export function layoutOrgChart(
     } else if (node.type === 'team') {
       width = 290;
       height = 190;
+    } else if (node.type === 'project') {
+      width = 260;
+      height = 160;
     }
     dagreGraph.setNode(node.id, { width, height });
   });

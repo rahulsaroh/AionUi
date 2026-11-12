@@ -14,7 +14,7 @@ import { useOrgStore } from '../store/useOrgStore';
 
 export interface ProjectNodeData {
   project: OrgProject;
-  team: OrgTeamNode;
+  team?: OrgTeamNode;
   department: OrgDepartmentNode;
   orientation?: 'TB' | 'LR';
   onSelectNode?: (nodeId: string, type: 'project') => void;
@@ -79,7 +79,9 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
             <Play size={12} theme='outline' className='text-amber-400 shrink-0' />
             <span className='text-amber-300 font-semibold truncate'>{data.department?.name || 'Department'}</span>
           </div>
-          <span className='text-amber-400/80 text-9px font-mono shrink-0'>Tier 4 • Project</span>
+          <span className='text-amber-400/80 text-9px font-mono shrink-0'>
+            {data.team ? 'Tier 4 • Team Project' : 'Tier 3 • Dept Project'}
+          </span>
         </div>
 
         <div className='flex items-center gap-4px px-6px py-3px rounded bg-fill-2 text-9px text-t-secondary font-mono w-fit'>

@@ -38,3 +38,16 @@ export const getSiderTooltipProps = (enabled = false): SiderTooltipProps => {
     getPopupContainer: getSiderPopupContainer,
   };
 };
+
+export const getActionTooltipProps = (): SiderTooltipProps => {
+  const disabled = isNoHoverDevice();
+  return {
+    className: SIDER_TOOLTIP_CLASS,
+    trigger: (disabled ? [] : 'hover') as 'hover' | 'hover'[],
+    disabled,
+    unmountOnExit: true,
+    popupHoverStay: false,
+    popupVisible: disabled ? false : undefined,
+    getPopupContainer: getSiderPopupContainer,
+  };
+};

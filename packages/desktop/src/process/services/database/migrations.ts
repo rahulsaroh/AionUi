@@ -1557,6 +1557,72 @@ const migration_v32: IMigration = {
 };
 
 /**
+ * Migration v32 -> v33: Add organization tables (org_members, org_departments, org_projects, org_state)
+ */
+const migration_v33: IMigration = {
+  version: 33,
+  name: 'Create organization tables (members, departments, projects, state)',
+  up: (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS org_members (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      system_prompt TEXT,
+      model TEXT,
+      skills TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_org_members_role ON org_members(role)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS org_departments (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      workspace_path TEXT,
+      head_agent_id TEXT,
+      parent_department_id TEXT,
+      description TEXT,
+      icon TEXT,
+      color TEXT,
+      order_index INTEGER,
+      status TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+
+    db.exec(`CREATE TABLE IF NOT EXISTS org_projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      department_id TEXT NOT NULL,
+      workspace_path TEXT,
+      member_ids TEXT,
+      goal TEXT,
+      description TEXT,
+      status TEXT,
+      context TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_dept ON org_projects(department_id)');
+
+    db.exec(`CREATE TABLE IF NOT EXISTS org_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+
+    console.log('[Migration v33] Created org_members, org_departments, org_projects, org_state');
+  },
+  down: (db) => {
+    db.exec('DROP TABLE IF EXISTS org_projects');
+    db.exec('DROP TABLE IF EXISTS org_departments');
+    db.exec('DROP TABLE IF EXISTS org_members');
+    db.exec('DROP TABLE IF EXISTS org_state');
+    console.log('[Migration v33] Rolled back v33');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1566,7 +1632,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
   migration_v25, migration_v26, migration_v27, migration_v28, migration_v29, migration_v30,
-  migration_v31, migration_v32,
+  migration_v31, migration_v32, migration_v33,
 ];
 
 /**

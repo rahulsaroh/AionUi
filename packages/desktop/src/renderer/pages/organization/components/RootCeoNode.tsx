@@ -6,11 +6,12 @@
 
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Tag, Tooltip, Button } from '@arco-design/web-react';
-import { Play, Peoples, Send, FolderClose } from '@icon-park/react';
+import { Tag, Tooltip, Button, Message } from '@arco-design/web-react';
+import { Play, Peoples, Send, FolderClose, Edit } from '@icon-park/react';
 import type { RootCEO, OrgNodeStatus } from '@/types/organization';
 import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
+import { OrgModelSelector } from './OrgModelSelector';
 
 export interface RootCeoNodeData {
   rootCeo: RootCEO;
@@ -19,11 +20,12 @@ export interface RootCeoNodeData {
   onSelectNode?: (nodeId: string, nodeType: 'ceo') => void;
   onSelectMember?: (memberId: string) => void;
   onSetFolder?: (nodeId: string) => void;
+  onEditCeo?: () => void;
 }
 
 export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({ data, selected = false }) => {
-  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode, onSelectMember, onSetFolder } = data;
-  const { nodeStatuses, isSimulating } = useOrgStore();
+  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode, onSelectMember, onSetFolder, onEditCeo } = data;
+  const { nodeStatuses, isSimulating, updateAgentModel } = useOrgStore();
 
   const currentStatus = nodeStatuses[rootCeo.id] || rootCeo.status || 'idle';
   const effectiveStatus = computeLifecycleStatus(rootCeo.lastActiveAt, currentStatus);
@@ -52,23 +54,38 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
           </div>
         </div>
 
-        <Tag
-          size='small'
-          style={{
-            borderColor: theme.borderColor,
-            color: theme.textColor,
-            backgroundColor: theme.backgroundColor,
-          }}
-          className='font-semibold text-10px px-6px py-1px rounded-full'
-        >
-          {theme.badgeText}
-        </Tag>
+        <div className='flex items-center gap-6px'>
+          {onEditCeo && (
+            <Tooltip content='Edit Executive HQ'>
+              <Button
+                size='mini'
+                type='text'
+                icon={<Edit size={12} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditCeo();
+                }}
+              />
+            </Tooltip>
+          )}
+          <Tag
+            size='small'
+            style={{
+              borderColor: theme.borderColor,
+              color: theme.textColor,
+              backgroundColor: theme.backgroundColor,
+            }}
+            className='font-semibold text-10px px-6px py-1px rounded-full'
+          >
+            {theme.badgeText}
+          </Tag>
+        </div>
       </div>
 
       {/* Main Body */}
       <div className='p-14px flex flex-col gap-10px bg-[var(--color-bg-2)]'>
         {/* CEO Agent Box */}
-        <div className='p-10px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center justify-between'>
+        <div className='p-10px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center justify-between gap-8px'>
           <div className='flex items-center gap-10px min-w-0'>
             <span className='size-34px rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-14px shrink-0'>
               CEO
@@ -80,9 +97,15 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
               </span>
             </div>
           </div>
-          <span className='text-10px font-mono px-6px py-2px rounded bg-primary/10 text-primary border border-primary/20 shrink-0'>
-            Aion CLI
-          </span>
+          <div className='shrink-0' onClick={(e) => e.stopPropagation()}>
+            <OrgModelSelector
+              currentModel={rootCeo.ceoAgent.model}
+              onSelectModel={(model) => {
+                updateAgentModel(rootCeo.ceoAgent.id, model);
+                Message.success(`Model updated to ${model.modelName || model.modelId} for Root CEO`);
+              }}
+            />
+          </div>
         </div>
 
         {/* Chief of Staff / HR */}

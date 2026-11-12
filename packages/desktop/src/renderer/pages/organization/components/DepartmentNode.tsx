@@ -35,6 +35,7 @@ export type DepartmentNodeData = {
   onEditDepartment?: (deptId: string) => void;
   onRunTask?: (dept: OrgDepartmentNode) => void;
   onSelectNode?: (nodeId: string, nodeType: 'department') => void;
+  onSelectProject?: (projectId: string) => void;
   onSelectMember?: (memberId: string) => void;
 };
 
@@ -53,6 +54,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
     onEditDepartment,
     onRunTask,
     onSelectNode,
+    onSelectProject,
     onSelectMember,
   } = data;
 
@@ -163,7 +165,11 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
               {department.linkedProjects.map((p) => (
                 <div
                   key={p.id}
-                  className='flex items-center gap-4px px-6px py-2px rounded bg-fill-2 text-9px text-t-secondary font-mono border border-[var(--color-border-2)]'
+                  className='flex items-center gap-4px px-6px py-2px rounded bg-fill-2 text-9px text-t-secondary font-mono border border-[var(--color-border-2)] cursor-pointer hover:border-amber-400/50 hover:bg-amber-500/10 transition-colors'
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectProject?.(p.id);
+                  }}
                   title={p.path || p.name}
                 >
                   <FolderClose size={10} theme='outline' className='text-amber-400' />

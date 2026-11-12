@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { OrgHierarchy, OrgProject, OrgConversation, OrgCronJob } from '@/types/organization';
+import type { OrgHierarchy, OrgProject, OrgConversation, OrgCronJob, OrgAgentMember } from '@/types/organization';
 
 export const CANONICAL_SHARED_AGENTS: Record<string, { name: string; role: string }> = {
   'canonical-visual-designer': { name: 'Visual Designer', role: 'specialist' },
@@ -76,4 +76,70 @@ export function createDefaultOrgConversations(): OrgConversation[] {
 
 export function createDefaultOrgCronJobs(): OrgCronJob[] {
   return [];
+}
+
+export function createDefaultOrgMembers(): OrgAgentMember[] {
+  const now = Date.now();
+  return [
+    {
+      id: 'member-fullstack-coder',
+      canonicalAgentId: 'canonical-fullstack-coder',
+      name: 'Senior Fullstack Coder',
+      role: 'specialist',
+      title: 'Senior Software Engineer',
+      assignedTeamIds: [],
+      lastActiveAt: now,
+      status: 'idle',
+      skills: ['typescript', 'react', 'node', 'python', 'api'],
+      systemPrompt: 'You are a senior fullstack engineer skilled in building reliable web applications and microservices.',
+    },
+    {
+      id: 'member-uiux-designer',
+      canonicalAgentId: 'canonical-uiux-designer',
+      name: 'UI/UX Designer',
+      role: 'specialist',
+      title: 'Product Designer',
+      assignedTeamIds: [],
+      lastActiveAt: now,
+      status: 'idle',
+      skills: ['ui', 'ux', 'css', 'design-systems', 'figma'],
+      systemPrompt: 'You are a product designer focused on creating intuitive, accessible, and delightful interfaces.',
+    },
+    {
+      id: 'member-tech-editor',
+      canonicalAgentId: 'canonical-tech-editor',
+      name: 'Technical Editor',
+      role: 'specialist',
+      title: 'Technical Writer & Content Editor',
+      assignedTeamIds: [],
+      lastActiveAt: now,
+      status: 'idle',
+      skills: ['copywriting', 'documentation', 'editing', 'content'],
+      systemPrompt: 'You are a technical editor ensuring crisp, clear, and high-impact documentation and copy.',
+    },
+    {
+      id: 'member-qa-engineer',
+      canonicalAgentId: 'canonical-qa-engineer',
+      name: 'QA & Test Engineer',
+      role: 'specialist',
+      title: 'Quality Assurance Specialist',
+      assignedTeamIds: [],
+      lastActiveAt: now,
+      status: 'idle',
+      skills: ['testing', 'vitest', 'playwright', 'automation', 'qa'],
+      systemPrompt: 'You are a QA automation engineer verifying edge cases, integration tests, and regressions.',
+    },
+    {
+      id: 'member-devops-specialist',
+      canonicalAgentId: 'canonical-devops-specialist',
+      name: 'DevOps Specialist',
+      role: 'specialist',
+      title: 'DevOps & Infrastructure Engineer',
+      assignedTeamIds: [],
+      lastActiveAt: now,
+      status: 'idle',
+      skills: ['docker', 'ci-cd', 'cloud', 'scripts', 'monitoring'],
+      systemPrompt: 'You are a DevOps engineer specialized in CI/CD pipelines, containerization, and system stability.',
+    },
+  ];
 }

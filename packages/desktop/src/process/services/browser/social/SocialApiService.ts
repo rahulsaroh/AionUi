@@ -131,7 +131,10 @@ export class SocialApiService {
       // 3. Preferred Path: Official API
       if (apiCredentials?.accessToken) {
         try {
-          const apiResult = await this.publishViaOfficialApi(platform, caption, mediaPath, apiCredentials);
+          const apiResult = await this.publishViaOfficialApi(platform, caption, mediaPath, {
+            ...apiCredentials,
+            accessToken: apiCredentials.accessToken,
+          });
           rateLimiter.recordPost(platform);
           return {
             success: true,
@@ -161,7 +164,7 @@ export class SocialApiService {
           content: caption,
           mediaPath,
         },
-        profileId
+        { profileId }
       );
 
       if (workflowResult.success) {

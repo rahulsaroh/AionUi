@@ -63,9 +63,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     updateNodeStatus,
     addOrgConversation,
     addDepartment,
+    updateDepartment,
     addSubTeam,
     addOrgProject,
     addTeamMember,
+    updateRootCeo,
     selectedDepartmentId,
     selectedTeamId,
     selectedProjectId,
@@ -169,6 +171,20 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     return map;
   }, [conversations]);
 
+  // Team -> conversations (newest first, excluding project chats)
+  const teamConversationsMap = useMemo(() => {
+    const map = new Map<string, OrgConversation[]>();
+    conversations.forEach((c) => {
+      if (c.teamId && !c.projectId) {
+        const list = map.get(c.teamId) ?? [];
+        list.push(c);
+        map.set(c.teamId, list);
+      }
+    });
+    map.forEach((chats) => chats.sort((a, b) => b.timestamp - a.timestamp));
+    return map;
+  }, [conversations]);
+
   const handleOpenCeoChat = () => {
     onSessionClick?.();
     setCeoChatModalVisible(true);
@@ -197,11 +213,26 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       for (const proj of result.createdProjects) {
         addOrgProject(proj);
       }
+      const deptId = result.createdProjects[0]?.departmentId;
+      if (deptId) {
+        setDeptSubTabs((prev) => ({ ...prev, [deptId]: 'projects' }));
+        setCollapsedDepts((prev) => {
+          const next = new Set(prev);
+          next.delete(deptId);
+          return next;
+        });
+      }
     }
     if (result.createdMembers && result.createdMembers.length > 0) {
       for (const { teamId, member } of result.createdMembers) {
         addTeamMember(teamId, member);
       }
+    }
+    if (result.updatedDepartment) {
+      updateDepartment(result.updatedDepartment.departmentId, result.updatedDepartment.patch);
+    }
+    if (result.updatedRootCeoWorkspace) {
+      updateRootCeo({ workspacePath: result.updatedRootCeoWorkspace });
     }
 
     addOrgConversation({
@@ -391,10 +422,64 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const handleSelectTeam = (teamId: string) => {
     setSelectedTeam(teamId);
     setSelectedProject(null);
+    const teamChats = conversations.filter((c) => c.teamId === teamId && !c.projectId);
+    if (teamChats.length > 0) {
+      const latest = teamChats[0];
+      setSelectedChatId(latest.id);
+      setSelectedConversationId(latest.id);
+    } else {
+      for (const dept of hierarchy.departments) {
+        const team = dept.teams.find((t) => t.id === teamId);
+        if (team) {
+          handleNewTeamChat(dept.id, team);
+          return;
+        }
+      }
+    }
+    setOrgViewMode('chat');
+    onSessionClick?.();
+    void navigate('/organization');
+  };
+
+  const handleNewTeamChat = (deptId: string, team: OrgTeamNode) => {
+    const newConvId = `conv-team-${team.id}-${Date.now()}`;
+    addOrgConversation({
+      id: newConvId,
+      title: `${team.name} - Chat ${formatChatTime(Date.now())}`,
+      type: 'team_execution',
+      sourceNodeId: team.id,
+      targetNodeId: team.id,
+      teamId: team.id,
+      timestamp: Date.now(),
+      summary: '',
+      messages: [],
+    });
+    setSelectedTeam(team.id);
+    setSelectedProject(null);
+    setSelectedChatId(newConvId);
+    setSelectedConversationId(newConvId);
+    setOrgViewMode('chat');
+    onSessionClick?.();
+    void navigate('/organization');
   };
 
   const handleSelectProject = (projectId: string) => {
     setSelectedProject(projectId);
+    const projChats = conversations.filter((c) => c.projectId === projectId);
+    if (projChats.length > 0) {
+      const latest = projChats[0];
+      setSelectedChatId(latest.id);
+      setSelectedConversationId(latest.id);
+    } else {
+      const proj = projects.find((p) => p.id === projectId);
+      if (proj) {
+        handleNewChat(proj.departmentId, proj);
+        return;
+      }
+    }
+    setOrgViewMode('chat');
+    onSessionClick?.();
+    void navigate('/organization');
   };
 
   const handleOpenEntityEdit = (
@@ -407,9 +492,10 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const handleNewChat = (deptId: string, proj: OrgProject) => {
     const teamId = proj.teamIds?.[0] ?? '';
+    const newConvId = `conv-proj-${proj.id}-${Date.now()}`;
     addOrgConversation({
-      id: `conv-${Date.now()}`,
-      title: `Chat ${formatChatTime(Date.now())}`,
+      id: newConvId,
+      title: `${proj.name} - Chat ${formatChatTime(Date.now())}`,
       type: 'team_execution',
       sourceNodeId: teamId || deptId,
       targetNodeId: teamId || deptId,
@@ -420,6 +506,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       messages: [],
     });
     setSelectedProject(proj.id);
+    setSelectedChatId(newConvId);
+    setSelectedConversationId(newConvId);
+    setOrgViewMode('chat');
+    onSessionClick?.();
+    void navigate('/organization');
   };
 
   const handleEditSave = () => {
@@ -660,7 +751,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                 const isDeptExpanded = !collapsedDepts.has(dept.id);
                 const deptTeams = allTeams.filter((teamItem) => teamItem.departmentId === dept.id);
                 const deptProjects = projects.filter((p) => p.departmentId === dept.id);
-                const subTab = deptSubTabs[dept.id] ?? 'teams';
+                const subTab =
+                  deptSubTabs[dept.id] ?? (deptProjects.length > 0 && deptTeams.length === 0 ? 'projects' : 'teams');
 
                 const sharedCanonicalIds = new Set<string>();
                 deptTeams.forEach((teamItem) =>
@@ -762,22 +854,52 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                 filteredTeams.map((team) => {
                                   const tStatus = teamStatus(team);
                                   const isTeamSelected = selectedTeamId === team.id;
+                                  const chats = teamConversationsMap.get(team.id) ?? [];
                                   return (
-                                    <SiderTeamRow
-                                      key={team.id}
-                                      team={team}
-                                      status={tStatus}
-                                      isSelected={isTeamSelected}
-                                      onSelect={() => handleSelectTeam(team.id)}
-                                      onEdit={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenEntityEdit('team', team, {
-                                          departmentId: dept.id,
-                                          teamId: team.id,
-                                        });
-                                      }}
-                                      siderTooltipProps={siderTooltipProps}
-                                    />
+                                    <div key={team.id} className='flex flex-col'>
+                                      <SiderTeamRow
+                                        team={team}
+                                        status={tStatus}
+                                        isSelected={isTeamSelected}
+                                        onSelect={() => handleSelectTeam(team.id)}
+                                        onEdit={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenEntityEdit('team', team, {
+                                            departmentId: dept.id,
+                                            teamId: team.id,
+                                          });
+                                        }}
+                                        onNewChat={(e) => {
+                                          e.stopPropagation();
+                                          handleNewTeamChat(dept.id, team);
+                                        }}
+                                        siderTooltipProps={siderTooltipProps}
+                                      />
+                                      {/* Chats nested under team */}
+                                      {chats.length > 0 && (
+                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {chats.map((conv) => {
+                                            const isChatSelected = selectedChatId === conv.id;
+                                            return (
+                                              <SiderChatRow
+                                                key={conv.id}
+                                                conversation={conv}
+                                                isSelected={isChatSelected}
+                                                badge={chatBadgeLabel(conv)}
+                                                relativeTime={formatChatTime(conv.timestamp)}
+                                                onSelect={() => {
+                                                  setSelectedChatId(conv.id);
+                                                  setSelectedConversationId(conv.id);
+                                                  setOrgViewMode('chat');
+                                                  onSessionClick?.();
+                                                  void navigate('/organization');
+                                                }}
+                                              />
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   );
                                 })
                               )}

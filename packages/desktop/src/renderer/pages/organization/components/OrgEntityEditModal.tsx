@@ -19,13 +19,13 @@ import {
   getDefaultProjectPath,
 } from '../utils/orgPathUtils';
 
-type EditEntityType = 'department' | 'team' | 'member' | 'project';
+type EditEntityType = 'department' | 'team' | 'member' | 'project' | 'ceo';
 
 type OrgEntityEditModalProps = {
   visible: boolean;
   entity: EditEntityType;
   /** The entity being edited. For members, also pass teamId via `context.teamId`. */
-  data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject | null;
+  data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject | import('@/types/organization').RootCEO | null;
   context?: { departmentId?: string; teamId?: string };
   onClose: () => void;
   onSave?: () => void;
@@ -40,7 +40,16 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   onSave,
 }) => {
   const { t } = useTranslation();
-  const { updateDepartment, updateTeamNode, updateTeamMember, upsertOrgProject, hierarchy, projects } = useOrgStore();
+  const {
+    updateDepartment,
+    updateTeamNode,
+    updateTeamMember,
+    upsertOrgProject,
+    updateRootCeo,
+    updateAgentModel,
+    hierarchy,
+    projects,
+  } = useOrgStore();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -127,7 +136,15 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     setProjectDeptId('');
     setProjectTeamId('');
 
-    if (entity === 'department') {
+    if (entity === 'ceo') {
+      const rootCeo = hierarchy.rootCeo;
+      setName(rootCeo.name);
+      setDescription('Chief Executive Command');
+      setHeadName(rootCeo.ceoAgent.name);
+      setHeadPrompt(rootCeo.ceoAgent.title ?? '');
+      setModelId(rootCeo.ceoAgent.model?.modelId ?? 'claude-3-7-sonnet');
+      setFolderPath(rootCeo.workspacePath ?? '');
+    } else if (entity === 'department') {
       const dept = data as OrgDepartmentNode;
       setName(dept.name);
       setDescription(dept.description ?? '');
@@ -171,6 +188,23 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         setPathScopeError(check.error || 'Folder must be inside the organization master folder');
         return;
       }
+    }
+
+    if (entity === 'ceo') {
+      updateRootCeo({
+        name: name.trim() || hierarchy.rootCeo.name,
+        workspacePath: folderPath.trim() || null,
+      });
+      const matchedProvider = providers?.find((p) => getAvailableModels(p).includes(modelId));
+      updateAgentModel(hierarchy.rootCeo.ceoAgent.id, {
+        modelId,
+        providerId: matchedProvider?.id,
+        modelName: matchedProvider && formatModelLabel ? formatModelLabel(matchedProvider, modelId) : modelId,
+      });
+      Message.success(t('team.organization.saved', { defaultValue: 'Saved successfully' }));
+      onSave?.();
+      onClose();
+      return;
     }
 
     if (entity === 'department' && data) {
@@ -273,6 +307,13 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     updateTeamNode,
     updateTeamMember,
     upsertOrgProject,
+    updateRootCeo,
+    updateAgentModel,
+    hierarchy.rootCeo,
+    providers,
+    getAvailableModels,
+    formatModelLabel,
+    t,
     onSave,
     onClose,
   ]);
@@ -281,6 +322,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const isMember = entity === 'member';
   const isTeam = entity === 'team';
   const isDept = entity === 'department';
+  const isCeo = entity === 'ceo';
 
   return (
     <Modal
@@ -288,6 +330,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         <div className='flex items-center gap-6px'>
           <Setting size={16} theme='outline' />
           <span className='font-bold text-13px text-t-primary'>
+            {isCeo ? 'Edit Executive HQ (Root CEO)' : ''}
             {isDept ? t('team.organization.editDepartment', { defaultValue: 'Edit Department' }) : ''}
             {isTeam ? 'Edit Team' : ''}
             {isMember ? 'Edit Team Member' : ''}
@@ -303,6 +346,48 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       okButtonProps={{ disabled: !name.trim() && !isMember && !isProject ? !name.trim() : false }}
     >
       <div className='flex flex-col gap-10px'>
+        {isCeo && (
+          <>
+            <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>HQ Display Name</span>
+              <Input value={name} onChange={setName} placeholder='Root Executive HQ' />
+            </div>
+            <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Global CEO Agent Name</span>
+              <Input value={headName} onChange={setHeadName} placeholder='Global Organization CEO' />
+            </div>
+            <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Title / Role</span>
+              <Input value={headPrompt} onChange={setHeadPrompt} placeholder='Chief Executive Officer' />
+            </div>
+            <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Assigned AI Model (Root Default)</span>
+              <Select
+                value={modelId}
+                onChange={setModelId}
+                placeholder='Select model for Root CEO...'
+                showSearch
+                allowCreate
+              >
+                {configuredModelOptions.map((opt) => (
+                  <Select.Option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
+            <div className='flex flex-col gap-4px'>
+              <span className='text-12px text-t-secondary'>Master Organization Folder</span>
+              <WorkspaceFolderSelect
+                value={folderPath}
+                onChange={setFolderPath}
+                placeholder='Bind master workspace directory...'
+                recentLabel={t('common.recent', { defaultValue: 'Recent' })}
+                chooseDifferentLabel={t('common.chooseFolder', { defaultValue: 'Browse...' })}
+              />
+            </div>
+          </>
+        )}
         {isDept && (
           <>
             <div className='flex flex-col gap-4px'>

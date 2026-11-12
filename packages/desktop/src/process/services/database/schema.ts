@@ -325,6 +325,58 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_profile ON browser_audit_logs(profile_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_browser_audit_logs_run ON browser_audit_logs(run_id)');
 
+  // Organization members table (global pool)
+  db.exec(`CREATE TABLE IF NOT EXISTS org_members (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    system_prompt TEXT,
+    model TEXT,
+    skills TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_org_members_role ON org_members(role)');
+
+  // Organization departments table
+  db.exec(`CREATE TABLE IF NOT EXISTS org_departments (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    workspace_path TEXT,
+    head_agent_id TEXT,
+    parent_department_id TEXT,
+    description TEXT,
+    icon TEXT,
+    color TEXT,
+    order_index INTEGER,
+    status TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+
+  // Organization projects table (references memberIds via JSON string member_ids)
+  db.exec(`CREATE TABLE IF NOT EXISTS org_projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    department_id TEXT NOT NULL,
+    workspace_path TEXT,
+    member_ids TEXT,
+    goal TEXT,
+    description TEXT,
+    status TEXT,
+    context TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_dept ON org_projects(department_id)');
+
+  // Organization state key-value table
+  db.exec(`CREATE TABLE IF NOT EXISTS org_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+
   console.log('[Database] Schema initialized successfully');
 }
 
@@ -353,4 +405,4 @@ export function setDatabaseVersion(db: ISqliteDriver, version: number): void {
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 32;
+export const CURRENT_DB_VERSION = 33;

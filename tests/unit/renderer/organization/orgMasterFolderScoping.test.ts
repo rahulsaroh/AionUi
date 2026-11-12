@@ -4,19 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  getDefaultDeptPath,
+  getDefaultProjectPath,
+  getDefaultTeamPath,
   joinOrgPath,
   sanitizeFolderName,
-  getDefaultDeptPath,
-  getDefaultTeamPath,
-  getDefaultProjectPath,
   validateWithinMaster,
 } from '@/renderer/pages/organization/utils/orgPathUtils';
+import { ipcBridge } from '@/common';
 import { OrgDelegationEngine } from '@/renderer/pages/organization/utils/orgDelegationEngine';
 import type { OrgHierarchy } from '@/types/organization';
 
 describe('Organization Master Folder Scoping and Utilities', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('Path Joining & Normalization', () => {
     it('correctly joins POSIX path segments without double slashes', () => {
       const result = joinOrgPath('/Users/user/MyCompany', 'departments', 'engineering');
@@ -51,25 +56,44 @@ describe('Organization Master Folder Scoping and Utilities', () => {
       expect(res.error).toContain('Organization master folder is not set');
     });
 
-    it('approves folders located inside the master root', async () => {
+    it('treats empty target path as valid (optional until set)', async () => {
+      const res = await validateWithinMaster('', '/workspace/myorg');
+      expect(res.valid).toBe(true);
+    });
+
+    it('fails closed when native scope verification is unavailable and target is provided', async () => {
       const res = await validateWithinMaster('/workspace/myorg/departments/engineering', '/workspace/myorg');
-      expect(res.valid).toBe(true);
-    });
-
-    it('approves exact match of master root itself', async () => {
-      const res = await validateWithinMaster('/workspace/myorg', '/workspace/myorg');
-      expect(res.valid).toBe(true);
-    });
-
-    it('rejects folders located outside the master root', async () => {
-      const res = await validateWithinMaster('/other/unrelated/directory', '/workspace/myorg');
       expect(res.valid).toBe(false);
       expect(res.error).toBeDefined();
     });
 
-    it('treats empty target path as valid (optional until set)', async () => {
-      const res = await validateWithinMaster('', '/workspace/myorg');
+    it('approves folders located inside the master root when natively verified', async () => {
+      vi.spyOn(ipcBridge.org, 'assertWithinScope').mockResolvedValue({
+        allowed: true,
+        resolved: '/workspace/myorg/departments/engineering',
+      });
+      const res = await validateWithinMaster('/workspace/myorg/departments/engineering', '/workspace/myorg');
       expect(res.valid).toBe(true);
+    });
+
+    it('approves exact match of master root itself when natively verified', async () => {
+      vi.spyOn(ipcBridge.org, 'assertWithinScope').mockResolvedValue({
+        allowed: true,
+        resolved: '/workspace/myorg',
+      });
+      const res = await validateWithinMaster('/workspace/myorg', '/workspace/myorg');
+      expect(res.valid).toBe(true);
+    });
+
+    it('rejects folders located outside the master root when natively verified', async () => {
+      vi.spyOn(ipcBridge.org, 'assertWithinScope').mockResolvedValue({
+        allowed: false,
+        reason: 'outside',
+        resolved: '/other/unrelated/directory',
+      });
+      const res = await validateWithinMaster('/other/unrelated/directory', '/workspace/myorg');
+      expect(res.valid).toBe(false);
+      expect(res.error).toBeDefined();
     });
   });
 
@@ -151,6 +175,22 @@ describe('Organization Master Folder Scoping and Utilities', () => {
       expect(result.success).toBe(true);
       expect(result.createdProjects).toBeDefined();
       expect(result.createdProjects?.[0].path).toBe('/home/company/projects/mobile-dashboard');
+    });
+
+    it('aborts explicit direct-message execution outside the org root when natively verified', async () => {
+      const masterPath = '/home/company';
+      const hierarchy = createHierarchyWithMaster(masterPath);
+      const engine = new OrgDelegationEngine(hierarchy);
+      const agent = hierarchy.rootCeo.ceoAgent;
+      vi.spyOn(ipcBridge.org, 'assertWithinScope').mockResolvedValue({
+        allowed: false,
+        reason: 'path outside allowed root',
+        resolved: '/tmp/escape',
+      });
+
+      await expect(
+        engine.executeDirectMessage(agent, 'do work', '/tmp/escape', false)
+      ).rejects.toThrow(/outside the organization root/i);
     });
   });
 });

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Button, Tooltip } from '@arco-design/web-react';
-import { User, Edit } from '@icon-park/react';
+import { User, Edit, Plus } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -19,6 +19,7 @@ interface SiderTeamRowProps {
   isSelected: boolean;
   onSelect: () => void;
   onEdit: (e?: React.MouseEvent | Event) => void;
+  onNewChat?: (e?: React.MouseEvent | Event) => void;
   siderTooltipProps: SiderTooltipProps;
 }
 
@@ -28,6 +29,7 @@ export const SiderTeamRow: React.FC<SiderTeamRowProps> = ({
   isSelected,
   onSelect,
   onEdit,
+  onNewChat,
   siderTooltipProps,
 }) => {
   const { t } = useTranslation();
@@ -53,6 +55,23 @@ export const SiderTeamRow: React.FC<SiderTeamRowProps> = ({
         </span>
       </div>
       <div className='flex items-center gap-3px shrink-0'>
+        {onNewChat && (
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.newChat', { defaultValue: 'New Chat' })}
+            position='top'
+          >
+            <Button
+              type='text'
+              size='mini'
+              className='!size-16px !p-0 rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity border-none'
+              onClick={(e) => onNewChat(e)}
+              aria-label={t('team.organization.newChat', { defaultValue: 'New Chat' })}
+            >
+              <Plus size={10} theme='outline' />
+            </Button>
+          </Tooltip>
+        )}
         <Tooltip
           {...siderTooltipProps}
           content={t('team.organization.editTeam', { defaultValue: 'Edit Team' })}

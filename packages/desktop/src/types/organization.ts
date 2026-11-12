@@ -42,6 +42,8 @@ export interface OrgAgentMember {
   model?: OrgAgentModelConfig;
   /** Custom system prompt or instructions for this role */
   systemPrompt?: string;
+  /** Professional skills and capabilities of this agent */
+  skills?: string[];
 }
 
 export interface OrgTeamNode {
@@ -107,6 +109,8 @@ export interface OrgProject {
   name: string;
   departmentId: string;
   teamIds: string[];
+  /** IDs of agents from the global member pool assigned to this project. */
+  memberIds?: string[];
   goal?: string;
   description?: string;
   context?: { repos?: string[]; skills?: string[]; notes?: string };
@@ -114,6 +118,15 @@ export interface OrgProject {
   path?: string;
   /** Persistent local disk directory bound to this project (canonical folder path). */
   workspacePath?: string | null;
+}
+
+export interface OrgStorageBundle {
+  hierarchy: OrgHierarchy;
+  projects: OrgProject[];
+  members: OrgAgentMember[];
+  cronJobs: OrgCronJob[];
+  conversations?: OrgConversation[];
+  activeScope?: OrgScope;
 }
 
 export interface OrgConversationMessage {
@@ -133,6 +146,8 @@ export interface OrgConversation {
   teamId?: string;
   /** Optional agent that handled the chat. */
   agentId?: string;
+  /** Underlying backend conversation ID for conversational continuity across turns. */
+  backendConversationId?: string;
   type: 'ceo_directive' | 'dept_handoff' | 'team_execution' | 'agent_direct';
   sourceNodeId: string;
   targetNodeId: string;

@@ -28,18 +28,21 @@ import { useOrgStore } from '../store/useOrgStore';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { OrgModelSelector } from './OrgModelSelector';
 import { OrgMasterFolderModal } from './OrgMasterFolderModal';
+import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import type { OrgConversation, OrgConversationMessage, OrgAgentModelConfig } from '@/types/organization';
 
 export const OrgChatView: React.FC = () => {
   const { t } = useTranslation();
   const {
     hierarchy,
+    projects,
     conversations,
     selectedConversationId,
     setSelectedConversationId,
     setOrgViewMode,
     addOrgConversation,
     addDepartment,
+    updateDepartment,
     removeDepartment,
     addSubTeam,
     addOrgProject,
@@ -64,6 +67,48 @@ export const OrgChatView: React.FC = () => {
     return conversations.find((c) => c.type === 'ceo_directive');
   }, [conversations, selectedConversationId]);
 
+  // Bound project if active conversation is targeted to a specific project
+  const activeProject = useMemo(() => {
+    if (!activeConversation?.projectId) return undefined;
+    return projects.find((p) => p.id === activeConversation.projectId);
+  }, [activeConversation?.projectId, projects]);
+
+  const activeDept = useMemo(() => {
+    if (activeProject) {
+      return hierarchy.departments.find((d) => d.id === activeProject.departmentId);
+    }
+    if (activeConversation?.targetNodeId && activeConversation.targetNodeId !== 'root-ceo') {
+      return hierarchy.departments.find((d) => d.id === activeConversation.targetNodeId);
+    }
+    return undefined;
+  }, [activeProject, activeConversation?.targetNodeId, hierarchy.departments]);
+
+  const activeTeam = useMemo(() => {
+    if (activeConversation?.teamId) {
+      for (const dept of hierarchy.departments) {
+        const team = dept.teams.find((t) => t.id === activeConversation.teamId);
+        if (team) return team;
+      }
+    }
+    if (activeProject && activeProject.teamIds && activeProject.teamIds.length > 0) {
+      for (const dept of hierarchy.departments) {
+        const team = dept.teams.find((t) => activeProject.teamIds.includes(t.id));
+        if (team) return team;
+      }
+    }
+    return undefined;
+  }, [activeConversation?.teamId, activeProject, hierarchy.departments]);
+
+  const activeProjectHead = useMemo(() => {
+    if (!activeProject) return undefined;
+    if (activeTeam?.teamLeadAgent) return activeTeam.teamLeadAgent;
+    if (activeProject.teamIds.length > 0 && activeDept) {
+      const team = activeDept.teams.find((t) => activeProject.teamIds.includes(t.id));
+      if (team?.teamLeadAgent) return team.teamLeadAgent;
+    }
+    return activeDept?.departmentCeoAgent || activeDept?.pmAgent;
+  }, [activeProject, activeDept, activeTeam]);
+
   // Specific agent target if this is a direct 1:1 chat
   const activeTargetAgent = useMemo<import('@/types/organization').OrgAgentMember | undefined>(() => {
     if (!activeConversation?.targetAgentId) return undefined;
@@ -83,16 +128,74 @@ export const OrgChatView: React.FC = () => {
     return undefined;
   }, [activeConversation?.targetAgentId, hierarchy]);
 
-  const currentTargetAgent = activeTargetAgent || hierarchy.rootCeo.ceoAgent;
-  const currentAgentModel: OrgAgentModelConfig | undefined = currentTargetAgent.model || {
-    modelId: 'claude-3-7-sonnet',
-    providerId: 'anthropic',
-  };
+  const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
+
+  const firstAvailableConfiguredModel = useMemo<OrgAgentModelConfig | undefined>(() => {
+    for (const provider of providers ?? []) {
+      const models = getAvailableModels(provider);
+      if (models.length > 0) {
+        return {
+          providerId: provider.id,
+          modelId: models[0],
+          modelName: formatModelLabel ? formatModelLabel(provider, models[0]) : models[0],
+        };
+      }
+    }
+    return undefined;
+  }, [providers, getAvailableModels, formatModelLabel]);
+
+  const currentTargetAgent =
+    activeTargetAgent ||
+    activeProjectHead ||
+    activeTeam?.teamLeadAgent ||
+    activeDept?.departmentCeoAgent ||
+    hierarchy.rootCeo.ceoAgent;
+
+  const currentAgentModel: OrgAgentModelConfig = useMemo(() => {
+    // 1. Explicit model on current target agent (if not the stale unconfigured initial seed)
+    if (currentTargetAgent.model?.modelId) {
+      const isUnconfiguredSeed =
+        currentTargetAgent.model.modelId === 'claude-3-7-sonnet' &&
+        !providers?.some((p) => p.models?.includes('claude-3-7-sonnet') || p.id === 'anthropic');
+      if (!isUnconfiguredSeed) {
+        return currentTargetAgent.model;
+      }
+    }
+
+    // 2. Custom or assigned model on Root CEO
+    if (hierarchy.rootCeo.ceoAgent.model?.modelId) {
+      const isCeoUnconfiguredSeed =
+        hierarchy.rootCeo.ceoAgent.model.modelId === 'claude-3-7-sonnet' &&
+        !providers?.some((p) => p.models?.includes('claude-3-7-sonnet') || p.id === 'anthropic');
+      if (!isCeoUnconfiguredSeed) {
+        return hierarchy.rootCeo.ceoAgent.model;
+      }
+    }
+
+    // 3. First available model from user's configured providers
+    if (firstAvailableConfiguredModel) {
+      return firstAvailableConfiguredModel;
+    }
+
+    return (
+      currentTargetAgent.model ||
+      hierarchy.rootCeo.ceoAgent.model || {
+        modelId: 'claude-3-7-sonnet',
+        providerId: 'anthropic',
+      }
+    );
+  }, [currentTargetAgent, hierarchy.rootCeo.ceoAgent.model, providers, firstAvailableConfiguredModel]);
 
   const activeWorkspacePath = useMemo(() => {
-    const raw = activeTargetAgent?.workspacePath || hierarchy.rootCeo.workspacePath;
+    const raw =
+      activeProject?.workspacePath ||
+      activeProject?.path ||
+      activeTargetAgent?.workspacePath ||
+      activeTeam?.workspacePath ||
+      activeDept?.workspacePath ||
+      hierarchy.rootCeo.workspacePath;
     return raw && raw !== 'workspace' ? raw : null;
-  }, [activeTargetAgent?.workspacePath, hierarchy.rootCeo.workspacePath]);
+  }, [activeProject, activeTargetAgent, activeTeam, activeDept, hierarchy.rootCeo.workspacePath]);
 
   const handlePickWorkspaceFolder = useCallback(() => {
     setIsMasterModalOpen(true);
@@ -119,6 +222,31 @@ export const OrgChatView: React.FC = () => {
     return activeConversation?.messages ?? [];
   }, [activeConversation]);
 
+  // Extract any folder mentioned in recent conversation history if current node lacks workspace
+  const folderFromHistory = useMemo(() => {
+    for (const msg of [...messages].toReversed()) {
+      const winMatch = msg.content.match(/([a-zA-Z]:\\(?:[^"'\n\r;:<>|*?]+[\\/]?)+)/);
+      if (winMatch?.[1]) {
+        return winMatch[1]
+          .trim()
+          .replace(/^["']|["']$/g, '')
+          .replace(/[.,;]$/, '');
+      }
+    }
+    for (const conv of conversations) {
+      for (const msg of [...conv.messages].toReversed()) {
+        const winMatch = msg.content.match(/([a-zA-Z]:\\(?:[^"'\n\r;:<>|*?]+[\\/]?)+)/);
+        if (winMatch?.[1]) {
+          return winMatch[1]
+            .trim()
+            .replace(/^["']|["']$/g, '')
+            .replace(/[.,;]$/, '');
+        }
+      }
+    }
+    return undefined;
+  }, [messages, conversations]);
+
   // Auto-scroll to bottom when messages update or during execution
   useEffect(() => {
     if (scrollRef.current) {
@@ -132,24 +260,44 @@ export const OrgChatView: React.FC = () => {
     setInputPrompt('');
     setIsExecuting(true);
 
-    const isDirectSubAgent =
-      activeConversation?.type === 'agent_direct' &&
-      !!activeTargetAgent &&
-      activeTargetAgent.id !== hierarchy.rootCeo.ceoAgent.id &&
-      activeTargetAgent.role !== 'root_ceo';
-    const targetAgent = activeTargetAgent || hierarchy.rootCeo.ceoAgent;
-    const activeWorkspace = targetAgent.workspacePath || hierarchy.rootCeo.workspacePath || 'workspace';
+    const isProjectChat = Boolean(activeProject);
+    const isTeamChat = !activeProject && (Boolean(activeTeam) || activeConversation?.type === 'team_execution');
+    const isDirectMemberChat =
+      !activeProject && !isTeamChat && (Boolean(activeTargetAgent) || activeConversation?.type === 'agent_direct');
+    const isCeoDirective =
+      !isProjectChat &&
+      !isTeamChat &&
+      !isDirectMemberChat &&
+      /(?:create|add|new|setup|set\s+up|build|register|search|find|scan|import|discover|recruit|hire|delete|remove)\s+.*?\b(?:projects?|depar?t?ments?|sub-?teams?|teams?|specialists?|members?|bots?|agents?)\b/i.test(
+        prompt
+      );
+
+    const targetAgent = currentTargetAgent;
+    const activeWorkspace =
+      activeWorkspacePath ||
+      activeProject?.workspacePath ||
+      activeProject?.path ||
+      activeTeam?.workspacePath ||
+      targetAgent.workspacePath ||
+      hierarchy.rootCeo.workspacePath ||
+      'workspace';
 
     setLiveStepText(
-      isDirectSubAgent
-        ? `Communicating with ${targetAgent.name} [Model: ${targetAgent.model?.modelId || 'standard'}]...`
-        : 'Evaluating directive at Global Executive HQ...'
+      isProjectChat
+        ? `Communicating with ${targetAgent.name} for ${activeProject?.name} [Model: ${currentAgentModel?.modelId || 'standard'}]...`
+        : isTeamChat
+          ? `Communicating with ${targetAgent.name} (${activeTeam?.name || 'Team'}) [Model: ${currentAgentModel?.modelId || 'standard'}]...`
+          : isDirectMemberChat
+            ? `Communicating with ${targetAgent.name} [Model: ${currentAgentModel?.modelId || 'standard'}]...`
+            : isCeoDirective
+              ? 'Evaluating directive at Global Executive HQ...'
+              : `Consulting Root CEO ${targetAgent.name}...`
     );
     updateNodeStatus(targetAgent.id, 'working');
 
     const userMessage: OrgConversationMessage = {
       id: `msg-${Date.now()}-u`,
-      sender: 'Executive User',
+      sender: 'User',
       role: 'user',
       content: prompt,
       timestamp: Date.now(),
@@ -157,23 +305,44 @@ export const OrgChatView: React.FC = () => {
 
     const targetConvId =
       activeConversation?.id ??
-      (isDirectSubAgent ? `conv-direct-${targetAgent.id}-${Date.now()}` : `conv-ceo-${Date.now()}`);
+      (activeProject
+        ? `conv-proj-${activeProject.id}-${Date.now()}`
+        : activeTeam
+          ? `conv-team-${activeTeam.id}-${Date.now()}`
+          : isDirectMemberChat
+            ? `conv-direct-${targetAgent.id}-${Date.now()}`
+            : `conv-ceo-${Date.now()}`);
     const initialConvTitle =
       activeConversation?.title ??
-      (isDirectSubAgent ? `Chat with ${targetAgent.name}` : `Directive: ${prompt.slice(0, 36)}...`);
+      (activeProject
+        ? `${activeProject.name} - Chat`
+        : activeTeam
+          ? `${activeTeam.name} - Chat`
+          : isDirectMemberChat
+            ? `Chat with ${targetAgent.name}`
+            : `Directive: ${prompt.slice(0, 36)}...`);
 
     // Optimistically update conversation with user message
     const existingMessages = activeConversation?.messages ?? [];
     const interimConversation: OrgConversation = {
       id: targetConvId,
       title: initialConvTitle,
-      type: isDirectSubAgent ? 'agent_direct' : 'ceo_directive',
-      sourceNodeId: activeConversation?.sourceNodeId || 'root-ceo',
-      targetNodeId: activeConversation?.targetNodeId || 'root-ceo',
+      type: activeProject
+        ? 'team_execution'
+        : activeTeam
+          ? 'team_execution'
+          : isDirectMemberChat
+            ? 'agent_direct'
+            : activeConversation?.type || 'ceo_directive',
+      sourceNodeId: activeConversation?.sourceNodeId || activeTeam?.id || activeDept?.id || 'root-ceo',
+      targetNodeId: activeConversation?.targetNodeId || activeTeam?.id || activeDept?.id || 'root-ceo',
+      projectId: activeProject?.id,
+      teamId: activeConversation?.teamId || activeTeam?.id || activeProject?.teamIds?.[0],
       targetAgentId: targetAgent.id,
       targetRole: targetAgent.role,
       targetAgentName: targetAgent.name,
       targetAgentModel: targetAgent.model,
+      backendConversationId: activeConversation?.backendConversationId,
       timestamp: Date.now(),
       summary: prompt,
       messages: [...existingMessages, userMessage],
@@ -186,11 +355,35 @@ export const OrgChatView: React.FC = () => {
         hierarchy,
         (step) => setLiveStepText(`${step.fromName} -> ${step.toName}: ${step.message}`),
         (streamText) => setLiveStepText(streamText.slice(-80)),
-        updateNodeStatus
+        updateNodeStatus,
+        { projects }
       );
 
-      if (isDirectSubAgent) {
-        const agentResponse = await engine.executeDirectMessage(targetAgent, prompt, activeWorkspace, true);
+      if (!isCeoDirective) {
+        // Direct conversation mode (Project workspace, Team workspace, Direct member, or conversational CEO)
+        let systemPrompt: string | undefined;
+        if (isProjectChat && activeProject) {
+          systemPrompt = `You are ${targetAgent.name}, Project Lead for project "${activeProject.name}". Operating workspace directory: "${activeWorkspace}". You are conversing directly with the user about this project, exactly as in a project workspace. Answer helpfully, accurately, and assist with any coding, debugging, architecture, or planning tasks for this project.`;
+        } else if (isTeamChat && activeTeam) {
+          systemPrompt = `You are ${targetAgent.name}, Team Lead for team "${activeTeam.name}". Operating workspace directory: "${activeWorkspace}". You are conversing directly with the user about this team's work and deliverables. Answer helpfully, accurately, and assist with tasks, questions, and coordination for this team.`;
+        } else if (isDirectMemberChat) {
+          systemPrompt =
+            targetAgent.systemPrompt ||
+            `You are ${targetAgent.name}, role "${targetAgent.role}" (${targetAgent.title || 'Team Member'}). Operating workspace directory: "${activeWorkspace}". You are talking directly with the user. Answer accurately and perform tasks aligned with your expertise.`;
+        } else {
+          systemPrompt =
+            hierarchy.rootCeo.ceoAgent.systemPrompt ||
+            `You are ${targetAgent.name}, Root CEO of the organization. Operating workspace directory: "${activeWorkspace}". You are talking directly with the user. Discuss organizational strategy, high-level objectives, and leadership.`;
+        }
+
+        const agentResponse = await engine.executeDirectMessage(
+          targetAgent,
+          prompt,
+          activeWorkspace,
+          true,
+          systemPrompt,
+          activeConversation?.backendConversationId
+        );
 
         const agentMessage: OrgConversationMessage = {
           id: `msg-${Date.now()}-a`,
@@ -203,12 +396,25 @@ export const OrgChatView: React.FC = () => {
         const finalConversation: OrgConversation = {
           ...interimConversation,
           summary: agentResponse.slice(0, 80),
+          backendConversationId: engine.lastBackendConversationId || interimConversation.backendConversationId,
           messages: [...existingMessages, userMessage, agentMessage],
         };
         addOrgConversation(finalConversation);
         Message.success(`Response received from ${targetAgent.name}`);
       } else {
-        const result = await engine.executeDirective(prompt, undefined, undefined, undefined, true);
+        const targetDeptId =
+          activeDept?.id ||
+          (activeConversation?.targetNodeId !== 'root-ceo' ? activeConversation?.targetNodeId : undefined);
+        const targetTeamId = activeConversation?.teamId || activeProject?.teamIds?.[0];
+        const targetProjId = activeProject?.id;
+        const result = await engine.executeDirective(
+          prompt,
+          targetDeptId,
+          targetTeamId,
+          targetProjId,
+          true,
+          folderFromHistory
+        );
 
         // Auto-instantiate any departments requested
         if (result.createdDepartments && result.createdDepartments.length > 0) {
@@ -245,10 +451,22 @@ export const OrgChatView: React.FC = () => {
           }
         }
 
+        // Sync department workspace updates
+        if (result.updatedDepartment) {
+          updateDepartment(result.updatedDepartment.departmentId, result.updatedDepartment.patch);
+        }
+        if (result.updatedRootCeoWorkspace) {
+          updateRootCeo({ workspacePath: result.updatedRootCeoWorkspace });
+        }
+
+        const responderName = activeProject
+          ? activeProjectHead?.name || `${activeDept?.name || 'Project'} Head`
+          : hierarchy.rootCeo.ceoAgent.name;
+
         const ceoMessage: OrgConversationMessage = {
           id: `msg-${Date.now()}-c`,
-          sender: hierarchy.rootCeo.ceoAgent.name,
-          role: 'ceo',
+          sender: responderName,
+          role: activeProject ? 'assistant' : 'ceo',
           content: result.finalSynthesis,
           timestamp: Date.now(),
         };
@@ -256,11 +474,15 @@ export const OrgChatView: React.FC = () => {
         const finalConversation: OrgConversation = {
           ...interimConversation,
           summary: result.finalSynthesis,
-          targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
+          targetNodeId: result.involvedDepartmentIds[0] || interimConversation.targetNodeId,
+          projectId: activeProject?.id,
+          teamId: activeConversation?.teamId || activeProject?.teamIds?.[0],
           messages: [...existingMessages, userMessage, ceoMessage],
         };
         addOrgConversation(finalConversation);
-        Message.success('Executive directive processed by Root CEO');
+        Message.success(
+          activeProject ? `Project update from ${responderName}` : 'Executive directive processed by Root CEO'
+        );
       }
     } catch (err) {
       const errorMsg: OrgConversationMessage = {
@@ -286,11 +508,23 @@ export const OrgChatView: React.FC = () => {
     isExecuting,
     activeConversation,
     activeTargetAgent,
+    activeProjectHead,
+    activeProject,
+    activeTeam,
+    activeDept,
+    activeWorkspacePath,
+    currentTargetAgent,
+    currentAgentModel,
+    folderFromHistory,
+    projects,
     hierarchy,
     addDepartment,
+    removeDepartment,
     addSubTeam,
     addOrgProject,
     addTeamMember,
+    updateDepartment,
+    updateRootCeo,
     addOrgConversation,
     setSelectedConversationId,
     updateNodeStatus,
@@ -308,6 +542,41 @@ export const OrgChatView: React.FC = () => {
   };
 
   const handleNewConversation = () => {
+    if (activeProject) {
+      const newConvId = `conv-proj-${activeProject.id}-${Date.now()}`;
+      addOrgConversation({
+        id: newConvId,
+        title: `${activeProject.name} - Chat`,
+        type: 'team_execution',
+        sourceNodeId: activeProject.teamIds?.[0] || activeDept?.id || 'root-ceo',
+        targetNodeId: activeProject.teamIds?.[0] || activeDept?.id || 'root-ceo',
+        projectId: activeProject.id,
+        teamId: activeProject.teamIds?.[0],
+        timestamp: Date.now(),
+        summary: '',
+        messages: [],
+      });
+      setSelectedConversationId(newConvId);
+      setInputPrompt('');
+      return;
+    }
+    if (activeTeam) {
+      const newConvId = `conv-team-${activeTeam.id}-${Date.now()}`;
+      addOrgConversation({
+        id: newConvId,
+        title: `${activeTeam.name} - Chat`,
+        type: 'team_execution',
+        sourceNodeId: activeTeam.id,
+        targetNodeId: activeTeam.id,
+        teamId: activeTeam.id,
+        timestamp: Date.now(),
+        summary: '',
+        messages: [],
+      });
+      setSelectedConversationId(newConvId);
+      setInputPrompt('');
+      return;
+    }
     setSelectedConversationId(null);
     setInputPrompt('');
   };
@@ -318,23 +587,43 @@ export const OrgChatView: React.FC = () => {
       <div className='h-54px px-20px border-b border-[var(--color-border-2)] bg-[var(--color-bg-2)] flex items-center justify-between shrink-0 select-none'>
         <div className='flex items-center gap-12px min-w-0'>
           <span className='size-34px rounded-10px bg-amber-500/15 text-amber-300 flex items-center justify-center text-18px shadow-sm shrink-0'>
-            {activeTargetAgent ? <Robot size={18} theme='outline' className='text-primary' /> : '👑'}
+            {activeProject ? (
+              <FolderClose size={18} theme='outline' className='text-amber-400' />
+            ) : activeTeam ? (
+              <Peoples size={18} theme='outline' className='text-primary' />
+            ) : activeTargetAgent ? (
+              <Robot size={18} theme='outline' className='text-primary' />
+            ) : (
+              '👑'
+            )}
           </span>
           <div className='flex flex-col min-w-0'>
             <div className='flex items-center gap-8px'>
               <span className='font-bold text-14px text-t-primary truncate'>
-                {activeTargetAgent ? activeTargetAgent.name : hierarchy.rootCeo.ceoAgent.name}
+                {activeProject
+                  ? activeProject.name
+                  : activeTeam
+                    ? activeTeam.name
+                    : activeTargetAgent
+                      ? activeTargetAgent.name
+                      : hierarchy.rootCeo.ceoAgent.name}
               </span>
               <Tag
                 size='small'
-                color={activeTargetAgent ? 'arcoblue' : 'gold'}
+                color={activeProject ? 'arcoblue' : activeTeam ? 'arcoblue' : activeTargetAgent ? 'arcoblue' : 'gold'}
                 className='text-10px font-medium px-6px py-0.5px rounded-full'
               >
-                {activeTargetAgent ? activeTargetAgent.title || activeTargetAgent.role : 'Root Executive HQ'}
+                {activeProject
+                  ? `Project Head: ${activeProjectHead?.name || activeDept?.name || 'Lead'}`
+                  : activeTeam
+                    ? `Team Lead: ${activeTeam.teamLeadAgent.name}`
+                    : activeTargetAgent
+                      ? activeTargetAgent.title || activeTargetAgent.role
+                      : 'Root Executive HQ'}
               </Tag>
               {currentAgentModel?.modelId && (
                 <Tag size='small' color='cyan' className='text-10px font-mono px-6px py-0.5px rounded-full'>
-                  {currentAgentModel.modelId}
+                  {currentAgentModel.modelName || currentAgentModel.modelId}
                 </Tag>
               )}
               {isExecuting ? (
@@ -381,7 +670,13 @@ export const OrgChatView: React.FC = () => {
             onClick={handleNewConversation}
             className='!rounded-8px !text-12px'
           >
-            {activeTargetAgent ? 'New Message' : 'New Directive'}
+            {activeProject
+              ? 'New Project Chat'
+              : activeTeam
+                ? 'New Team Chat'
+                : activeTargetAgent
+                  ? 'New Message'
+                  : 'New Directive'}
           </Button>
 
           <Button
@@ -401,19 +696,48 @@ export const OrgChatView: React.FC = () => {
         {messages.length === 0 ? (
           <div className='my-auto flex flex-col items-center justify-center max-w-560px mx-auto text-center gap-16px select-none py-32px'>
             <span className='size-64px rounded-20px bg-gradient-to-tr from-amber-500/20 via-primary/15 to-emerald-500/20 flex items-center justify-center text-32px shadow-md border border-amber-500/30'>
-              {activeTargetAgent ? <Robot size={32} theme='outline' className='text-primary' /> : '👑'}
+              {activeProject ? (
+                <FolderClose size={32} theme='outline' className='text-amber-400' />
+              ) : activeTeam ? (
+                <Peoples size={32} theme='outline' className='text-primary' />
+              ) : activeTargetAgent ? (
+                <Robot size={32} theme='outline' className='text-primary' />
+              ) : (
+                '👑'
+              )}
             </span>
             <div className='flex flex-col gap-6px'>
               <h2 className='text-18px font-bold text-t-primary m-0'>
-                {activeTargetAgent ? `Direct Line: ${activeTargetAgent.name}` : 'Global Executive Command'}
+                {activeProject
+                  ? `Project Workspace: ${activeProject.name}`
+                  : activeTeam
+                    ? `Team Workspace: ${activeTeam.name}`
+                    : activeTargetAgent
+                      ? `Direct Line: ${activeTargetAgent.name}`
+                      : 'Global Executive Command'}
               </h2>
               <p className='text-13px text-t-secondary m-0 leading-relaxed'>
-                {activeTargetAgent ? (
+                {activeProject ? (
+                  <>
+                    Conversing with <strong>{activeProjectHead?.name || 'Project Lead'}</strong> in project workspace{' '}
+                    <code className='text-primary font-mono'>{activeWorkspacePath || 'bound workspace'}</code>. Interact
+                    directly with code, tasks, and project deliverables.
+                  </>
+                ) : activeTeam ? (
+                  <>
+                    Conversing with <strong>{activeTeam.teamLeadAgent.name}</strong> for team{' '}
+                    <strong>{activeTeam.name}</strong>. Powered by assigned AI Model:{' '}
+                    <code className='text-primary font-mono'>
+                      {currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'}
+                    </code>
+                    .
+                  </>
+                ) : activeTargetAgent ? (
                   <>
                     Conversing directly with <strong>{activeTargetAgent.name}</strong> (
                     {activeTargetAgent.title || activeTargetAgent.role}). Powered by assigned AI Model:{' '}
                     <code className='text-primary font-mono'>
-                      {activeTargetAgent.model?.modelId || 'claude-3-7-sonnet'}
+                      {currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'}
                     </code>
                     .
                   </>
@@ -428,23 +752,33 @@ export const OrgChatView: React.FC = () => {
             </div>
 
             <div className='flex flex-col gap-8px w-full mt-8px'>
-              <span className='text-11px font-mono text-t-tertiary uppercase tracking-wider'>
-                {activeTargetAgent ? 'Suggested Directives' : 'Suggested Directives'}
-              </span>
+              <span className='text-11px font-mono text-t-tertiary uppercase tracking-wider'>Suggested Topics</span>
               <div className='flex flex-col gap-6px'>
-                {(activeTargetAgent
+                {(activeProject
                   ? [
-                      'What are your active priorities and task status?',
-                      'Review our workspace deliverables and suggest improvements',
-                      'Prepare a sprint breakdown for our assigned tasks',
+                      'Review the project files and architecture',
+                      'What are the key deliverables and status for this project?',
+                      'Help me implement the next feature for this project',
                     ]
-                  : [
-                      'Create department Engineering',
-                      'Create department Growth Marketing',
-                      'Create team Mobile in department Engineering',
-                      'Hire specialist Performance Engineer to team Mobile with model gpt-4o',
-                      'Create project iOS Redesign under department Engineering',
-                    ]
+                  : activeTeam
+                    ? [
+                        'What are your active priorities and task status?',
+                        'Review our team deliverables and suggest improvements',
+                        'Prepare a sprint breakdown for our assigned tasks',
+                      ]
+                    : activeTargetAgent
+                      ? [
+                          'What are your active priorities and task status?',
+                          'Review our workspace deliverables and suggest improvements',
+                          'Prepare a sprint breakdown for our assigned tasks',
+                        ]
+                      : [
+                          'Create department Engineering',
+                          'Create department Growth Marketing',
+                          'Create team Mobile in department Engineering',
+                          'Hire specialist Performance Engineer to team Mobile with model gpt-4o',
+                          'Create project iOS Redesign under department Engineering',
+                        ]
                 ).map((suggestion) => (
                   <button
                     key={suggestion}
@@ -477,12 +811,16 @@ export const OrgChatView: React.FC = () => {
                   className={classNames(
                     'size-32px rounded-full flex items-center justify-center text-14px shrink-0 mt-2px shadow-sm',
                     isUser
-                      ? 'bg-primary/20 text-primary border border-primary/30'
+                      ? 'bg-message-user text-primary border border-primary/20'
                       : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                   )}
                 >
                   {isUser ? (
                     <User size={16} theme='outline' />
+                  ) : activeProject ? (
+                    <FolderClose size={16} theme='outline' className='text-amber-400' />
+                  ) : activeTeam ? (
+                    <Peoples size={16} theme='outline' className='text-primary' />
                   ) : activeTargetAgent ? (
                     <Robot size={16} theme='outline' className='text-primary' />
                   ) : (
@@ -509,7 +847,7 @@ export const OrgChatView: React.FC = () => {
                     className={classNames(
                       'p-14px rounded-14px text-13px leading-relaxed border shadow-sm select-text whitespace-pre-wrap break-words',
                       isUser
-                        ? 'bg-primary/10 border-primary/25 text-t-primary rounded-tr-2px'
+                        ? 'bg-message-user border-primary/15 text-t-primary rounded-tr-2px'
                         : 'bg-[var(--color-bg-2)] border-[var(--color-border-2)] text-t-primary rounded-tl-2px'
                     )}
                   >
@@ -525,12 +863,20 @@ export const OrgChatView: React.FC = () => {
         {isExecuting && (
           <div className='flex gap-12px max-w-800px w-full mr-auto'>
             <div className='size-32px rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center justify-center text-14px shrink-0 mt-2px shadow-sm'>
-              {activeTargetAgent ? <Robot size={16} theme='outline' className='text-primary' /> : '👑'}
+              {activeProject ? (
+                <FolderClose size={16} theme='outline' className='text-amber-400' />
+              ) : activeTeam ? (
+                <Peoples size={16} theme='outline' className='text-primary' />
+              ) : activeTargetAgent ? (
+                <Robot size={16} theme='outline' className='text-primary' />
+              ) : (
+                '👑'
+              )}
             </div>
             <div className='flex flex-col gap-4px max-w-[85%]'>
               <span className='text-11px font-mono text-t-tertiary px-2px'>
-                {activeTargetAgent ? activeTargetAgent.name : hierarchy.rootCeo.ceoAgent.name} (
-                {activeTargetAgent ? 'Responding...' : 'Delegating...'})
+                {currentTargetAgent.name} (
+                {activeProject || activeTeam || activeTargetAgent ? 'Responding...' : 'Delegating...'})
               </span>
               <div className='p-12px rounded-14px bg-[var(--color-bg-2)] border border-primary/30 text-t-primary rounded-tl-2px flex items-center gap-10px shadow-sm text-12px font-mono'>
                 <Spin dot size={12} />
@@ -552,9 +898,13 @@ export const OrgChatView: React.FC = () => {
               onKeyDown={handleKeyDown}
               disabled={isExecuting}
               placeholder={
-                activeTargetAgent
-                  ? `Message ${activeTargetAgent.name} directly (${activeTargetAgent.model?.modelId || 'claude-3-7-sonnet'})...`
-                  : "Direct Root CEO (e.g. 'Create department Engineering', 'Hire specialist Performance Eng to team Mobile with model gpt-4o')..."
+                activeProject
+                  ? `Message ${activeProjectHead?.name || 'Project Lead'} about ${activeProject.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+                  : activeTeam
+                    ? `Message ${activeTeam.teamLeadAgent.name} for ${activeTeam.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+                    : activeTargetAgent
+                      ? `Message ${activeTargetAgent.name} directly (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+                      : `Direct Root CEO (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'}) - issue strategic directives or manage structure...`
               }
               className='!border-none !bg-transparent !p-12px !text-13px resize-none'
               autoFocus

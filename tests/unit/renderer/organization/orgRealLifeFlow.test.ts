@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { ipcBridge } from '@/common';
 import {
   joinOrgPath,
   validateWithinMaster,
@@ -26,7 +28,7 @@ import type {
 } from '@/types/organization';
 
 describe('Real-Life Organization Mode Test: End-to-End Enterprise Flow', () => {
-  const masterRoot = path.resolve('C:\\Users\\rahul\\AppData\\Local\\Temp\\kilo\\real-life-org-test');
+  const masterRoot = path.join(os.tmpdir(), 'kilo', 'real-life-org-test');
   const now = Date.now();
 
   let hierarchy: OrgHierarchy;
@@ -54,7 +56,38 @@ describe('Real-Life Organization Mode Test: End-to-End Enterprise Flow', () => {
   const conversationsStore: OrgConversation[] = [];
 
   beforeAll(() => {
+    vi.spyOn(ipcBridge.org, 'assertWithinScope').mockImplementation(async (targetPath: string, allowedRoot: string) => {
+      const { assertWithinScope } = await import('@process/services/org/pathGuard');
+      return assertWithinScope(targetPath, allowedRoot);
+    });
+
     // 1. Analyze and verify real master folder structure on disk
+    if (!fs.existsSync(masterRoot)) {
+      fs.mkdirSync(masterRoot, { recursive: true });
+    }
+    if (!fs.existsSync(path.join(masterRoot, 'README.md'))) {
+      fs.writeFileSync(path.join(masterRoot, 'README.md'), '# Enterprise Root\n');
+    }
+    for (const sub of ['api-gateway', 'cloud-infra']) {
+      const p = path.join(masterRoot, 'departments', 'engineering', 'projects', sub);
+      fs.mkdirSync(p, { recursive: true });
+      if (!fs.existsSync(path.join(p, 'README.md'))) {
+        fs.writeFileSync(path.join(p, 'README.md'), `# ${sub}\n`);
+      }
+    }
+    for (const sub of ['customer-portal', 'analytics-dashboard']) {
+      const p = path.join(masterRoot, 'departments', 'product', 'projects', sub);
+      fs.mkdirSync(p, { recursive: true });
+      if (!fs.existsSync(path.join(p, 'README.md'))) {
+        fs.writeFileSync(path.join(p, 'README.md'), `# ${sub}\n`);
+      }
+    }
+    const auditPath = path.join(masterRoot, 'departments', 'operations', 'projects', 'compliance-audit');
+    fs.mkdirSync(auditPath, { recursive: true });
+    if (!fs.existsSync(path.join(auditPath, 'README.md'))) {
+      fs.writeFileSync(path.join(auditPath, 'README.md'), '# compliance-audit\n');
+    }
+
     expect(fs.existsSync(masterRoot)).toBe(true);
     const rootFiles = fs.readdirSync(masterRoot);
     expect(rootFiles).toContain('departments');

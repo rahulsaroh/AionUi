@@ -10,6 +10,7 @@ import { Down, Right, Edit, LinkOne, FolderPlus, Plus, MoreOne } from '@icon-par
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
+import { getActionTooltipProps } from '@renderer/utils/ui/siderTooltip';
 import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
 import { ORG_THEME_PALETTE } from '@/renderer/pages/organization/utils/orgTheme';
 
@@ -50,6 +51,7 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
 }) => {
   const { t } = useTranslation();
   const theme = ORG_THEME_PALETTE[status];
+  const actionTooltipProps = getActionTooltipProps();
 
   return (
     <div
@@ -145,7 +147,7 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
         </div>
         <div className='hidden group-hover:flex items-center gap-1px shrink-0'>
           <Tooltip
-            {...siderTooltipProps}
+            {...actionTooltipProps}
             content={t('team.organization.editDepartment', { defaultValue: 'Edit Department' })}
             position='top'
           >
@@ -163,7 +165,7 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
             </Button>
           </Tooltip>
           <Tooltip
-            {...siderTooltipProps}
+            {...actionTooltipProps}
             content={t('team.organization.setFolder', { defaultValue: 'Set Folder' })}
             position='top'
           >
@@ -181,7 +183,7 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
             </Button>
           </Tooltip>
           <Tooltip
-            {...siderTooltipProps}
+            {...actionTooltipProps}
             content={t('team.organization.addProject', { defaultValue: 'Add Project' })}
             position='top'
           >
@@ -199,7 +201,7 @@ export const SiderDepartmentHeader: React.FC<SiderDepartmentHeaderProps> = ({
             </Button>
           </Tooltip>
           <Tooltip
-            {...siderTooltipProps}
+            {...actionTooltipProps}
             content={t('team.organization.addTeam', { defaultValue: 'Add Team' })}
             position='top'
           >

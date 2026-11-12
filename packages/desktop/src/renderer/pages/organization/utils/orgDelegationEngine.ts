@@ -41,6 +41,8 @@ export interface DelegationExecutionResult {
   createdProjects?: Array<import('@/types/organization').OrgProject>;
   createdMembers?: Array<{ teamId: string; member: OrgAgentMember }>;
   deletedDepartmentIds?: string[];
+  updatedDepartment?: { departmentId: string; patch: Partial<OrgDepartmentNode> };
+  updatedRootCeoWorkspace?: string;
 }
 
 export interface OrgActionPayload {
@@ -57,17 +59,33 @@ export interface OrgActionPayload {
 function cleanTrailingClauses(str: string): string {
   return str
     .replace(
-      /\s+(?:and\s+then|and\s+we\s+will|and\s+assign|and\s+add|and\s+we|with\s+a\s+team|with\s+team|files\s+of\s+which|stored\s+in|in\s+folder|at\s+path|where\s+files|to\s+handle|for\s+handling|which\s+is)[\s\S]*$/i,
+      /\s+(?:and\s+then|and\s+we\s+will|and\s+assign|and\s+add|and\s+we|and\s+choose|choose\s+folder|and\s+pick|with\s+a\s+team|with\s+team|files\s+of\s+which|stored\s+in|in\s+folder|at\s+path|where\s+files|folder\s+to\s+work\s+with|to\s+handle|for\s+handling|which\s+is)[\s\S]*$/i,
       ''
     )
     .trim();
 }
 
 function extractPathFromPrompt(prompt: string): string | undefined {
-  const match = prompt.match(
-    /(?:folder|path|stored\s+in|directory|at)\s*(?:is|into|to|in|=|:)?\s*[:"']?([a-zA-Z]:\\[^"'\n\r,;]+|(?:\/[a-zA-Z0-9._-]+)+)/i
+  // Direct match for Windows drive absolute path
+  const winMatch = prompt.match(/([a-zA-Z]:\\(?:[^"'\n\r;:<>|*?]+[\\/]?)+)/);
+  if (winMatch?.[1]) {
+    return winMatch[1]
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/[.,;]$/, '');
+  }
+  // Direct match for Unix absolute path
+  const unixMatch = prompt.match(/((?:\/[a-zA-Z0-9._-]+)+)/);
+  if (unixMatch?.[1] && unixMatch[1] !== '/' && unixMatch[1].length > 2) {
+    return unixMatch[1]
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/[.,;]$/, '');
+  }
+  const genericMatch = prompt.match(
+    /(?:folder|path|stored\s+in|directory|workspace|at)\s*(?:is|into|to|in|to\s+work\s+with|with|=|:)*\s*[:"']?([a-zA-Z]:\\[^"'\n\r,;]+|(?:\/[a-zA-Z0-9._-]+)+)/i
   );
-  return match?.[1]?.trim()?.replace(/^["']|["']$/g, '');
+  return genericMatch?.[1]?.trim()?.replace(/^["']|["']$/g, '');
 }
 
 export function isValidDepartmentName(name: string): boolean {
@@ -92,7 +110,7 @@ export function isValidDepartmentName(name: string): boolean {
   if (/\b(?:multiple|several|different|various|these|those|this|that|many|few|each|every|all)\b/i.test(trimmed)) {
     return false;
   }
-  if (/\b(?:search|find|scan|look|import|discover|detect|create|add|assign|setup|build)\b/i.test(trimmed)) {
+  if (/\b(?:search|find|scan|look|import|discover|detect|create|add|assign|setup|build|make)\b/i.test(trimmed)) {
     return false;
   }
   return true;
@@ -162,7 +180,7 @@ export function extractDepartmentCreationIntent(userPrompt: string): { name: str
   }
 
   const pattern2 =
-    /(?:create|add|new|setup|set\s+up|start|instantiate|build|establish|open)\s+(?:a\s+|an\s+)?(?:new\s+)?([^"'\n\r.,;]+?)\s+(?:depar?t?ments?|dept|departmnts?)(?:["']|\.|\n|,|$)/i;
+    /(?:create|add|new|setup|set\s+up|start|instantiate|build|establish|open)\s+(?:a\s+|an\s+)?(?:new\s+)?([^"'\n\r.,;]+?)\s+(?:depar?t?ments?|dept|departmnts?)(?:\s+(?:and|with|where|in|at|files|folder|choose|to|for)[\s\S]*|["']|\.|\n|,|$)/i;
   const match2 = userPrompt.match(pattern2);
   if (match2 && match2[1]?.trim()) {
     let rawName = cleanTrailingClauses(match2[1].trim());
@@ -222,7 +240,8 @@ export function extractProjectDiscoveryOrBatchIntent(
   userPrompt: string,
   departments: OrgDepartmentNode[],
   targetDeptId?: string,
-  rootWorkspacePath?: string
+  rootWorkspacePath?: string,
+  fallbackPath?: string
 ): ProjectDiscoveryOrBatchIntent | null {
   if (departments.length === 0) return null;
 
@@ -255,19 +274,37 @@ export function extractProjectDiscoveryOrBatchIntent(
   }
 
   const isDiscovery =
-    /(?:search|find|scan|discover|detect|import|list|look)\s+(?:for\s+)?(?:all\s+|my\s+|our\s+)?(?:different\s+|multiple\s+)?projects?\b/i.test(
+    // "search/find/scan/discover/list/detect/import/load apps/projects"
+    /(?:search|find|scan|discover|detect|import|list|look|inspect|check)\s+(?:for\s+)?(?:all\s+|my\s+|our\s+)?(?:different\s+|multiple\s+)?(?:apps?|projects?|sub-?folders?|directories|repos?|codebases?)\b/i.test(
       userPrompt
     ) ||
-    /(?:from|in)\s+(?:this\s+|the\s+)?(?:folder|directory|workspace|path)\s+.*?\b(?:create|add|register|import)\s+(?:multiple\s+|all\s+|different\s+)?projects?\b/i.test(
+    // "make/turn/create/set up each app/folder into/as a project"
+    /\b(?:make|turn|create|set\s+up|setup|add|convert)\s+(?:each|every|all)\s+(?:apps?|folders?|directories|sub-?folders?|repos?)\s+(?:an?\s+)?projects?\b/i.test(
       userPrompt
     ) ||
-    /(?:create|add|register|import)\s+(?:multiple\s+|all\s+|different\s+)?projects?\b.*?\b(?:from|in)\s+(?:this\s+|the\s+)?(?:folder|directory|workspace|path)\b/i.test(
+    // "have multiple apps ... make each app an project"
+    /\b(?:apps?|projects?|folders?|directories|sub-?folders?)\b.*?\b(?:make|turn|convert|add|create|register)\s+(?:each|every|all|them\s+as|multiple)?\s+(?:an?\s+)?projects?\b/i.test(
+      userPrompt
+    ) ||
+    // "create/add/register/import projects from/in folder"
+    /(?:from|in|under)\s+(?:this\s+|the\s+|[\w\s-]+\s+)?(?:folder|directory|workspace|path)\s+.*?\b(?:create|add|register|import|make)\s+(?:multiple\s+|all\s+|different\s+)?(?:an?\s+)?projects?\b/i.test(
+      userPrompt
+    ) ||
+    /(?:create|add|register|import|make)\s+(?:multiple\s+|all\s+|different\s+)?(?:an?\s+)?projects?\b.*?\b(?:from|in|under)\s+(?:this\s+|the\s+|[\w\s-]+\s+)?(?:folder|directory|workspace|path)\b/i.test(
+      userPrompt
+    ) ||
+    // "create multiple projects in this department"
+    /(?:create|add|register|setup|set\s+up|make)\s+(?:multiple|several|different|all|\d+)\s+projects?\b.*?\b(?:in|under|to|for)\s+(?:this|the|that|our|current|[\w\s]+)?\s*depar?t?ments?\b/i.test(
       userPrompt
     );
 
   if (isDiscovery) {
     const explicitPath = extractPathFromPrompt(userPrompt);
-    const folderPath = explicitPath || targetDept.workspacePath || rootWorkspacePath;
+    // If targetDept.workspacePath is an auto-generated path containing \departments\,
+    // prioritize fallbackPath explicitly provided by the user in conversation
+    const isAutoDeptPath = targetDept.workspacePath && /[\\/]departments[\\/]/i.test(targetDept.workspacePath);
+    const resolvedDeptPath = isAutoDeptPath ? fallbackPath || targetDept.workspacePath : targetDept.workspacePath;
+    const folderPath = explicitPath || resolvedDeptPath || rootWorkspacePath || fallbackPath;
     return {
       type: 'discover',
       targetDepartment: targetDept,
@@ -287,7 +324,7 @@ export function extractProjectDiscoveryOrBatchIntent(
       return {
         type: 'batch_create',
         targetDepartment: targetDept,
-        folderPath: targetDept.workspacePath || rootWorkspacePath,
+        folderPath: targetDept.workspacePath || rootWorkspacePath || fallbackPath,
         projectNames: names,
       };
     }
@@ -297,7 +334,8 @@ export function extractProjectDiscoveryOrBatchIntent(
     /(?:create|add|register|setup|set\s+up)\s+(?:multiple|several|different|\d+)\s+projects?\b/i.test(userPrompt) &&
     /\b(?:in|under|to|for)\s+(?:this|the|that|our|current|[\w\s]+)?\s*depar?t?ments?\b/i.test(userPrompt)
   ) {
-    const folderPath = extractPathFromPrompt(userPrompt) || targetDept.workspacePath || rootWorkspacePath;
+    const folderPath =
+      extractPathFromPrompt(userPrompt) || targetDept.workspacePath || rootWorkspacePath || fallbackPath;
     return {
       type: 'discover',
       targetDepartment: targetDept,
@@ -589,6 +627,9 @@ export interface AgentExecutionOptions {
   userDirective: string;
   workspacePath: string;
   onStreamUpdate: (text: string) => void;
+  conversationId?: string;
+  /** True when the workspace path was explicitly requested for this step (not inherited/fallback). */
+  workspaceExplicit?: boolean;
 }
 
 type UpdateNodeStatus = (nodeId: string, status: OrgNodeStatus) => void;
@@ -601,19 +642,22 @@ export class OrgDelegationEngine {
   private onAgentStream?: (text: string) => void;
   private updateNodeStatus?: UpdateNodeStatus;
   private simulationMode: boolean;
+  private projects: OrgProject[] = [];
+  public lastBackendConversationId?: string;
 
   constructor(
     hierarchy: OrgHierarchy,
     onStepCallback?: (log: DelegationStepLog) => void,
     onAgentStream?: (text: string) => void,
     updateNodeStatus?: UpdateNodeStatus,
-    options?: { simulationMode?: boolean }
+    options?: { simulationMode?: boolean; projects?: OrgProject[] }
   ) {
     this.hierarchy = hierarchy;
     this.onStepCallback = onStepCallback;
     this.onAgentStream = onAgentStream;
     this.updateNodeStatus = updateNodeStatus;
     this.simulationMode = options?.simulationMode ?? true;
+    this.projects = options?.projects ?? [];
   }
 
   private emitStep(step: DelegationStepLog) {
@@ -630,20 +674,41 @@ export class OrgDelegationEngine {
     const rawWorkspace = opts.workspacePath || this.hierarchy.rootCeo.workspacePath;
     let effectiveWorkspace = rawWorkspace && rawWorkspace !== 'workspace' ? rawWorkspace : '';
 
-    // Path Guard Enforcement: verify workspace boundaries against organization root
+    // Path Guard Enforcement: when an organization root is bound, never run an agent
+    // outside it. If the check throws, fail closed (treat as not allowed).
+    // Choice: abort with a clear error for explicitly requested out-of-scope paths
+    // (user/step asked to run there); fall back to allowedRoot only when the path
+    // was inherited/empty so routine work can still proceed inside the org root.
     const allowedRoot = this.hierarchy.rootCeo.workspacePath;
     if (allowedRoot && effectiveWorkspace && effectiveWorkspace !== 'workspace') {
       try {
         const scopeCheck = await ipcBridge.org.assertWithinScope(effectiveWorkspace, allowedRoot);
         if (!scopeCheck.allowed) {
+          const reason = scopeCheck.reason || 'path outside allowed root';
           console.warn(
             `[OrgDelegationEngine:pathGuard] Workspace "${effectiveWorkspace}" outside allowed root "${allowedRoot}":`,
-            scopeCheck.reason
+            reason
           );
-          effectiveWorkspace = scopeCheck.resolved || allowedRoot;
+          if (opts.workspaceExplicit) {
+            throw new Error(
+              `Workspace "${effectiveWorkspace}" is outside the organization root "${allowedRoot}": ${reason}`
+            );
+          }
+          // Inherited/implicit path fell outside scope: fall back to the allowed root.
+          effectiveWorkspace = allowedRoot;
+        } else if (scopeCheck.resolved) {
+          effectiveWorkspace = scopeCheck.resolved;
         }
       } catch (err) {
-        console.warn('[OrgDelegationEngine:pathGuard] scope check error:', err);
+        if (opts.workspaceExplicit) {
+          throw err instanceof Error ? err : new Error(String(err));
+        }
+        // Fail closed for inherited paths when scope cannot be verified.
+        console.warn(
+          '[OrgDelegationEngine:pathGuard] scope check failed closed for inherited workspace:',
+          err
+        );
+        effectiveWorkspace = allowedRoot;
       }
     }
 
@@ -688,8 +753,6 @@ export class OrgDelegationEngine {
           const matchedProvider = enabledProviders.find((p) => p.id === opts.agent.model?.providerId);
           if (matchedProvider) {
             resolvedModel = { id: matchedProvider.id, use_model: opts.agent.model.modelId };
-          } else {
-            resolvedModel = { id: opts.agent.model.providerId, use_model: opts.agent.model.modelId };
           }
         }
         if (!resolvedModel && opts.agent.model?.modelId) {
@@ -698,36 +761,60 @@ export class OrgDelegationEngine {
             resolvedModel = { id: matchedProvider.id, use_model: opts.agent.model.modelId };
           }
         }
+        // Fall back to Root CEO's assigned model if configured
+        if (!resolvedModel && this.hierarchy.rootCeo.ceoAgent.model?.modelId) {
+          const ceoModel = this.hierarchy.rootCeo.ceoAgent.model;
+          const matchedProvider = enabledProviders.find(
+            (p) => (ceoModel.providerId && p.id === ceoModel.providerId) || p.models?.includes(ceoModel.modelId)
+          );
+          if (matchedProvider) {
+            resolvedModel = { id: matchedProvider.id, use_model: ceoModel.modelId };
+          }
+        }
+        // Fall back to first available model from user's enabled providers
         if (!resolvedModel && enabledProviders.length > 0) {
           const p = enabledProviders.find((prov) => prov.models && prov.models.length > 0) || enabledProviders[0];
           resolvedModel = {
             id: p.id,
-            use_model: opts.agent.model?.modelId || (p.models && p.models[0]) || 'default',
+            use_model: (p.models && p.models[0]) || opts.agent.model?.modelId || 'default',
+          };
+        }
+        // Final fallback to agent's custom model definition
+        if (!resolvedModel && opts.agent.model?.modelId) {
+          resolvedModel = {
+            id: opts.agent.model.providerId || 'default',
+            use_model: opts.agent.model.modelId,
           };
         }
       } catch {
         // Non-fatal provider resolution fallback
       }
 
-      // 3. Create real conversation session (server generates canonical UUID)
-      const createPayload: Record<string, unknown> = {
-        name: `Org: ${opts.agent.name}`,
-        assistant: { id: assistantId },
-        extra: {
-          workspace: effectiveWorkspace,
-          custom_workspace: isCustomWorkspace,
-        },
-      };
-      if (resolvedModel) {
-        createPayload.model = resolvedModel;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const createdConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as { id?: string } | null;
-      const convId = createdConv?.id;
+      // 3. Resolve or create real conversation session
+      let convId = opts.conversationId;
       if (!convId) {
-        throw new Error('Failed to create conversation: backend returned no conversation id');
+        const createPayload: Record<string, unknown> = {
+          name: `Org: ${opts.agent.name}`,
+          assistant: { id: assistantId },
+          extra: {
+            workspace: effectiveWorkspace,
+            custom_workspace: isCustomWorkspace,
+          },
+        };
+        if (resolvedModel) {
+          createPayload.model = resolvedModel;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const createdConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as {
+          id?: string;
+        } | null;
+        convId = createdConv?.id;
+        if (!convId) {
+          throw new Error('Failed to create conversation: backend returned no conversation id');
+        }
       }
+      this.lastBackendConversationId = convId;
 
       unsubscribe = ipcBridge.conversation.responseStream.on((msg: unknown) => {
         const m = msg as { conversation_id?: string; data?: unknown; type?: string; status?: string };
@@ -755,12 +842,46 @@ export class OrgDelegationEngine {
         lastActivity = Date.now();
       });
 
-      const promptToSend = `[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+      const promptToSend = opts.conversationId
+        ? opts.userDirective
+        : `[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
 
-      await ipcBridge.conversation.sendMessage.invoke({
-        conversation_id: convId,
-        input: promptToSend,
-      });
+      try {
+        await ipcBridge.conversation.sendMessage.invoke({
+          conversation_id: convId,
+          input: promptToSend,
+        });
+      } catch (sendErr) {
+        if (opts.conversationId) {
+          // If previous session is stale, create fresh session and retry
+          const createPayload: Record<string, unknown> = {
+            name: `Org: ${opts.agent.name}`,
+            assistant: { id: assistantId },
+            extra: {
+              workspace: effectiveWorkspace,
+              custom_workspace: isCustomWorkspace,
+            },
+          };
+          if (resolvedModel) createPayload.model = resolvedModel;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const freshConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as {
+            id?: string;
+          } | null;
+          if (freshConv?.id) {
+            convId = freshConv.id;
+            this.lastBackendConversationId = convId;
+            const fullPrompt = `[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+            await ipcBridge.conversation.sendMessage.invoke({
+              conversation_id: convId,
+              input: fullPrompt,
+            });
+          } else {
+            throw sendErr;
+          }
+        } else {
+          throw sendErr;
+        }
+      }
 
       // Wait for stream finish or 120s inactivity timeout
       await new Promise<void>((resolve, reject) => {
@@ -801,9 +922,13 @@ export class OrgDelegationEngine {
     agent: OrgAgentMember,
     userPrompt: string,
     workspacePath?: string,
-    useRealExecution = true
+    useRealExecution = true,
+    systemPromptOverride?: string,
+    conversationId?: string
   ): Promise<string> {
     this.simulationMode = !useRealExecution;
+    const explicitWorkspace =
+      typeof workspacePath === 'string' && workspacePath.trim() !== '' && workspacePath !== 'workspace';
     const rawPath = workspacePath || agent.workspacePath || this.hierarchy.rootCeo.workspacePath;
     const resolvedPath = rawPath && rawPath !== 'workspace' ? rawPath : '';
 
@@ -812,11 +937,14 @@ export class OrgDelegationEngine {
       const response = await this.runOrgAgentStep({
         agent,
         systemPrompt:
+          systemPromptOverride ||
           agent.systemPrompt ||
           `You are ${agent.name}, role "${agent.role}" (${agent.title || 'Team Member'}). Assigned AI Model: ${agent.model?.modelId || 'default'}. You are talking directly with the user. Answer accurately and perform tasks aligned with your expertise.`,
         userDirective: userPrompt,
         workspacePath: resolvedPath,
         onStreamUpdate: (text) => this.onAgentStream?.(text),
+        conversationId,
+        workspaceExplicit: explicitWorkspace,
       });
       return response;
     } finally {
@@ -838,7 +966,8 @@ export class OrgDelegationEngine {
     targetDeptId?: string,
     targetTeamId?: string,
     projectId?: string,
-    useRealExecution = false
+    useRealExecution = false,
+    fallbackPath?: string
   ): Promise<DelegationExecutionResult> {
     this.simulationMode = !useRealExecution;
     const directiveId = `dir-${Date.now()}`;
@@ -942,14 +1071,37 @@ export class OrgDelegationEngine {
       userPrompt,
       this.hierarchy.departments,
       targetDeptId,
-      rootCeo.workspacePath
+      rootCeo.workspacePath,
+      fallbackPath
     );
     if (batchOrDiscovery) {
       const targetDept = batchOrDiscovery.targetDepartment;
-      const targetFolder = batchOrDiscovery.folderPath;
+      let targetFolder = batchOrDiscovery.folderPath;
       let createdProjects: OrgProject[] = [];
+      const createdTeams: Array<{ departmentId: string; team: OrgTeamNode }> = [];
 
-      if (batchOrDiscovery.type === 'discover' && targetFolder) {
+      if (batchOrDiscovery.type === 'discover') {
+        if (!targetFolder) {
+          addLog({
+            depth: 1,
+            fromName: rootCeo.ceoAgent.name,
+            fromRole: 'Root CEO',
+            toName: 'User / Executive Board',
+            toRole: 'User',
+            message: `Department "${targetDept.name}" requested project discovery but no workspace folder is bound yet.`,
+            status: 'completed',
+          });
+          return {
+            success: false,
+            directiveId,
+            userPrompt,
+            logs,
+            finalSynthesis: `Global Organization CEO: I am ready to scan and discover all apps and projects for the "${targetDept.name}" department. Please specify or bind the folder path to scan (e.g. 'search projects in G:\\My Drive\\Life\\Money\\Apps').`,
+            involvedDepartmentIds: [targetDept.id],
+            involvedTeamIds: [],
+          };
+        }
+
         addLog({
           depth: 1,
           fromName: rootCeo.ceoAgent.name,
@@ -960,11 +1112,32 @@ export class OrgDelegationEngine {
           status: 'working',
         });
 
+        // Ensure department has at least one active team to lead these projects
+        if (targetDept.teams.length === 0) {
+          const defaultTeam = createTeamShell(targetDept.id, 'Core');
+          defaultTeam.workspacePath = targetFolder;
+          targetDept.teams.push(defaultTeam);
+          createdTeams.push({ departmentId: targetDept.id, team: defaultTeam });
+        }
+
         let discovered: Array<{ name: string; path: string; description?: string }> = [];
         try {
-          discovered = await ipcBridge.org.discoverProjects(targetFolder, rootCeo.workspacePath || targetFolder);
+          discovered = await ipcBridge.org.discoverProjects(targetFolder);
         } catch {
           discovered = [];
+        }
+
+        // If no projects found in targetFolder, try fallbackPath from conversation history
+        if (discovered.length === 0 && fallbackPath && fallbackPath !== targetFolder) {
+          try {
+            const fallbackDiscovered = await ipcBridge.org.discoverProjects(fallbackPath);
+            if (fallbackDiscovered.length > 0) {
+              targetFolder = fallbackPath;
+              discovered = fallbackDiscovered;
+            }
+          } catch {
+            // ignore
+          }
         }
 
         if (discovered.length > 0) {
@@ -981,6 +1154,12 @@ export class OrgDelegationEngine {
 
           for (const proj of createdProjects) {
             targetDept.linkedProjects.push({ id: proj.id, name: proj.name, path: proj.path });
+          }
+
+          // Persist targetFolder as department and root workspace
+          targetDept.workspacePath = targetFolder;
+          if (!rootCeo.workspacePath) {
+            rootCeo.workspacePath = targetFolder;
           }
 
           addLog({
@@ -1000,10 +1179,32 @@ export class OrgDelegationEngine {
             directiveId,
             userPrompt,
             logs,
-            finalSynthesis: `Global Organization CEO: I have scanned \`${targetFolder}\` and established ${createdProjects.length} projects under the "${targetDept.name}" department:\n\n${createdProjects.map((p) => `• **${p.name}** (\`${p.path}\`)`).join('\n')}\n\nYou can now assign teams or issue directives to these projects.`,
+            finalSynthesis: `Global Organization CEO: I have scanned \`${targetFolder}\` and established ${createdProjects.length} projects under the "${targetDept.name}" department:\n\n${createdProjects.map((p) => `• **${p.name}** (\`${p.path}\`)`).join('\n')}\n\nYou can now chat under any project on the sidebar specifically with its project head.`,
+            involvedDepartmentIds: [targetDept.id],
+            involvedTeamIds: targetDept.teams.map((t) => t.id),
+            createdProjects,
+            createdTeams: createdTeams.length > 0 ? createdTeams : undefined,
+            updatedDepartment: { departmentId: targetDept.id, patch: { workspacePath: targetFolder } },
+            updatedRootCeoWorkspace: targetFolder,
+          };
+        } else if (!this.simulationMode) {
+          addLog({
+            depth: 2,
+            fromName: targetDept.departmentCeoAgent.name,
+            fromRole: 'Department CEO',
+            toName: 'User / Executive Board',
+            toRole: 'User',
+            message: `Scanned folder "${targetFolder}" but no app or project subdirectories were found.`,
+            status: 'completed',
+          });
+          return {
+            success: false,
+            directiveId,
+            userPrompt,
+            logs,
+            finalSynthesis: `Global Organization CEO: I scanned \`${targetFolder}\`, but did not find any app directories. Please check that the folder path is correct (e.g. 'search projects in G:\\My Drive\\Life\\Money\\Apps').`,
             involvedDepartmentIds: [targetDept.id],
             involvedTeamIds: [],
-            createdProjects,
           };
         } else if (this.simulationMode) {
           const sampleProjects = ['Web App', 'API Service', 'Mobile Client'];
@@ -1025,6 +1226,11 @@ export class OrgDelegationEngine {
             targetDept.linkedProjects.push({ id: proj.id, name: proj.name, path: proj.path });
           }
 
+          targetDept.workspacePath = targetFolder;
+          if (!rootCeo.workspacePath) {
+            rootCeo.workspacePath = targetFolder;
+          }
+
           addLog({
             depth: 2,
             fromName: targetDept.departmentCeoAgent.name,
@@ -1042,13 +1248,22 @@ export class OrgDelegationEngine {
             directiveId,
             userPrompt,
             logs,
-            finalSynthesis: `Global Organization CEO: Initialized ${createdProjects.length} projects under the "${targetDept.name}" department in \`${targetFolder}\`:\n\n${createdProjects.map((p) => `• **${p.name}** (\`${p.path}\`)`).join('\n')}`,
+            finalSynthesis: `Global Organization CEO: Initialized ${createdProjects.length} projects under the "${targetDept.name}" department in \`${targetFolder}\`:\n\n${createdProjects.map((p) => `• **${p.name}** (\`${p.path}\`)`).join('\n')}\n\nYou can now chat under any project on the sidebar specifically with its project head.`,
             involvedDepartmentIds: [targetDept.id],
-            involvedTeamIds: [],
+            involvedTeamIds: targetDept.teams.map((t) => t.id),
             createdProjects,
+            createdTeams: createdTeams.length > 0 ? createdTeams : undefined,
+            updatedDepartment: { departmentId: targetDept.id, patch: { workspacePath: targetFolder } },
+            updatedRootCeoWorkspace: targetFolder,
           };
         }
       } else if (batchOrDiscovery.type === 'batch_create' && batchOrDiscovery.projectNames) {
+        if (targetDept.teams.length === 0 && targetFolder) {
+          const defaultTeam = createTeamShell(targetDept.id, 'Core');
+          defaultTeam.workspacePath = targetFolder;
+          targetDept.teams.push(defaultTeam);
+          createdTeams.push({ departmentId: targetDept.id, team: defaultTeam });
+        }
         createdProjects = batchOrDiscovery.projectNames.map((name, idx) => {
           const projPath = targetFolder ? getDefaultProjectPath(targetFolder, name) : undefined;
           return {
@@ -1065,6 +1280,13 @@ export class OrgDelegationEngine {
 
         for (const proj of createdProjects) {
           targetDept.linkedProjects.push({ id: proj.id, name: proj.name, path: proj.path });
+        }
+
+        if (targetFolder) {
+          targetDept.workspacePath = targetFolder;
+          if (!rootCeo.workspacePath) {
+            rootCeo.workspacePath = targetFolder;
+          }
         }
 
         addLog({
@@ -1084,10 +1306,15 @@ export class OrgDelegationEngine {
           directiveId,
           userPrompt,
           logs,
-          finalSynthesis: `Global Organization CEO: Established ${createdProjects.length} projects in the "${targetDept.name}" department:\n\n${createdProjects.map((p) => `• **${p.name}**`).join('\n')}`,
+          finalSynthesis: `Global Organization CEO: Provisioned ${createdProjects.length} projects in "${targetDept.name}":\n\n${createdProjects.map((p) => `• **${p.name}**`).join('\n')}`,
           involvedDepartmentIds: [targetDept.id],
-          involvedTeamIds: [],
+          involvedTeamIds: targetDept.teams.map((t) => t.id),
           createdProjects,
+          createdTeams: createdTeams.length > 0 ? createdTeams : undefined,
+          updatedDepartment: targetFolder
+            ? { departmentId: targetDept.id, patch: { workspacePath: targetFolder } }
+            : undefined,
+          updatedRootCeoWorkspace: targetFolder && !rootCeo.workspacePath ? targetFolder : undefined,
         };
       }
     }
@@ -1101,9 +1328,20 @@ export class OrgDelegationEngine {
       const newDept = createDepartmentShell(deptName);
       if (deptIntent.workspacePath) {
         newDept.workspacePath = deptIntent.workspacePath;
+        if (!rootCeo.workspacePath) {
+          rootCeo.workspacePath = deptIntent.workspacePath;
+        }
       } else if (rootCeo.workspacePath) {
         newDept.workspacePath = getDefaultDeptPath(rootCeo.workspacePath, deptName);
       }
+
+      // Auto-provision default Core team so department is immediately operational
+      const defaultTeam = createTeamShell(newDept.id, 'Core');
+      if (newDept.workspacePath) {
+        defaultTeam.workspacePath = newDept.workspacePath;
+      }
+      newDept.teams.push(defaultTeam);
+      const createdTeams = [{ departmentId: newDept.id, team: defaultTeam }];
 
       addLog({
         depth: 1,
@@ -1111,7 +1349,7 @@ export class OrgDelegationEngine {
         fromRole: 'Root CEO',
         toName: 'Executive Operations',
         toRole: 'Chief of Staff',
-        message: `Instantiating new department "${deptName}" with dedicated Department Head.`,
+        message: `Instantiating new department "${deptName}" with dedicated Department Head and core execution team.`,
         status: 'working',
       });
 
@@ -1134,8 +1372,13 @@ export class OrgDelegationEngine {
         logs,
         finalSynthesis: `Global Organization CEO: I have established the "${deptName}" department with a dedicated Department Head. You can now configure sub-teams, bind workspaces, or issue directives to this department.`,
         involvedDepartmentIds: [newDept.id],
-        involvedTeamIds: [],
+        involvedTeamIds: [defaultTeam.id],
         createdDepartments: [newDept],
+        createdTeams,
+        updatedDepartment: newDept.workspacePath
+          ? { departmentId: newDept.id, patch: { workspacePath: newDept.workspacePath } }
+          : undefined,
+        updatedRootCeoWorkspace: !rootCeo.workspacePath && newDept.workspacePath ? newDept.workspacePath : undefined,
       };
     }
 
@@ -1650,7 +1893,12 @@ Never reply saying you cannot create departments or that you need more info if t
     }
 
     // Bound folder for execution context: project folder > team folder > department folder
-    const targetProjectPath = projectId ? targetDept.linkedProjects.find((p) => p.id === projectId)?.path : undefined;
+    const foundProject = projectId
+      ? this.projects.find((p) => p.id === projectId) || targetDept.linkedProjects.find((p) => p.id === projectId)
+      : undefined;
+    const targetProjectPath = foundProject
+      ? ('workspacePath' in foundProject ? (foundProject as OrgProject).workspacePath : undefined) || foundProject.path
+      : undefined;
     const projectFolder = targetProjectPath || targetTeam?.workspacePath || targetDept.workspacePath || '';
 
     // Step 2: Root CEO -> Department CEO
@@ -1668,30 +1916,24 @@ Never reply saying you cannot create departments or that you need more info if t
     this.updateNodeStatus?.(targetDept.id, 'department_standby');
 
     // Resolve target team (first team of dept unless explicitly targeted)
+    let newlyCreatedTeams: Array<{ departmentId: string; team: OrgTeamNode }> | undefined;
     if (!targetTeam) {
       targetTeam = targetDept.teams[0];
     }
     if (!targetTeam) {
+      targetTeam = createTeamShell(targetDept.id, 'Core');
+      targetTeam.workspacePath = projectFolder || targetDept.workspacePath;
+      targetDept.teams.push(targetTeam);
+      newlyCreatedTeams = [{ departmentId: targetDept.id, team: targetTeam }];
       addLog({
         depth: 2,
         fromName: targetDept.departmentCeoAgent.name,
         fromRole: 'Department CEO',
         toName: rootCeo.ceoAgent.name,
         toRole: 'Root CEO',
-        message: `Department ${targetDept.name} received mandate but has no sub-teams configured. Ready to create team on instruction.`,
-        status: 'completed',
+        message: `Department ${targetDept.name} established core execution team "Core" to lead work.`,
+        status: 'working',
       });
-      this.updateNodeStatus?.(targetDept.id, 'recently_finished');
-
-      return {
-        success: true,
-        directiveId,
-        userPrompt,
-        logs,
-        finalSynthesis: `Department ${targetDept.name} received the mandate "${userPrompt}". To begin execution, add a team (e.g. 'Create team Core in ${targetDept.name}' or click + Add Team).`,
-        involvedDepartmentIds: [targetDept.id],
-        involvedTeamIds: [],
-      };
     }
 
     // Department CEO -> Team Lead
@@ -1724,60 +1966,108 @@ Never reply saying you cannot create departments or that you need more info if t
     this.updateNodeStatus?.(targetTeam.hrCoordinatorAgent.id, 'department_standby');
     this.updateNodeStatus?.(targetTeam.id, 'department_standby');
 
-    // Specialist execution
+    // Specialist or Team Lead execution
     const specialistOutputs: string[] = [];
-    for (let i = 0; i < Math.min(targetTeam.specialistMembers.length, 3); i++) {
-      const spec = targetTeam.specialistMembers[i];
-
-      this.updateNodeStatus?.(spec.id, 'queued_next');
-
+    if (targetTeam.specialistMembers.length === 0) {
+      const leadAgent = targetTeam.teamLeadAgent || targetDept.departmentCeoAgent;
+      this.updateNodeStatus?.(leadAgent.id, 'working');
       addLog({
         depth: 4,
-        fromName: targetTeam.teamLeadAgent.name,
-        fromRole: 'Team Manager',
-        toName: spec.name,
-        toRole: spec.title || 'Specialist',
+        fromName: targetDept.departmentCeoAgent.name,
+        fromRole: 'Department CEO',
+        toName: leadAgent.name,
+        toRole: leadAgent.title || 'Team Manager',
         message: `Executing deliverable in project workspace "${targetTeam.linkedProjectName || projectFolder || 'Main'}"...`,
         status: 'working',
       });
-
-      this.updateNodeStatus?.(spec.id, 'working');
-
-      const workspacePath = targetProjectPath || targetTeam.workspacePath || targetDept.workspacePath || '';
-
       try {
-        // eslint-disable-next-line no-await-in-loop
-        const output = await this.runOrgAgentStep({
-          agent: spec,
-          systemPrompt: spec.title || spec.role,
+        const leadOutput = await this.runOrgAgentStep({
+          agent: leadAgent,
+          systemPrompt: `You are ${leadAgent.name}, leading ${targetTeam.name}. Operating in workspace: ${projectFolder}. Coordinate and address the user's directive directly.`,
           userDirective: userPrompt,
-          workspacePath,
+          workspacePath: projectFolder,
           onStreamUpdate: (text) => {
             this.onAgentStream?.(text);
           },
         });
-        specialistOutputs.push(output);
-
-        this.updateNodeStatus?.(spec.id, 'recently_finished');
+        if (leadOutput) {
+          specialistOutputs.push(leadOutput);
+        }
+        this.updateNodeStatus?.(leadAgent.id, 'recently_finished');
         addLog({
           depth: 4,
-          fromName: spec.name,
-          fromRole: spec.title || 'Specialist',
-          toName: targetTeam.teamLeadAgent.name,
-          toRole: 'Team Manager',
-          message: output || `Completed deliverable in ${workspacePath || 'workspace'}.`,
+          fromName: leadAgent.name,
+          fromRole: leadAgent.title || 'Team Manager',
+          toName: targetDept.departmentCeoAgent.name,
+          toRole: 'Department CEO',
+          message: leadOutput || `Completed deliverable in ${projectFolder || 'workspace'}.`,
           status: 'completed',
         });
       } catch (err) {
         addLog({
           depth: 4,
-          fromName: spec.name,
-          fromRole: spec.title || 'Specialist',
-          toName: targetTeam.teamLeadAgent.name,
-          toRole: 'Team Manager',
+          fromName: leadAgent.name,
+          fromRole: leadAgent.title || 'Team Manager',
+          toName: targetDept.departmentCeoAgent.name,
+          toRole: 'Department CEO',
           message: `Error: ${err instanceof Error ? err.message : String(err)}`,
           status: 'error',
         });
+      }
+    } else {
+      for (let i = 0; i < Math.min(targetTeam.specialistMembers.length, 3); i++) {
+        const spec = targetTeam.specialistMembers[i];
+
+        this.updateNodeStatus?.(spec.id, 'queued_next');
+
+        addLog({
+          depth: 4,
+          fromName: targetTeam.teamLeadAgent.name,
+          fromRole: 'Team Manager',
+          toName: spec.name,
+          toRole: spec.title || 'Specialist',
+          message: `Executing deliverable in project workspace "${targetTeam.linkedProjectName || projectFolder || 'Main'}"...`,
+          status: 'working',
+        });
+
+        this.updateNodeStatus?.(spec.id, 'working');
+
+        const workspacePath = targetProjectPath || targetTeam.workspacePath || targetDept.workspacePath || '';
+
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const output = await this.runOrgAgentStep({
+            agent: spec,
+            systemPrompt: spec.title || spec.role,
+            userDirective: userPrompt,
+            workspacePath,
+            onStreamUpdate: (text) => {
+              this.onAgentStream?.(text);
+            },
+          });
+          specialistOutputs.push(output);
+
+          this.updateNodeStatus?.(spec.id, 'recently_finished');
+          addLog({
+            depth: 4,
+            fromName: spec.name,
+            fromRole: spec.title || 'Specialist',
+            toName: targetTeam.teamLeadAgent.name,
+            toRole: 'Team Manager',
+            message: output || `Completed deliverable in ${workspacePath || 'workspace'}.`,
+            status: 'completed',
+          });
+        } catch (err) {
+          addLog({
+            depth: 4,
+            fromName: spec.name,
+            fromRole: spec.title || 'Specialist',
+            toName: targetTeam.teamLeadAgent.name,
+            toRole: 'Team Manager',
+            message: `Error: ${err instanceof Error ? err.message : String(err)}`,
+            status: 'error',
+          });
+        }
       }
     }
 
@@ -1796,12 +2086,10 @@ Never reply saying you cannot create departments or that you need more info if t
     this.updateNodeStatus?.(targetDept.id, 'recently_finished');
     this.updateNodeStatus?.(rootCeo.ceoAgent.id, 'working');
 
-    const synthesisParts = [
-      `Executive Directive Completed: "${userPrompt}" executed through ${targetDept.name} -> ${targetTeam.name}`,
-      projectFolder ? ` in ${projectFolder}` : '',
-      specialistOutputs.length > 0 ? `. Specialist outputs: ${specialistOutputs.join(' | ')}` : '.',
-    ];
-    const finalSynthesis = synthesisParts.join('');
+    const finalSynthesis =
+      specialistOutputs.length > 0
+        ? specialistOutputs.join('\n\n')
+        : `Executive Directive Processed: "${userPrompt}" in ${projectFolder || 'workspace'}.`;
 
     return {
       success: true,
@@ -1811,6 +2099,7 @@ Never reply saying you cannot create departments or that you need more info if t
       finalSynthesis,
       involvedDepartmentIds: [targetDept.id],
       involvedTeamIds: [targetTeam.id],
+      createdTeams: newlyCreatedTeams,
     };
   }
 }

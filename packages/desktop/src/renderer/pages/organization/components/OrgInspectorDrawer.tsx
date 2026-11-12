@@ -25,6 +25,7 @@ import { useOrgStore } from '../store/useOrgStore';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { validateWithinMaster } from '../utils/orgPathUtils';
+import { OrgModelSelector } from './OrgModelSelector';
 import type { OrgProject, OrgAgentMember, OrgConversation, OrgConversationMessage } from '@/types/organization';
 
 export type OrgNodeType = 'ceo' | 'department' | 'team' | 'project' | 'member';
@@ -88,6 +89,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
     addSubTeam,
     addTeamMember,
     updateRootCeo,
+    updateAgentModel,
     setSelectedConversationId,
     setOrgViewMode,
     upsertOrgProject,
@@ -407,7 +409,8 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       },
       (nodeId, status) => {
         updateNodeStatus(nodeId, status);
-      }
+      },
+      { projects }
     );
 
     try {
@@ -648,59 +651,91 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       headerStyle={{ height: 'auto', minHeight: '52px', padding: '10px 16px', overflow: 'hidden' }}
       bodyStyle={{ padding: '12px 16px', overflowX: 'hidden' }}
       footer={
-        <div className='flex items-center gap-8px w-full min-w-0'>
-          <Input
-            value={directiveInput}
-            onChange={setDirectiveInput}
-            onPressEnter={() => void handleDispatchDirective()}
-            placeholder={
-              selectedNodeType === 'ceo'
-                ? "Ask Root CEO, plan structure, or type 'Create department Engineering'..."
-                : selectedNodeType === 'project'
-                  ? `Dispatch directive to ${nodeTitle} team...`
-                  : selectedNodeType === 'member'
-                    ? `Message ${leaderName}...`
-                    : `Dispatch directive to ${leaderName}...`
-            }
-            disabled={isExecuting}
-            className='flex-1 min-w-0 !rounded-8px text-12px'
-          />
-          <Button
-            type='primary'
-            loading={isExecuting}
-            icon={<Send size={13} />}
-            onClick={() => void handleDispatchDirective()}
-            className='shrink-0 !rounded-8px !px-14px'
-          >
-            Send
-          </Button>
+        <div className='flex flex-col gap-6px w-full min-w-0'>
+          {targetAgentMember && (
+            <div className='flex items-center justify-between px-2px'>
+              <span className='text-10px text-t-tertiary'>AI Model for Directives:</span>
+              <OrgModelSelector
+                currentModel={targetAgentMember.model}
+                onSelectModel={(newModel) => {
+                  updateAgentModel(targetAgentMember.id, newModel);
+                  Message.success(
+                    `Model updated to ${newModel.modelName || newModel.modelId} for ${targetAgentMember.name}`
+                  );
+                }}
+              />
+            </div>
+          )}
+          <div className='flex items-center gap-8px w-full min-w-0'>
+            <Input
+              value={directiveInput}
+              onChange={setDirectiveInput}
+              onPressEnter={() => void handleDispatchDirective()}
+              placeholder={
+                selectedNodeType === 'ceo'
+                  ? "Ask Root CEO, plan structure, or type 'Create department Engineering'..."
+                  : selectedNodeType === 'project'
+                    ? `Dispatch directive to ${nodeTitle} team...`
+                    : selectedNodeType === 'member'
+                      ? `Message ${leaderName}...`
+                      : `Dispatch directive to ${leaderName}...`
+              }
+              disabled={isExecuting}
+              className='flex-1 min-w-0 !rounded-8px text-12px'
+            />
+            <Button
+              type='primary'
+              loading={isExecuting}
+              icon={<Send size={13} />}
+              onClick={() => void handleDispatchDirective()}
+              className='shrink-0 !rounded-8px !px-14px'
+            >
+              Send
+            </Button>
+          </div>
         </div>
       }
     >
       <div className='flex flex-col gap-12px min-w-0 pr-2px pb-16px'>
-        <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center justify-between'>
-          <div className='flex items-center gap-10px min-w-0'>
-            <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
-              <Workbench size={16} theme='outline' />
-            </span>
-            <div className='flex flex-col min-w-0'>
-              <span className='text-13px font-bold text-t-primary truncate'>{leaderName}</span>
-              <span className='text-11px text-t-secondary truncate'>{leaderTitle}</span>
+        <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex flex-col gap-8px'>
+          <div className='flex items-center justify-between'>
+            <div className='flex items-center gap-10px min-w-0'>
+              <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
+                <Workbench size={16} theme='outline' />
+              </span>
+              <div className='flex flex-col min-w-0'>
+                <span className='text-13px font-bold text-t-primary truncate'>{leaderName}</span>
+                <span className='text-11px text-t-secondary truncate'>{leaderTitle}</span>
+              </div>
+            </div>
+            <div className='flex items-center gap-4px text-10px font-mono text-t-tertiary shrink-0'>
+              <Time size={12} theme='outline' />
+              <span>
+                {lastActiveAt
+                  ? new Date(lastActiveAt).toLocaleDateString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : 'Dormant (7d+)'}
+              </span>
             </div>
           </div>
-          <div className='flex items-center gap-4px text-10px font-mono text-t-tertiary shrink-0'>
-            <Time size={12} theme='outline' />
-            <span>
-              {lastActiveAt
-                ? new Date(lastActiveAt).toLocaleDateString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : 'Dormant (7d+)'}
-            </span>
-          </div>
+          {targetAgentMember && (
+            <div className='flex items-center justify-between pt-6px border-t border-[var(--color-border-2)]/60'>
+              <span className='text-10px text-t-tertiary font-medium'>Assigned AI Model:</span>
+              <OrgModelSelector
+                currentModel={targetAgentMember.model}
+                onSelectModel={(newModel) => {
+                  updateAgentModel(targetAgentMember.id, newModel);
+                  Message.success(
+                    `Model updated to ${newModel.modelName || newModel.modelId} for ${targetAgentMember.name}`
+                  );
+                }}
+              />
+            </div>
+          )}
         </div>
 
         <Button
@@ -712,6 +747,44 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
               setSelectedConversationId(activeConversation.id);
               setOrgViewMode('chat');
               onClose();
+            } else if (selectedNodeType === 'project') {
+              const proj = projects.find((p) => p.id === selectedNodeId);
+              if (proj) {
+                const newConvId = `conv-proj-${proj.id}-${Date.now()}`;
+                addOrgConversation({
+                  id: newConvId,
+                  title: `${proj.name} - Chat`,
+                  type: 'team_execution',
+                  sourceNodeId: proj.teamIds?.[0] || proj.departmentId || 'root-ceo',
+                  targetNodeId: proj.teamIds?.[0] || proj.departmentId || 'root-ceo',
+                  projectId: proj.id,
+                  teamId: proj.teamIds?.[0],
+                  timestamp: Date.now(),
+                  summary: '',
+                  messages: [],
+                });
+                setSelectedConversationId(newConvId);
+                setOrgViewMode('chat');
+                onClose();
+                return;
+              }
+            } else if (selectedNodeType === 'team') {
+              const newConvId = `conv-team-${selectedNodeId}-${Date.now()}`;
+              addOrgConversation({
+                id: newConvId,
+                title: `${nodeTitle} - Chat`,
+                type: 'team_execution',
+                sourceNodeId: selectedNodeId,
+                targetNodeId: selectedNodeId,
+                teamId: selectedNodeId,
+                timestamp: Date.now(),
+                summary: '',
+                messages: [],
+              });
+              setSelectedConversationId(newConvId);
+              setOrgViewMode('chat');
+              onClose();
+              return;
             } else if (targetAgentMember) {
               handleStartDirectChat(targetAgentMember);
             } else {
@@ -720,7 +793,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           }}
           className='w-full !rounded-8px !text-12px !py-6px !font-medium'
         >
-          Open in Full Chat with {leaderName}
+          Open in Full Chat with {leaderName || nodeTitle}
         </Button>
 
         {linkedProjects.length > 0 && (
@@ -845,7 +918,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                         <div
                           className={`max-w-[94%] rounded-12px text-12px px-12px py-8px break-words leading-relaxed ${
                             isUser
-                              ? 'bg-primary/15 border border-primary/30 text-t-primary rounded-br-2px'
+                              ? 'bg-message-user border border-primary/15 text-t-primary rounded-br-2px'
                               : isError
                                 ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-bl-2px font-mono text-11px'
                                 : 'bg-fill-2 border border-[var(--color-border-2)] text-t-primary rounded-bl-2px'

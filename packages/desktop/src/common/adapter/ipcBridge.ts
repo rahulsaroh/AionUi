@@ -2748,12 +2748,11 @@ export const org = {
     }
     if (!allowedRoot) return { allowed: true, resolved: targetPath };
     if (!targetPath) return { allowed: false, reason: 'empty target path', resolved: targetPath };
-    const normTarget = targetPath.replace(/\\/g, '/').toLowerCase();
-    const normRoot = allowedRoot.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
-    const allowed = normTarget === normRoot || normTarget.startsWith(normRoot + '/');
+    // Renderer fallback has no filesystem/realpath access, so scope cannot be
+    // verified properly (no symlink resolution, no canonicalization). Fail closed.
     return {
-      allowed,
-      reason: allowed ? undefined : `Path "${targetPath}" is outside the organization master folder "${allowedRoot}"`,
+      allowed: false,
+      reason: 'Path scope check unavailable in this environment; refusing to allow access without native verification',
       resolved: targetPath,
     };
   },

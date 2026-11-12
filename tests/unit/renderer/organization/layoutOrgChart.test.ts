@@ -50,4 +50,28 @@ describe('layoutOrgChart', () => {
     // In LR mode, HQ (parent) should be placed to the left of child (smaller X)
     expect(hqNode.position.x).toBeLessThan(engNode.position.x);
   });
+
+  it('positions project nodes underneath a department', () => {
+    const rawNodes: Node[] = [
+      { id: 'dept-1', type: 'department', data: { label: 'App Development' }, position: { x: 0, y: 0 } },
+      { id: 'project-1', type: 'project', data: { label: 'General' }, position: { x: 0, y: 0 } },
+      { id: 'project-2', type: 'project', data: { label: 'AI GYM MENTOR' }, position: { x: 0, y: 0 } },
+    ];
+    const rawEdges: Edge[] = [
+      { id: 'dept->proj1', source: 'dept-1', target: 'project-1' },
+      { id: 'dept->proj2', source: 'dept-1', target: 'project-2' },
+    ];
+
+    const result = layoutOrgChart(rawNodes, rawEdges, 'TB');
+
+    expect(result.nodes.length).toBe(3);
+    const deptNode = result.nodes.find((n) => n.id === 'dept-1')!;
+    const proj1 = result.nodes.find((n) => n.id === 'project-1')!;
+    const proj2 = result.nodes.find((n) => n.id === 'project-2')!;
+
+    expect(deptNode.position.y).toBeLessThan(proj1.position.y);
+    expect(deptNode.position.y).toBeLessThan(proj2.position.y);
+    // Project boxes are placed side-by-side under the department
+    expect(proj1.position.x).not.toBe(proj2.position.x);
+  });
 });
