@@ -246,3 +246,11 @@ temp/
 capture_screen.ps1
 screenshot_window.png
 /src/
+
+# Electron local extractions, zips and scripts
+electron_extracted/
+electron_full_extracted/
+*.zip
+simple-electron.js
+test-electron.js
+\${env.ELECTRON_CACHE}/

@@ -31,14 +31,11 @@ import {
   updateDepartmentInHierarchy,
   updateTeamInHierarchy,
 } from '../utils/orgCoherence';
-import {
-  migrateOrgStorageV2,
-  reconcileConversationsWithProjects,
-  ORG_STORAGE_VERSION,
-  loadOrgStorageVersion,
-  saveOrgStorageVersion,
-} from '../utils/orgMigration';
+import { migrateOrgStorageV2, reconcileConversationsWithProjects, ORG_STORAGE_VERSION } from '../utils/orgMigration';
 import { ipcBridge } from '@/common';
+import { resolveOrgChatTarget } from '../utils/openOrgChat';
+import type { OrgChatTarget } from '../utils/agentTurn';
+import i18n from '@/renderer/services/i18n';
 
 const STORAGE_KEYS = {
   SCOPE: 'aionui:active-scope',
@@ -89,6 +86,7 @@ type OrgStoreState = {
   simulationMessage: string;
   orgViewMode: 'chat' | 'canvas';
   selectedConversationId: string | null;
+  openChatError: string | null;
 };
 
 function createInitialState(): OrgStoreState {
@@ -161,6 +159,7 @@ function createInitialState(): OrgStoreState {
     simulationMessage: '',
     orgViewMode: 'chat',
     selectedConversationId: null,
+    openChatError: null,
   };
 }
 
@@ -566,6 +565,39 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const upsertMember = useCallback((member: OrgAgentMember) => {
+    // Shared members are part of the global pool
+    void ipcBridge.org.saveMembers([member]);
+    notify();
+  }, []);
+
+  const deleteMember = useCallback((_memberId: string) => {
+    notify();
+  }, []);
+
+  const assignMemberToProject = useCallback((projectId: string, memberId: string) => {
+    const proj = globalState.projects.find((p) => p.id === projectId);
+    if (!proj) return;
+    const currentMemberIds = proj.memberIds || [];
+    if (currentMemberIds.includes(memberId)) return;
+    const nextProj = { ...proj, memberIds: [...currentMemberIds, memberId] };
+    const nextProjects = globalState.projects.map((p) => (p.id === projectId ? nextProj : p));
+    globalState = { ...globalState, projects: nextProjects };
+    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects });
+    notify();
+  }, []);
+
+  const removeMemberFromProject = useCallback((projectId: string, memberId: string) => {
+    const proj = globalState.projects.find((p) => p.id === projectId);
+    if (!proj) return;
+    const nextMemberIds = (proj.memberIds || []).filter((id) => id !== memberId);
+    const nextProj = { ...proj, memberIds: nextMemberIds };
+    const nextProjects = globalState.projects.map((p) => (p.id === projectId ? nextProj : p));
+    globalState = { ...globalState, projects: nextProjects };
+    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects });
+    notify();
+  }, []);
+
   const addOrgCronJob = useCallback((job: OrgCronJob) => {
     const nextCron = [...globalState.cronJobs.filter((c) => c.id !== job.id), job];
     globalState = { ...globalState, cronJobs: nextCron };
@@ -749,6 +781,97 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const clearOpenChatError = useCallback(() => {
+    globalState = { ...globalState, openChatError: null };
+    notify();
+  }, []);
+
+  const openChat = useCallback((target: OrgChatTarget): { ok: boolean; error?: string } => {
+    const t = (key: string, opts?: Record<string, unknown>) =>
+      (opts?.defaultValue as string) || (i18n.t(key, opts as Record<string, string>) as string) || key;
+
+    const result = resolveOrgChatTarget(
+      target,
+      globalState.hierarchy,
+      globalState.projects,
+      globalState.conversations,
+      t
+    );
+    if ('error' in result) {
+      globalState = { ...globalState, openChatError: result.error, selectedConversationId: null, orgViewMode: 'chat' };
+      notify();
+      return { ok: false, error: result.error };
+    }
+
+    let nextHierarchy = result.mutatedHierarchy
+      ? syncHierarchyProjectReferences(result.mutatedHierarchy, globalState.projects)
+      : globalState.hierarchy;
+    let nextProjects = globalState.projects;
+
+    if (result.updatedProject) {
+      const exists = nextProjects.some((p) => p.id === result.updatedProject!.id);
+      nextProjects = exists
+        ? nextProjects.map((p) => (p.id === result.updatedProject!.id ? result.updatedProject! : p))
+        : [...nextProjects, result.updatedProject!];
+      nextHierarchy = syncHierarchyProjectReferences(result.mutatedHierarchy || nextHierarchy, nextProjects);
+    }
+
+    const existingIdx = globalState.conversations.findIndex((c) => c.id === result.conversation.id);
+    let nextConversations: OrgConversation[];
+    if (existingIdx >= 0) {
+      nextConversations = [...globalState.conversations];
+      nextConversations[existingIdx] = {
+        ...nextConversations[existingIdx],
+        ...result.conversation,
+        messages: nextConversations[existingIdx].messages,
+      };
+      // move to front
+      const [item] = nextConversations.splice(existingIdx, 1);
+      nextConversations.unshift(item);
+    } else {
+      nextConversations = [result.conversation, ...globalState.conversations];
+    }
+
+    const nextState: Partial<OrgStoreState> = {
+      hierarchy: nextHierarchy,
+      projects: nextProjects,
+      conversations: nextConversations,
+      selectedConversationId: result.conversation.id,
+      orgViewMode: 'chat',
+      openChatError: null,
+    };
+
+    if (target.type === 'department_head') {
+      nextState.selectedDepartmentId = result.departmentId || target.id;
+      nextState.selectedTeamId = null;
+      nextState.selectedProjectId = null;
+      nextState.focusedNodeId = result.departmentId || target.id;
+    } else if (target.type === 'project_head') {
+      nextState.selectedDepartmentId = result.departmentId || globalState.selectedDepartmentId;
+      nextState.selectedTeamId = result.teamId || null;
+      nextState.selectedProjectId = result.projectId || target.id;
+      nextState.focusedNodeId = `project-${result.projectId || target.id}`;
+    } else if (target.type === 'member') {
+      if (result.projectId) {
+        nextState.selectedDepartmentId = result.departmentId || globalState.selectedDepartmentId;
+        nextState.selectedTeamId = result.teamId || null;
+        nextState.selectedProjectId = result.projectId;
+      }
+      nextState.focusedNodeId = target.id;
+    } else {
+      nextState.selectedDepartmentId = null;
+      nextState.selectedTeamId = null;
+      nextState.selectedProjectId = null;
+      nextState.focusedNodeId = 'root-ceo';
+    }
+
+    globalState = { ...globalState, ...(nextState as OrgStoreState) };
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects });
+    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    notify();
+    return { ok: true };
+  }, []);
+
   return {
     ...state,
     setActiveScope,
@@ -775,11 +898,17 @@ export function useOrgStore() {
     addOrgProject,
     upsertOrgProject,
     deleteOrgProject,
+    upsertMember,
+    deleteMember,
+    assignMemberToProject,
+    removeMemberFromProject,
     addOrgCronJob,
     removeOrgCronJob,
     toggleCronJob,
     runSimulation,
     setOrgViewMode,
     setSelectedConversationId,
+    openChat,
+    clearOpenChatError,
   };
 }

@@ -8,6 +8,7 @@ import { ipcMain } from 'electron';
 import { assertWithinScope, type ScopeCheckResult } from '../services/org/pathGuard';
 import { orgStorageService } from '../services/org/orgStorageService';
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
+import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
 
 export function registerOrgBridge(): void {
   ipcMain.handle(
@@ -107,5 +108,53 @@ export function registerOrgBridge(): void {
       console.error('[OrgBridge] saveProjects failed:', err);
       return false;
     }
+  });
+
+  // Folder & Shell execution tools with boundary enforcement
+  ipcMain.handle(
+    'org:scanFolder',
+    async (
+      _event,
+      params: { targetDir: string; allowedWorkspace: string; options?: { depth?: number; maxEntries?: number } }
+    ) => {
+      return OrgFolderTools.scanFolder(params.targetDir, params.allowedWorkspace, params.options);
+    }
+  );
+
+  ipcMain.handle(
+    'org:readFile',
+    async (_event, params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number }) => {
+      return OrgFolderTools.readFile(params.targetFilePath, params.allowedWorkspace, params.maxBytes);
+    }
+  );
+
+  ipcMain.handle(
+    'org:writeFile',
+    async (_event, params: { targetFilePath: string; content: string; allowedWorkspace: string }) => {
+      return OrgFolderTools.writeFile(params.targetFilePath, params.content, params.allowedWorkspace);
+    }
+  );
+
+  ipcMain.handle('org:listDir', async (_event, params: { targetDir: string; allowedWorkspace: string }) => {
+    return OrgFolderTools.listDir(params.targetDir, params.allowedWorkspace);
+  });
+
+  ipcMain.handle(
+    'org:runShell',
+    async (
+      _event,
+      params: {
+        command: string;
+        cwd: string;
+        allowedWorkspace: string;
+        options?: { timeoutMs?: number; requiresApproval?: boolean };
+      }
+    ) => {
+      return OrgFolderTools.runShell(params.command, params.cwd, params.allowedWorkspace, params.options);
+    }
+  );
+
+  ipcMain.handle('org:checkRiskyCommand', async (_event, params: { command: string }) => {
+    return checkRiskyCommand(params.command);
   });
 }

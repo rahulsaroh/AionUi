@@ -19,7 +19,7 @@ const ENGINE_STATUS_PREFIXES = [
   'Response received',
 ];
 
-function getLastMessagePreview(conversation: OrgConversation): string {
+export function getLastMessagePreview(conversation: OrgConversation): string {
   const msgs = conversation.messages;
   if (msgs.length === 0) return '';
   // Walk back from the end to find the last non-system message

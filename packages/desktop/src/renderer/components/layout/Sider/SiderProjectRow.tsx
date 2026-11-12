@@ -15,7 +15,7 @@ import type { OrgProject } from '@/types/organization';
 interface SiderProjectRowProps {
   project: OrgProject;
   isSelected: boolean;
-  onSelect: () => void;
+  onOpenChat: () => void;
   onEdit: (e?: React.MouseEvent | Event) => void;
   onNewChat: (e?: React.MouseEvent | Event) => void;
   siderTooltipProps: SiderTooltipProps;
@@ -36,7 +36,7 @@ const statusTooltipMap: Record<string, string> = {
 export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
   project,
   isSelected,
-  onSelect,
+  onOpenChat,
   onEdit,
   onNewChat,
   siderTooltipProps,
@@ -49,7 +49,7 @@ export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
     <div
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onOpenChat();
       }}
       className={classNames(
         'group flex items-center justify-between px-8px py-4px rounded-6px cursor-pointer transition-colors text-12px text-t-primary select-none',
@@ -58,7 +58,14 @@ export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
     >
       <div className='flex items-center gap-6px truncate min-w-0'>
         <FolderClose size={13} theme='outline' className='text-amber-500 shrink-0' />
-        <span className='truncate font-medium text-12px' title={project.name}>
+        <span
+          className='truncate font-medium text-12px'
+          title={project.name}
+          aria-label={t('team.organization.openProjectChat', {
+            defaultValue: 'Open chat with {{name}}',
+            name: project.name,
+          })}
+        >
           {project.name}
         </span>
       </div>

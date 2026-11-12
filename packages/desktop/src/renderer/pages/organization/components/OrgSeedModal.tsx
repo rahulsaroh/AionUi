@@ -40,7 +40,11 @@ export const OrgSeedModal: React.FC<OrgSeedModalProps> = ({ visible, onClose }) 
   };
 
   const handleResetDefault = () => {
-    if (!window.confirm('Reset organization to default blank canvas (Root CEO only)? This will overwrite your current configuration.')) {
+    if (
+      !window.confirm(
+        'Reset organization to default blank canvas (Root CEO only)? This will overwrite your current configuration.'
+      )
+    ) {
       return;
     }
     resetToDefault();

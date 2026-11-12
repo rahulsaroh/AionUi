@@ -91,7 +91,8 @@ export function createDefaultOrgMembers(): OrgAgentMember[] {
       lastActiveAt: now,
       status: 'idle',
       skills: ['typescript', 'react', 'node', 'python', 'api'],
-      systemPrompt: 'You are a senior fullstack engineer skilled in building reliable web applications and microservices.',
+      systemPrompt:
+        'You are a senior fullstack engineer skilled in building reliable web applications and microservices.',
     },
     {
       id: 'member-uiux-designer',

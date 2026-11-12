@@ -188,9 +188,9 @@ describe('Organization Master Folder Scoping and Utilities', () => {
         resolved: '/tmp/escape',
       });
 
-      await expect(
-        engine.executeDirectMessage(agent, 'do work', '/tmp/escape', false)
-      ).rejects.toThrow(/outside the organization root/i);
+      await expect(engine.executeDirectMessage(agent, 'do work', '/tmp/escape', false)).rejects.toThrow(
+        /outside the organization root/i
+      );
     });
   });
 });

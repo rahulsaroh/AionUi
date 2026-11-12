@@ -1,5 +1,17 @@
 [
   {
+    "id": "hist_1794485437499_so95",
+    "url": "https://example.com/dashboard",
+    "title": "Test App",
+    "timestamp": 1794485437499
+  },
+  {
+    "id": "hist_1794485437375_ov7k",
+    "url": "https://example.com",
+    "title": "https://example.com",
+    "timestamp": 1794485437375
+  },
+  {
     "id": "hist_1794460296694_lukk",
     "url": "https://example.com",
     "title": "https://example.com",

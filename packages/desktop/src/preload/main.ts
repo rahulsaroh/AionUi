@@ -242,6 +242,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   orgSaveMembers: (members: unknown[]) => ipcRenderer.invoke('org:saveMembers', members),
   orgGetProjects: () => ipcRenderer.invoke('org:getProjects'),
   orgSaveProjects: (projects: unknown[]) => ipcRenderer.invoke('org:saveProjects', projects),
+  orgScanFolder: (params: {
+    targetDir: string;
+    allowedWorkspace: string;
+    options?: { depth?: number; maxEntries?: number };
+  }) => ipcRenderer.invoke('org:scanFolder', params),
+  orgReadFile: (params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number }) =>
+    ipcRenderer.invoke('org:readFile', params),
+  orgWriteFile: (params: { targetFilePath: string; content: string; allowedWorkspace: string }) =>
+    ipcRenderer.invoke('org:writeFile', params),
+  orgListDir: (params: { targetDir: string; allowedWorkspace: string }) => ipcRenderer.invoke('org:listDir', params),
+  orgRunShell: (params: {
+    command: string;
+    cwd: string;
+    allowedWorkspace: string;
+    options?: { timeoutMs?: number; requiresApproval?: boolean };
+  }) => ipcRenderer.invoke('org:runShell', params),
+  orgCheckRiskyCommand: (params: { command: string }) => ipcRenderer.invoke('org:checkRiskyCommand', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),

@@ -35,10 +35,12 @@ import SiderDepartmentHeader from './SiderDepartmentHeader';
 import SiderSubSectionLabel from './SiderSubSectionLabel';
 import SiderTeamRow from './SiderTeamRow';
 import SiderProjectRow from './SiderProjectRow';
+import SiderMemberRow from './SiderMemberRow';
 import SiderChatRow from './SiderChatRow';
 import SiderEmptyState from './SiderEmptyState';
+import type { DepartmentRowAction } from './SiderDepartmentHeader';
 
-import { NetworkTree, AlarmClock, Robot, SunOne, Finance, Play, Plus } from '@icon-park/react';
+import { NetworkTree, AlarmClock, SunOne, Finance, Play, Plus } from '@icon-park/react';
 
 type OrganizationSiderContentProps = {
   collapsed: boolean;
@@ -79,16 +81,14 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setOrgViewMode,
     selectedConversationId,
     setSelectedConversationId,
+    openChat,
   } = useOrgStore();
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'dormant' | 'shared'>('all');
   const [deptSubTabs, setDeptSubTabs] = useState<Record<string, 'teams' | 'projects'>>({});
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const [ceoChatModalVisible, setCeoChatModalVisible] = useState(false);
-  const [ceoPrompt, setCeoPrompt] = useState('');
   const [targetDeptIdForTeam, setTargetDeptIdForTeam] = useState<string | null>(null);
   const [newSubTeamName, setNewSubTeamName] = useState('');
   const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
@@ -157,6 +157,13 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setDeptSubTabs((prev) => ({ ...prev, [deptId]: tab }));
   };
 
+  // CEO Conversations (newest first)
+  const ceoConversations = useMemo(() => {
+    return conversations
+      .filter((c) => c.type === 'ceo_directive' && !c.projectId)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [conversations]);
+  const [showAllCeoChats, setShowAllCeoChats] = useState(false);
   // Project -> conversations (newest first)
   const projectConversationsMap = useMemo(() => {
     const map = new Map<string, OrgConversation[]>();
@@ -187,74 +194,26 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const handleOpenCeoChat = () => {
     onSessionClick?.();
-    setCeoChatModalVisible(true);
-  };
-
-  const handleConfirmSendToCeo = async () => {
-    if (!ceoPrompt.trim()) return;
-    const prompt = ceoPrompt.trim();
-    setCeoPrompt('');
-    setCeoChatModalVisible(false);
-
-    const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, updateNodeStatus);
-    const result = await engine.executeDirective(prompt, undefined, undefined, undefined, true);
-
-    if (result.createdDepartments && result.createdDepartments.length > 0) {
-      for (const dept of result.createdDepartments) {
-        addDepartment(dept);
-      }
+    clearOrgSelection();
+    // Select latest CEO chat or create one if none exist
+    const latestCeoChat = conversations.find((c) => c.type === 'ceo_directive' && !c.projectId);
+    if (latestCeoChat) {
+      setSelectedConversationId(latestCeoChat.id);
+    } else {
+      const newConvId = `conv-ceo-${Date.now()}`;
+      addOrgConversation({
+        id: newConvId,
+        title: t('team.organization.newChat', { defaultValue: 'New chat' }),
+        type: 'ceo_directive',
+        sourceNodeId: 'root-ceo',
+        targetNodeId: 'root-ceo',
+        timestamp: Date.now(),
+        summary: '',
+        messages: [],
+      });
+      setSelectedConversationId(newConvId);
     }
-    if (result.createdTeams && result.createdTeams.length > 0) {
-      for (const { departmentId, team } of result.createdTeams) {
-        addSubTeam(departmentId, team);
-      }
-    }
-    if (result.createdProjects && result.createdProjects.length > 0) {
-      for (const proj of result.createdProjects) {
-        addOrgProject(proj);
-      }
-      const deptId = result.createdProjects[0]?.departmentId;
-      if (deptId) {
-        setDeptSubTabs((prev) => ({ ...prev, [deptId]: 'projects' }));
-        setCollapsedDepts((prev) => {
-          const next = new Set(prev);
-          next.delete(deptId);
-          return next;
-        });
-      }
-    }
-    if (result.createdMembers && result.createdMembers.length > 0) {
-      for (const { teamId, member } of result.createdMembers) {
-        addTeamMember(teamId, member);
-      }
-    }
-    if (result.updatedDepartment) {
-      updateDepartment(result.updatedDepartment.departmentId, result.updatedDepartment.patch);
-    }
-    if (result.updatedRootCeoWorkspace) {
-      updateRootCeo({ workspacePath: result.updatedRootCeoWorkspace });
-    }
-
-    addOrgConversation({
-      id: `conv-ceo-${Date.now()}`,
-      title: `Directive to Root CEO: ${prompt.slice(0, 35)}...`,
-      type: 'ceo_directive',
-      sourceNodeId: 'root-ceo',
-      targetNodeId: result.involvedDepartmentIds[0] || 'root-ceo',
-      timestamp: Date.now(),
-      summary: result.finalSynthesis,
-      messages: [
-        { id: `msg-${Date.now()}-1`, sender: 'Executive User', role: 'user', content: prompt, timestamp: Date.now() },
-        {
-          id: `msg-${Date.now()}-2`,
-          sender: hierarchy.rootCeo.ceoAgent.name,
-          role: 'ceo',
-          content: result.finalSynthesis,
-          timestamp: Date.now(),
-        },
-      ],
-    });
-    Message.success('Executive directive processed by Root CEO!');
+    setOrgViewMode('chat');
     void navigate('/organization');
   };
 
@@ -419,13 +378,34 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setSelectedProject(null);
   };
 
+  const handleOpenDepartmentChat = (deptId: string) => {
+    setSelectedDepartment(deptId);
+    setSelectedTeam(null);
+    setSelectedProject(null);
+    openChat({ type: 'department_head', id: deptId });
+    onSessionClick?.();
+    void navigate('/organization');
+  };
+
+  const handleOpenProjectChat = (projectId: string) => {
+    setSelectedProject(projectId);
+    openChat({ type: 'project_head', id: projectId });
+    onSessionClick?.();
+    void navigate('/organization');
+  };
+
+  const handleOpenMemberChat = (memberId: string, projectId?: string) => {
+    openChat(projectId ? { type: 'member', id: memberId, projectId } : { type: 'member', id: memberId });
+    onSessionClick?.();
+    void navigate('/organization');
+  };
+
   const handleSelectTeam = (teamId: string) => {
     setSelectedTeam(teamId);
     setSelectedProject(null);
     const teamChats = conversations.filter((c) => c.teamId === teamId && !c.projectId);
     if (teamChats.length > 0) {
       const latest = teamChats[0];
-      setSelectedChatId(latest.id);
       setSelectedConversationId(latest.id);
     } else {
       for (const dept of hierarchy.departments) {
@@ -457,7 +437,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     });
     setSelectedTeam(team.id);
     setSelectedProject(null);
-    setSelectedChatId(newConvId);
     setSelectedConversationId(newConvId);
     setOrgViewMode('chat');
     onSessionClick?.();
@@ -469,7 +448,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     const projChats = conversations.filter((c) => c.projectId === projectId);
     if (projChats.length > 0) {
       const latest = projChats[0];
-      setSelectedChatId(latest.id);
       setSelectedConversationId(latest.id);
     } else {
       const proj = projects.find((p) => p.id === projectId);
@@ -485,7 +463,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
 
   const handleOpenEntityEdit = (
     type: 'department' | 'team' | 'member' | 'project',
-    data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject,
+    data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject | null,
     context: { departmentId?: string; teamId?: string }
   ) => {
     setEditEntity({ type, data, context });
@@ -507,7 +485,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       messages: [],
     });
     setSelectedProject(proj.id);
-    setSelectedChatId(newConvId);
     setSelectedConversationId(newConvId);
     setOrgViewMode('chat');
     onSessionClick?.();
@@ -569,7 +546,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   if (collapsed) {
     return (
       <div className='flex flex-col gap-4px items-center px-4px'>
-        <Tooltip {...siderTooltipProps} content={t('team.organization.talkToRootCeo', { defaultValue: 'Talk to Root CEO' })} position='right'>
+        <Tooltip
+          {...siderTooltipProps}
+          content={t('team.organization.talkToRootCeo', { defaultValue: 'Talk to Root CEO' })}
+          position='right'
+        >
           <SiderCommandCard onClick={handleOpenCeoChat} />
         </Tooltip>
         <Tooltip
@@ -587,21 +568,23 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             }}
           />
         </Tooltip>
-        <Tooltip
-          {...siderTooltipProps}
-          content={t('team.organization.automations', { defaultValue: 'Org Automations' })}
-          position='right'
-        >
-          <SiderNavRow
-            icon={<AlarmClock size={16} theme='outline' fill='currentColor' />}
-            label=''
-            selected={isAutomationsActive}
-            onClick={() => {
-              onSessionClick?.();
-              void navigate('/scheduled');
-            }}
-          />
-        </Tooltip>
+        {cronJobs.length > 0 && (
+          <Tooltip
+            {...siderTooltipProps}
+            content={t('team.organization.automations', { defaultValue: 'Org Automations' })}
+            position='right'
+          >
+            <SiderNavRow
+              icon={<AlarmClock size={16} theme='outline' fill='currentColor' />}
+              label=''
+              selected={isAutomationsActive}
+              onClick={() => {
+                onSessionClick?.();
+                void navigate('/scheduled');
+              }}
+            />
+          </Tooltip>
+        )}
         <Tooltip
           {...siderTooltipProps}
           content={t('today.navTitle', { defaultValue: 'Today — Morning Digest' })}
@@ -659,24 +642,36 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
           {/* CEO button + "+ New" dropdown in a flex row */}
           <div className='flex items-center gap-4px'>
             <div className='flex-1 min-w-0'>
-              <SiderCommandCard onClick={handleOpenCeoChat} selected={ceoChatModalVisible} />
+              <SiderCommandCard
+                onClick={handleOpenCeoChat}
+                selected={orgViewMode === 'chat' && !selectedProjectId && !selectedTeamId && !selectedDepartmentId}
+              />
             </div>
             <Dropdown
               trigger='click'
               position='br'
               droplist={
                 <Menu>
-                  <Menu.Item
-                    key='dept'
-                    onClick={() => setCreateDeptModalVisible(true)}
-                  >
+                  <Menu.Item key='dept' onClick={() => setCreateDeptModalVisible(true)}>
                     {t('team.organization.newDepartment', { defaultValue: 'Department' })}
                   </Menu.Item>
-                  <Menu.Item
-                    key='project'
-                    onClick={() => openProjectModal(selectedDepartmentId ?? undefined)}
-                  >
+                  <Menu.Item key='project' onClick={() => openProjectModal(selectedDepartmentId ?? undefined)}>
                     {t('team.organization.newProject', { defaultValue: 'Project' })}
+                  </Menu.Item>
+                  <Menu.Item
+                    key='member'
+                    onClick={() => {
+                      const dept = selectedDepartmentId
+                        ? hierarchy.departments.find((d) => d.id === selectedDepartmentId)
+                        : hierarchy.departments[0];
+                      const targetTeam = dept?.teams[0] || hierarchy.departments[0]?.teams[0];
+                      handleOpenEntityEdit('member', null, {
+                        departmentId: dept?.id || hierarchy.departments[0]?.id,
+                        teamId: targetTeam?.id,
+                      });
+                    }}
+                  >
+                    {t('team.organization.newMember', { defaultValue: 'Member' })}
                   </Menu.Item>
                   <Menu.Item
                     key='chat'
@@ -709,6 +704,38 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
               </Tooltip>
             </Dropdown>
           </div>
+          {/* CEO chat threads (last 3, with Show all) */}
+          {ceoConversations.length > 0 && (
+            <div className='flex flex-col gap-1px pl-6px pr-2px py-1px'>
+              {(showAllCeoChats ? ceoConversations : ceoConversations.slice(0, 3)).map((conv) => {
+                const isChatSelected = selectedConversationId === conv.id;
+                return (
+                  <SiderChatRow
+                    key={conv.id}
+                    conversation={conv}
+                    isSelected={isChatSelected}
+                    relativeTime={formatChatTime(conv.timestamp)}
+                    onSelect={() => {
+                      clearOrgSelection();
+                      setSelectedConversationId(conv.id);
+                      setOrgViewMode('chat');
+                      onSessionClick?.();
+                      void navigate('/organization');
+                    }}
+                  />
+                );
+              })}
+              {ceoConversations.length > 3 && (
+                <button
+                  type='button'
+                  onClick={() => setShowAllCeoChats(!showAllCeoChats)}
+                  className='text-10px text-primary hover:underline self-start px-4px py-2px bg-transparent border-none cursor-pointer'
+                >
+                  {showAllCeoChats ? 'Show less' : `Show all (${ceoConversations.length})`}
+                </button>
+              )}
+            </div>
+          )}
           <SiderNavRow
             icon={<NetworkTree size={14} theme='outline' fill='currentColor' />}
             label={t('team.organization.canvas', { defaultValue: 'Organization Canvas' })}
@@ -719,16 +746,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
               void navigate('/organization');
             }}
           />
-          <SiderNavRow
-            icon={<AlarmClock size={14} theme='outline' fill='currentColor' />}
-            label={t('team.organization.automations', { defaultValue: 'Org Automations' })}
-            selected={isAutomationsActive}
-            badgeCount={cronJobs.length}
-            onClick={() => {
-              onSessionClick?.();
-              void navigate('/scheduled');
-            }}
-          />
+          {cronJobs.length > 0 && (
+            <SiderNavRow
+              icon={<AlarmClock size={14} theme='outline' fill='currentColor' />}
+              label={t('team.organization.automations', { defaultValue: 'Org Automations' })}
+              selected={isAutomationsActive}
+              badgeCount={cronJobs.length}
+              onClick={() => {
+                onSessionClick?.();
+                void navigate('/scheduled');
+              }}
+            />
+          )}
           <SiderNavRow
             icon={<SunOne size={14} theme='outline' fill='currentColor' />}
             label={t('today.navTitle', { defaultValue: 'Today — Morning Digest' })}
@@ -841,23 +870,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                       teamsCount={deptTeams.length}
                       projectsCount={deptProjects.length}
                       subTab={subTab}
-                      onSelect={() => handleSelectDept(dept.id)}
+                      onOpenChat={() => handleOpenDepartmentChat(dept.id)}
                       onToggleExpand={() => toggleDept(dept.id)}
                       onToggleSubTab={(tab) => setDeptSubTab(dept.id, tab)}
-                      onEdit={(e) => {
-                        e.stopPropagation();
-                        handleOpenEntityEdit('department', dept, { departmentId: dept.id });
-                      }}
-                      onSetFolder={(e) => {
-                        e.stopPropagation();
-                        handleOpenEntityEdit('department', dept, { departmentId: dept.id });
-                      }}
-                      onAddProject={(e) => {
-                        e.stopPropagation();
-                        openProjectModal(dept.id);
-                      }}
-                      onAddTeam={(e) => {
-                        e.stopPropagation();
+                      onAction={(action: DepartmentRowAction) => {
+                        if (action === 'edit' || action === 'set-folder') {
+                          handleOpenEntityEdit('department', dept, { departmentId: dept.id });
+                          return;
+                        }
+                        if (action === 'add-project') {
+                          openProjectModal(dept.id);
+                          return;
+                        }
                         setTargetDeptIdForTeam(dept.id);
                       }}
                       siderTooltipProps={siderTooltipProps}
@@ -867,30 +891,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                       <div className='flex flex-col gap-1px pl-16px pr-4px py-2px border-l border-[var(--color-border-2)]/40 ml-10px animate-expand'>
                         {subTab === 'teams' ? (
                           <>
-                            {/* PM pinned at top */}
-                            {dept.pmAgent && (
-                              <div
-                                key='pm-pinned'
-                                className='flex items-center justify-between px-6px py-2px rounded cursor-pointer transition-colors text-10px hover:bg-fill-2'
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSelectDept(dept.id);
-                                }}
-                              >
-                                <div className='flex items-center gap-4px truncate min-w-0'>
-                                  <Robot size={10} theme='outline' className='text-t-tertiary shrink-0' />
-                                  <span className='font-medium truncate' title={dept.pmAgent.name}>
-                                    {dept.pmAgent.name}
-                                  </span>
-                                  <span className='text-8px text-t-tertiary'>
-                                    {t('team.organization.pm', { defaultValue: 'PM' })}
-                                  </span>
-                                </div>
-                                <span className='text-9px text-amber-400'>
-                                  {t('team.organization.pinned', { defaultValue: 'Pinned' })}
-                                </span>
-                              </div>
-                            )}
                             {/* Teams list */}
                             <SiderSubSectionLabel
                               label={t('team.organization.teams', { defaultValue: 'Teams' })}
@@ -910,6 +910,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                   const tStatus = teamStatus(team);
                                   const isTeamSelected = selectedTeamId === team.id;
                                   const chats = teamConversationsMap.get(team.id) ?? [];
+                                  const roster = [
+                                    team.teamLeadAgent,
+                                    ...(team.hrCoordinatorAgent ? [team.hrCoordinatorAgent] : []),
+                                    ...team.specialistMembers,
+                                  ].filter((member, index, all) => all.findIndex((m) => m.id === member.id) === index);
                                   return (
                                     <div key={team.id} className='flex flex-col'>
                                       <SiderTeamRow
@@ -930,11 +935,28 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                         }}
                                         siderTooltipProps={siderTooltipProps}
                                       />
+                                      {/* Team roster (member direct chats) */}
+                                      {isTeamSelected && roster.length > 0 && (
+                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          <SiderSubSectionLabel
+                                            label={t('team.organization.teamRoster', { defaultValue: 'Team roster' })}
+                                            count={roster.length}
+                                          />
+                                          {roster.map((member) => (
+                                            <SiderMemberRow
+                                              key={member.id}
+                                              member={member}
+                                              isSelected={false}
+                                              onOpenChat={() => handleOpenMemberChat(member.id)}
+                                            />
+                                          ))}
+                                        </div>
+                                      )}
                                       {/* Chats nested under team */}
                                       {chats.length > 0 && (
                                         <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
                                           {chats.map((conv) => {
-                                            const isChatSelected = selectedChatId === conv.id;
+                                            const isChatSelected = selectedConversationId === conv.id;
                                             return (
                                               <SiderChatRow
                                                 key={conv.id}
@@ -943,7 +965,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                                 badge={chatBadgeLabel(conv)}
                                                 relativeTime={formatChatTime(conv.timestamp)}
                                                 onSelect={() => {
-                                                  setSelectedChatId(conv.id);
                                                   setSelectedConversationId(conv.id);
                                                   setOrgViewMode('chat');
                                                   onSessionClick?.();
@@ -988,7 +1009,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                       <SiderProjectRow
                                         project={proj}
                                         isSelected={isProjectSelected}
-                                        onSelect={() => handleSelectProject(proj.id)}
+                                        onOpenChat={() => handleOpenProjectChat(proj.id)}
                                         onEdit={(e) => {
                                           e.stopPropagation();
                                           handleOpenEntityEdit('project', proj, {
@@ -1006,7 +1027,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                       {chats.length > 0 && (
                                         <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
                                           {chats.map((conv) => {
-                                            const isChatSelected = selectedChatId === conv.id;
+                                            const isChatSelected = selectedConversationId === conv.id;
                                             return (
                                               <SiderChatRow
                                                 key={conv.id}
@@ -1015,7 +1036,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                                 badge={chatBadgeLabel(conv)}
                                                 relativeTime={formatChatTime(conv.timestamp)}
                                                 onSelect={() => {
-                                                  setSelectedChatId(conv.id);
                                                   setSelectedConversationId(conv.id);
                                                   setOrgViewMode('chat');
                                                   onSessionClick?.();
@@ -1051,24 +1071,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       </div>
 
       {/* Modals */}
-      <Modal
-        title={t('team.organization.ceoDirectiveTitle', { defaultValue: 'Directive Command to Root CEO' })}
-        visible={ceoChatModalVisible}
-        onOk={handleConfirmSendToCeo}
-        onCancel={() => setCeoChatModalVisible(false)}
-        okText={t('team.organization.dispatchDirective', { defaultValue: 'Dispatch Directive' })}
-        okButtonProps={{ disabled: !ceoPrompt.trim() }}
-      >
-        <Input.TextArea
-          rows={3}
-          value={ceoPrompt}
-          onChange={setCeoPrompt}
-          autoFocus
-          placeholder={t('team.organization.directivePlaceholder', {
-            defaultValue: 'Enter your executive directive...',
-          })}
-        />
-      </Modal>
+
       <Modal
         title={t('team.organization.addDepartment', { defaultValue: 'Add Department' })}
         visible={createDeptModalVisible}
@@ -1119,4 +1122,4 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   );
 };
 
-export default React.memo(OrganizationSiderC
+export default React.memo(OrganizationSiderContent);

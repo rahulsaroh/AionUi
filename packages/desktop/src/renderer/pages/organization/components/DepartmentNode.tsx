@@ -24,6 +24,8 @@ import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
 import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
 import { getSpendThisMonthForDepartment, formatCost } from '@/common/costs';
+import { deriveDepartmentRosterWithProjects } from '../utils/orgRoster';
+import { ipcBridge } from '@/common';
 
 export type DepartmentNodeData = {
   department: OrgDepartmentNode;
@@ -58,7 +60,18 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
     onSelectMember,
   } = data;
 
-  const { nodeStatuses } = useOrgStore();
+  const { nodeStatuses, projects } = useOrgStore();
+  const [membersPool, setMembersPool] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    void ipcBridge.org.getMembers().then((res: any[]) => {
+      if (Array.isArray(res)) setMembersPool(res);
+    });
+  }, []);
+
+  const computedRoster = React.useMemo(() => {
+    return deriveDepartmentRosterWithProjects(department.id, projects, membersPool, department.departmentCeoAgent);
+  }, [department.id, projects, membersPool, department.departmentCeoAgent]);
 
   const currentStatus: OrgNodeStatus = nodeStatuses[department.id] || department.status || 'idle';
   const effectiveStatus = computeLifecycleStatus(department.lastActiveAt, currentStatus);
@@ -174,6 +187,37 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
                 >
                   <FolderClose size={10} theme='outline' className='text-amber-400' />
                   <span className='truncate max-w-100px'>{p.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Derived Roster (Shared members working on projects) */}
+        {computedRoster.length > 0 && (
+          <div className='flex flex-col gap-3px'>
+            <span className='text-9px font-semibold uppercase tracking-wider text-t-tertiary'>
+              Active Roster ({computedRoster.length})
+            </span>
+            <div className='flex items-center gap-4px flex-wrap max-h-56px overflow-y-auto'>
+              {computedRoster.map(({ member, projects: assignedProjects }) => (
+                <div
+                  key={member.id}
+                  className='flex items-center gap-3px px-5px py-2px rounded bg-blue-500/10 text-9px text-blue-300 font-mono border border-blue-500/20 cursor-pointer hover:bg-blue-500/20 transition-colors'
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectMember?.(member.id);
+                  }}
+                  title={`${member.name} (${member.role})${
+                    assignedProjects.length > 0 ? `\nWorking on: ${assignedProjects.map((p) => p.name).join(', ')}` : ''
+                  }`}
+                >
+                  <span className='truncate max-w-85px'>{member.name}</span>
+                  {assignedProjects.length > 0 && (
+                    <span className='px-3px py-0px rounded-full bg-blue-400/20 text-8px font-bold text-blue-200'>
+                      {assignedProjects.length}p
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

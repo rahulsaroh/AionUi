@@ -324,6 +324,21 @@ export interface ElectronBridgeAPI {
   orgSaveMembers?: (members: unknown[]) => Promise<boolean>;
   orgGetProjects?: () => Promise<unknown[]>;
   orgSaveProjects?: (projects: unknown[]) => Promise<boolean>;
+  orgScanFolder?: (params: {
+    targetDir: string;
+    allowedWorkspace: string;
+    options?: { depth?: number; maxEntries?: number };
+  }) => Promise<unknown>;
+  orgReadFile?: (params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number }) => Promise<unknown>;
+  orgWriteFile?: (params: { targetFilePath: string; content: string; allowedWorkspace: string }) => Promise<boolean>;
+  orgListDir?: (params: { targetDir: string; allowedWorkspace: string }) => Promise<unknown[]>;
+  orgRunShell?: (params: {
+    command: string;
+    cwd: string;
+    allowedWorkspace: string;
+    options?: { timeoutMs?: number; requiresApproval?: boolean };
+  }) => Promise<unknown>;
+  orgCheckRiskyCommand?: (params: { command: string }) => Promise<{ isRisky: boolean; reason?: string }>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

@@ -129,12 +129,20 @@ export interface OrgStorageBundle {
   activeScope?: OrgScope;
 }
 
+export interface OrgCreatedEntityRef {
+  type: 'department' | 'team' | 'project' | 'member';
+  id: string;
+  name: string;
+  departmentId?: string;
+}
+
 export interface OrgConversationMessage {
   id: string;
   sender: string;
   role: string;
   content: string;
   timestamp: number;
+  createdEntities?: OrgCreatedEntityRef[];
 }
 
 export interface OrgConversation {
@@ -142,6 +150,8 @@ export interface OrgConversation {
   title: string;
   /** Chat belongs to exactly one project. */
   projectId?: string;
+  /** Optional department for department-head threads. */
+  departmentId?: string;
   /** Optional team that handled the chat. */
   teamId?: string;
   /** Optional agent that handled the chat. */

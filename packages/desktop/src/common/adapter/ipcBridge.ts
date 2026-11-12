@@ -2810,4 +2810,49 @@ export const org = {
     }
     return false;
   },
+  scanFolder: async (
+    targetDir: string,
+    allowedWorkspace: string,
+    options?: { depth?: number; maxEntries?: number }
+  ): Promise<any> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgScanFolder) {
+      return window.electronAPI.orgScanFolder({ targetDir, allowedWorkspace, options });
+    }
+    throw new Error('scanFolder is only supported in desktop mode');
+  },
+  readFile: async (targetFilePath: string, allowedWorkspace: string, maxBytes?: number): Promise<any> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgReadFile) {
+      return window.electronAPI.orgReadFile({ targetFilePath, allowedWorkspace, maxBytes });
+    }
+    throw new Error('readFile is only supported in desktop mode');
+  },
+  writeFile: async (targetFilePath: string, content: string, allowedWorkspace: string): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgWriteFile) {
+      return window.electronAPI.orgWriteFile({ targetFilePath, content, allowedWorkspace });
+    }
+    throw new Error('writeFile is only supported in desktop mode');
+  },
+  listDir: async (targetDir: string, allowedWorkspace: string): Promise<any[]> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgListDir) {
+      return window.electronAPI.orgListDir({ targetDir, allowedWorkspace }) as Promise<any[]>;
+    }
+    return [];
+  },
+  runShell: async (
+    command: string,
+    cwd: string,
+    allowedWorkspace: string,
+    options?: { timeoutMs?: number; requiresApproval?: boolean }
+  ): Promise<any> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgRunShell) {
+      return window.electronAPI.orgRunShell({ command, cwd, allowedWorkspace, options });
+    }
+    throw new Error('runShell is only supported in desktop mode');
+  },
+  checkRiskyCommand: async (command: string): Promise<{ isRisky: boolean; reason?: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgCheckRiskyCommand) {
+      return window.electronAPI.orgCheckRiskyCommand({ command });
+    }
+    return { isRisky: false };
+  },
 };

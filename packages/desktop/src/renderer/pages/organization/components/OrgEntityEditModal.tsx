@@ -44,6 +44,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     updateDepartment,
     updateTeamNode,
     updateTeamMember,
+    addTeamMember,
     upsertOrgProject,
     updateRootCeo,
     updateAgentModel,
@@ -250,16 +251,32 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       return;
     }
 
-    if (entity === 'member' && data && context.teamId) {
-      const member = data as OrgAgentMember;
+    if (entity === 'member') {
       if (!memberName.trim()) return;
-      updateTeamMember(context.teamId, member.id, {
-        name: memberName.trim(),
-        title: memberPrompt.trim() || undefined,
-        role: (memberRole.trim() || member.role) as OrgAgentMember['role'],
-        model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
-        assistant_backend: memberMcp.trim() || undefined,
-      });
+      if (data && context.teamId) {
+        const member = data as OrgAgentMember;
+        updateTeamMember(context.teamId, member.id, {
+          name: memberName.trim(),
+          title: memberPrompt.trim() || undefined,
+          role: (memberRole.trim() || member.role) as OrgAgentMember['role'],
+          model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
+          assistant_backend: memberMcp.trim() || undefined,
+        });
+      } else if (context.teamId) {
+        const newMember: OrgAgentMember = {
+          id: `member-${Date.now()}`,
+          canonicalAgentId: `canonical-member-${Date.now()}`,
+          name: memberName.trim(),
+          role: (memberRole.trim() || 'specialist') as OrgAgentMember['role'],
+          title: memberPrompt.trim() || memberRole.trim() || 'Specialist',
+          assignedTeamIds: [context.teamId],
+          lastActiveAt: Date.now(),
+          status: 'idle',
+          model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
+          assistant_backend: memberMcp.trim() || undefined,
+        };
+        addTeamMember(context.teamId, newMember);
+      }
       onSave?.();
       onClose();
       return;
@@ -306,6 +323,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     updateDepartment,
     updateTeamNode,
     updateTeamMember,
+    addTeamMember,
     upsertOrgProject,
     updateRootCeo,
     updateAgentModel,

@@ -704,10 +704,7 @@ export class OrgDelegationEngine {
           throw err instanceof Error ? err : new Error(String(err));
         }
         // Fail closed for inherited paths when scope cannot be verified.
-        console.warn(
-          '[OrgDelegationEngine:pathGuard] scope check failed closed for inherited workspace:',
-          err
-        );
+        console.warn('[OrgDelegationEngine:pathGuard] scope check failed closed for inherited workspace:', err);
         effectiveWorkspace = allowedRoot;
       }
     }

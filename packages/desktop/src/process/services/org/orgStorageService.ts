@@ -75,9 +75,7 @@ export class OrgStorageService {
   public async loadData(key: string): Promise<string | null> {
     const db = await this.getDriver();
     try {
-      const row = db.prepare('SELECT value FROM org_state WHERE key = ?').get(key) as
-        | { value: string }
-        | undefined;
+      const row = db.prepare('SELECT value FROM org_state WHERE key = ?').get(key) as { value: string } | undefined;
       return row ? row.value : null;
     } catch (err) {
       console.error(`[OrgStorageService] Failed to load key "${key}":`, err);
@@ -99,18 +97,20 @@ export class OrgStorageService {
         skills: string | null;
       }>;
 
-      return rows.map((r): OrgAgentMember => ({
-        id: r.id,
-        canonicalAgentId: r.id,
-        name: r.name,
-        role: r.role,
-        systemPrompt: r.system_prompt || undefined,
-        model: r.model ? JSON.parse(r.model) : undefined,
-        skills: r.skills ? JSON.parse(r.skills) : [],
-        assignedTeamIds: [] as string[],
-        lastActiveAt: null as number | null,
-        status: 'idle',
-      }));
+      return rows.map(
+        (r): OrgAgentMember => ({
+          id: r.id,
+          canonicalAgentId: r.id,
+          name: r.name,
+          role: r.role,
+          systemPrompt: r.system_prompt || undefined,
+          model: r.model ? JSON.parse(r.model) : undefined,
+          skills: r.skills ? JSON.parse(r.skills) : [],
+          assignedTeamIds: [] as string[],
+          lastActiveAt: null as number | null,
+          status: 'idle',
+        })
+      );
     } catch (err) {
       console.error('[OrgStorageService] getMembers failed:', err);
       return [];
@@ -214,18 +214,20 @@ export class OrgStorageService {
         context: string | null;
       }>;
 
-      return rows.map((r): OrgProject => ({
-        id: r.id,
-        name: r.name,
-        departmentId: r.department_id,
-        teamIds: [] as string[],
-        memberIds: r.member_ids ? JSON.parse(r.member_ids) : [],
-        goal: r.goal || undefined,
-        description: r.description || undefined,
-        status: (r.status as OrgProject['status']) || 'active',
-        context: r.context ? JSON.parse(r.context) : undefined,
-        workspacePath: r.workspace_path || null,
-      }));
+      return rows.map(
+        (r): OrgProject => ({
+          id: r.id,
+          name: r.name,
+          departmentId: r.department_id,
+          teamIds: [] as string[],
+          memberIds: r.member_ids ? JSON.parse(r.member_ids) : [],
+          goal: r.goal || undefined,
+          description: r.description || undefined,
+          status: (r.status as OrgProject['status']) || 'active',
+          context: r.context ? JSON.parse(r.context) : undefined,
+          workspacePath: r.workspace_path || null,
+        })
+      );
     } catch (err) {
       console.error('[OrgStorageService] getProjects failed:', err);
       return [];
@@ -322,18 +324,20 @@ export class OrgStorageService {
     }
   }
 
-  public async getDepartments(): Promise<Array<{
-    id: string;
-    name: string;
-    workspacePath: string | null;
-    headAgentId: string | null;
-    parentDepartmentId: string | null;
-    description?: string;
-    icon?: string;
-    color?: string;
-    orderIndex?: number;
-    status?: string;
-  }>> {
+  public async getDepartments(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      workspacePath: string | null;
+      headAgentId: string | null;
+      parentDepartmentId: string | null;
+      description?: string;
+      icon?: string;
+      color?: string;
+      orderIndex?: number;
+      status?: string;
+    }>
+  > {
     const db = await this.getDriver();
     try {
       const rows = db
@@ -439,13 +443,13 @@ export class OrgStorageService {
           order: d.orderIndex,
           status: (d.status as OrgDepartmentNode['status']) || 'idle',
           departmentCeoAgent: headAgent,
-          teams: [],
+          teams: [] as any[],
           linkedProjects: deptProjects.map((p) => ({
             id: p.id,
             name: p.name,
             path: p.workspacePath || undefined,
           })),
-          lastActiveAt: null,
+          lastActiveAt: null as number | null,
         };
       });
 

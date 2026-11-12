@@ -328,3 +328,9 @@ export function createMemberShell(
     },
   };
 }
+
+export function computeAutoTitle(prompt: string, currentTitle?: string): string | undefined {
+  const isNew = !currentTitle || currentTitle.trim() === '' || currentTitle === 'New chat';
+  if (!isNew) return undefined;
+  return prompt.trim().slice(0, 40);
+}

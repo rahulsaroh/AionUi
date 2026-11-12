@@ -29,9 +29,9 @@ describe('Organization SQLite Persistence & Migration v33', () => {
     migration33!.up(db);
 
     // Verify org_members table exists
-    const memberTable = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='org_members'")
-      .get() as { name: string } | undefined;
+    const memberTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='org_members'").get() as
+      | { name: string }
+      | undefined;
     expect(memberTable?.name).toBe('org_members');
 
     // Verify org_departments table exists
@@ -41,15 +41,15 @@ describe('Organization SQLite Persistence & Migration v33', () => {
     expect(deptTable?.name).toBe('org_departments');
 
     // Verify org_projects table exists
-    const projTable = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='org_projects'")
-      .get() as { name: string } | undefined;
+    const projTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='org_projects'").get() as
+      | { name: string }
+      | undefined;
     expect(projTable?.name).toBe('org_projects');
 
     // Verify org_state table exists
-    const stateTable = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='org_state'")
-      .get() as { name: string } | undefined;
+    const stateTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='org_state'").get() as
+      | { name: string }
+      | undefined;
     expect(stateTable?.name).toBe('org_state');
 
     // Verify down migration drops the tables

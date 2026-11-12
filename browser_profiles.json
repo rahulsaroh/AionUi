@@ -161,6 +161,36 @@
       "isDefault": false,
       "createdAt": 1794250150002,
       "updatedAt": 1794250150002
+    },
+    {
+      "id": "youtube-main-x232g",
+      "name": "youtube-main",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-youtube-main-x232g",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "E:\\Rahul\\Personal\\AIonUI\\chrome-profiles\\youtube-main-x232g"
+      },
+      "isDefault": false,
+      "createdAt": 1794485431770,
+      "updatedAt": 1794485431770
+    },
+    {
+      "id": "instagram-news-l8yn6",
+      "name": "instagram-news",
+      "backend": "embedded",
+      "partition": "persist:aionui-browser-instagram-news-l8yn6",
+      "mode": "act",
+      "sessionHealth": "healthy",
+      "externalChrome": {
+        "port": 9222,
+        "userDataDir": "E:\\Rahul\\Personal\\AIonUI\\chrome-profiles\\instagram-news-l8yn6"
+      },
+      "isDefault": false,
+      "createdAt": 1794485431771,
+      "updatedAt": 1794485431771
     }
   ]
 }
