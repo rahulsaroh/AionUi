@@ -8,12 +8,7 @@ import { ipcBridge } from '@/common';
 import { getOrgStoreSnapshot } from './useOrgStore';
 import { updateNodeStatus, updateActivityTicker } from './useOrgTelemetryStore';
 import { validateOrgFolder } from '../utils/orgPathUtils';
-import type {
-  OrgDepartmentNode,
-  OrgProject,
-  OrgAgentMember,
-  OrgNodeStatus,
-} from '@/types/organization';
+import type { OrgDepartmentNode, OrgProject, OrgAgentMember, OrgNodeStatus } from '@/types/organization';
 
 export interface StructureProposal {
   departments: Array<{
@@ -122,8 +117,7 @@ export async function executeOrgToolInStore(
         throw new Error(`A department with name "${name}" already exists.`);
       }
 
-      const masterRoot =
-        store.hierarchy.rootCeo.workspacePath || (await ipcBridge.org.getMasterRoot()) || undefined;
+      const masterRoot = store.hierarchy.rootCeo.workspacePath || (await ipcBridge.org.getMasterRoot()) || undefined;
 
       if (!masterRoot) {
         throw new Error('Cannot create department: No master root configured (fail closed).');
@@ -195,8 +189,7 @@ export async function executeOrgToolInStore(
         throw new Error(`Parent department "${departmentId}" not found.`);
       }
 
-      const masterRoot =
-        store.hierarchy.rootCeo.workspacePath || (await ipcBridge.org.getMasterRoot()) || undefined;
+      const masterRoot = store.hierarchy.rootCeo.workspacePath || (await ipcBridge.org.getMasterRoot()) || undefined;
       const parentRoot = dept.workspacePath || masterRoot;
 
       if (!parentRoot) {
@@ -348,9 +341,7 @@ export async function executeOrgToolInStore(
       const dept = store.hierarchy.departments.find(
         (d) => d.id === target || d.name.toLowerCase() === target.toLowerCase()
       );
-      const proj = store.projects.find(
-        (p) => p.id === target || p.name.toLowerCase() === target.toLowerCase()
-      );
+      const proj = store.projects.find((p) => p.id === target || p.name.toLowerCase() === target.toLowerCase());
 
       const resolvedTargetId = dept ? dept.id : proj ? proj.id : target;
       const targetName = dept ? dept.name : proj ? proj.name : target;
@@ -364,9 +355,11 @@ export async function executeOrgToolInStore(
 
       return {
         success: true,
+        dispatched: true,
         target: resolvedTargetId,
         targetName,
         task,
+        projectId: args.projectId,
         status: 'delegated',
       };
     }

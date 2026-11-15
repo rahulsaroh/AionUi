@@ -16,11 +16,7 @@ import {
   resolveEffectiveScope,
   type SetMasterRootResult,
 } from '../services/org/orgScope';
-import {
-  startOrgBridgeServer,
-  handleOrgToolRequest,
-  type OrgRole,
-} from '../resources/builtinMcp/orgBridgeServer';
+import { startOrgBridgeServer, handleOrgToolRequest, type OrgRole } from '../resources/builtinMcp/orgBridgeServer';
 import { BUILTIN_ORG_MCP_NAME, BUILTIN_ORG_SCRIPT } from '../resources/builtinMcp/constants';
 import { getBuiltinMcpScriptPath } from '../utils/initStorage';
 

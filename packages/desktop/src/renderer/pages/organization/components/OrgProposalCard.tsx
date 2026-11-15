@@ -227,7 +227,10 @@ export const OrgProposalCard: React.FC<OrgProposalCardProps> = ({ cardData, onAp
               {dept.projects && dept.projects.length > 0 && (
                 <div className='mt-4px pl-8px border-l-2 border-primary/30 flex flex-col gap-4px'>
                   {dept.projects.map((proj, pIdx) => (
-                    <div key={pIdx} className='p-6px rounded-4px bg-fill-1 border border-border-1 flex flex-col gap-2px'>
+                    <div
+                      key={pIdx}
+                      className='p-6px rounded-4px bg-fill-1 border border-border-1 flex flex-col gap-2px'
+                    >
                       <div className='flex items-center justify-between'>
                         {isEditing ? (
                           <Input

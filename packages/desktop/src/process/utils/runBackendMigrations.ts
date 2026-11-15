@@ -210,8 +210,7 @@ function buildBuiltinOrgServer(): McpImportServer {
 
   return {
     name: BUILTIN_ORG_MCP_NAME,
-    description:
-      'Manage organization departments, projects, members, and task delegation directly with tools.',
+    description: 'Manage organization departments, projects, members, and task delegation directly with tools.',
     enabled: true,
     builtin: true,
     transport: {

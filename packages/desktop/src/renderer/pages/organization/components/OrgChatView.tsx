@@ -1229,9 +1229,7 @@ export const OrgChatView: React.FC = () => {
                               className='inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary/10 hover:bg-primary/20 border border-primary/25 text-left text-12px text-primary font-medium transition-colors cursor-pointer'
                               aria-label={ref.name}
                             >
-                              <span className='text-10px font-mono uppercase opacity-75'>
-                                [{ref.type}]
-                              </span>
+                              <span className='text-10px font-mono uppercase opacity-75'>[{ref.type}]</span>
                               <span className='truncate max-w-220px'>{ref.name}</span>
                             </button>
                           ))}

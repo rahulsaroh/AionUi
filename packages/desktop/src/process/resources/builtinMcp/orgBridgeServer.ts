@@ -178,9 +178,7 @@ async function forwardToolToRenderer(
  * Validates role permissions and executes the tool either in process (e.g. scan_folder)
  * or forwards to the renderer store.
  */
-export async function handleOrgToolRequest(
-  request: OrgToolExecutionRequest
-): Promise<OrgToolExecutionResponse> {
+export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Promise<OrgToolExecutionResponse> {
   const { tool, args, role = 'ceo', deptId, projectId, deptWorkspacePath } = request;
 
   // 1. Role-based tool access control
@@ -253,8 +251,7 @@ export async function handleOrgToolRequest(
       return { success: false, error: 'create_project requires "departmentId", "name", and "folder".' };
     }
     broadcastOrgLiveStep({ step: `Creating project: ${args.name}`, tool, args });
-    const effectiveParentRoot =
-      role === 'department_head' && deptWorkspacePath ? deptWorkspacePath : masterRoot!;
+    const effectiveParentRoot = role === 'department_head' && deptWorkspacePath ? deptWorkspacePath : masterRoot!;
     const check = await assertWithinScope(args.folder, effectiveParentRoot);
     if (!check.allowed) {
       return {

@@ -318,10 +318,7 @@ export class OrgFolderTools {
   /**
    * Scans a directory and returns a compact tree with project-type hints.
    */
-  public static async scanFolderCompact(
-    targetPath?: string,
-    options?: ScanFolderOptions
-  ): Promise<ScanFolderResult> {
+  public static async scanFolderCompact(targetPath?: string, options?: ScanFolderOptions): Promise<ScanFolderResult> {
     return scanFolderCompact(targetPath, options);
   }
 
