@@ -22,9 +22,7 @@ const MAX_LOGS = 500;
 /**
  * Record a shell command execution in the in-memory telemetry log.
  */
-export function recordShellExecution(
-  log: Omit<ShellExecutionLog, 'id' | 'timestamp'>
-): ShellExecutionLog {
+export function recordShellExecution(log: Omit<ShellExecutionLog, 'id' | 'timestamp'>): ShellExecutionLog {
   const entry: ShellExecutionLog = {
     ...log,
     id: crypto.randomUUID(),

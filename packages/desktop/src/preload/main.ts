@@ -230,6 +230,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   // Org Mode APIs
+  orgPickMasterRoot: () => ipcRenderer.invoke('org:pickMasterRoot'),
   orgSetMasterRoot: (params: { masterRoot: string }) => ipcRenderer.invoke('org:setMasterRoot', params),
   orgGetMasterRoot: () => ipcRenderer.invoke('org:getMasterRoot'),
   orgAssertWithinScope: (params: { targetPath: string; allowedRoot?: string }) =>

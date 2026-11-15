@@ -161,7 +161,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const ceoConversations = useMemo(() => {
     return conversations
       .filter((c) => c.type === 'ceo_directive' && !c.projectId)
-      .sort((a, b) => b.timestamp - a.timestamp);
+      .toSorted((a, b) => b.timestamp - a.timestamp);
   }, [conversations]);
   const [showAllCeoChats, setShowAllCeoChats] = useState(false);
   // Project -> conversations (newest first)

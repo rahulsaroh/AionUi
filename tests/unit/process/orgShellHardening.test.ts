@@ -8,7 +8,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { OrgFolderTools, checkRiskyCommand, getMinimalEnv } from '../../../packages/desktop/src/process/services/org/folderTools';
+import {
+  OrgFolderTools,
+  checkRiskyCommand,
+  getMinimalEnv,
+} from '../../../packages/desktop/src/process/services/org/folderTools';
 import { setMasterRoot, resetMasterRoot } from '../../../packages/desktop/src/process/services/org/orgScope';
 import {
   issueCommandApprovalToken,
@@ -107,13 +111,16 @@ describe('Phase 3: Shell Hardening, Sandboxing, and Main Process Approval', () =
 
     it('risky command without token is rejected', async () => {
       const riskyCmd = 'git push origin main --force';
-      await expect(
-        OrgFolderTools.runShell(riskyCmd, workspaceDir, workspaceDir)
-      ).rejects.toThrow(/Blocked risky command requiring manual approval/);
+      await expect(OrgFolderTools.runShell(riskyCmd, workspaceDir, workspaceDir)).rejects.toThrow(
+        /Blocked risky command requiring manual approval/
+      );
     });
 
     it('valid token minted by main process allows execution, then immediately expires (single use)', async () => {
-      const riskyCmd = process.platform === 'win32' ? 'Write-Output "approved"; iex "Write-Output ok"' : 'echo "approved"; iex "echo ok"';
+      const riskyCmd =
+        process.platform === 'win32'
+          ? 'Write-Output "approved"; iex "Write-Output ok"'
+          : 'echo "approved"; iex "echo ok"';
       const token = issueCommandApprovalToken(riskyCmd, workspaceDir);
 
       // First call with valid token succeeds
@@ -192,10 +199,7 @@ describe('Phase 3: Shell Hardening, Sandboxing, and Main Process Approval', () =
     });
 
     it('kills process on timeout and logs telemetry', async () => {
-      const sleepCmd =
-        process.platform === 'win32'
-          ? 'Start-Sleep -Seconds 10'
-          : 'sleep 10';
+      const sleepCmd = process.platform === 'win32' ? 'Start-Sleep -Seconds 10' : 'sleep 10';
 
       const res = await OrgFolderTools.runShell(sleepCmd, workspaceDir, workspaceDir, { timeoutMs: 1200 });
       expect(res.timedOut).toBe(true);

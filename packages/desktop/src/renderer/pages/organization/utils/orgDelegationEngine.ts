@@ -672,8 +672,8 @@ export class OrgDelegationEngine {
    * Runs inside the agent's bound `workspacePath` as the working directory.
    */
   private async runOrgAgentStep(opts: AgentExecutionOptions): Promise<string> {
-    if (opts.agent.status === 'error') {
-      throw new Error(`Cannot run agent "${opts.agent.name}": agent has error status due to out-of-scope workspace.`);
+    if (opts.agent.status === 'error' || opts.agent.status === 'dormant') {
+      throw new Error(`Cannot run agent "${opts.agent.name}": agent has ${opts.agent.status} status.`);
     }
     const rawWorkspace = opts.workspacePath || this.hierarchy.rootCeo.workspacePath;
     let effectiveWorkspace = rawWorkspace && rawWorkspace !== 'workspace' ? rawWorkspace : '';
@@ -927,6 +927,9 @@ export class OrgDelegationEngine {
     systemPromptOverride?: string,
     conversationId?: string
   ): Promise<string> {
+    if (agent.status === 'error' || agent.status === 'dormant') {
+      throw new Error(`Cannot send direct message to agent "${agent.name}": agent has ${agent.status} status.`);
+    }
     this.simulationMode = !useRealExecution;
     const explicitWorkspace =
       typeof workspacePath === 'string' && workspacePath.trim() !== '' && workspacePath !== 'workspace';
@@ -1015,6 +1018,56 @@ export class OrgDelegationEngine {
     });
 
     this.updateNodeStatus?.('root-ceo', 'working');
+
+    if (targetDeptId) {
+      const dept = this.hierarchy.departments.find((d) => d.id === targetDeptId);
+      if (dept && dept.status === 'error') {
+        const errorMsg = `Cannot delegate to department "${dept.name}": department has error status due to out-of-scope workspace.`;
+        addLog({
+          depth: 1,
+          fromName: 'System Guard',
+          fromRole: 'System',
+          toName: rootCeo.ceoAgent.name,
+          toRole: 'Root CEO',
+          message: errorMsg,
+          status: 'error',
+        });
+        return {
+          success: false,
+          directiveId,
+          userPrompt,
+          logs,
+          finalSynthesis: `Error: ${errorMsg}`,
+          involvedDepartmentIds: [targetDeptId],
+          involvedTeamIds: [],
+        };
+      }
+    }
+
+    if (projectId) {
+      const proj = this.projects.find((p) => p.id === projectId);
+      if (proj && proj.status === 'dormant') {
+        const errorMsg = `Cannot delegate to project "${proj.name}": project is dormant due to out-of-scope workspace.`;
+        addLog({
+          depth: 1,
+          fromName: 'System Guard',
+          fromRole: 'System',
+          toName: rootCeo.ceoAgent.name,
+          toRole: 'Root CEO',
+          message: errorMsg,
+          status: 'error',
+        });
+        return {
+          success: false,
+          directiveId,
+          userPrompt,
+          logs,
+          finalSynthesis: `Error: ${errorMsg}`,
+          involvedDepartmentIds: proj.departmentId ? [proj.departmentId] : [],
+          involvedTeamIds: proj.teamIds || [],
+        };
+      }
+    }
 
     // -------------------------------------------------------------
     // Intent check 0: Folder / Workspace Access Inquiry

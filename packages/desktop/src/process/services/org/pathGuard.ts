@@ -25,7 +25,7 @@ function resolveWithExistingParent(targetPath: string): string {
       if (tail.length === 0) {
         return realCurrent;
       }
-      return path.resolve(realCurrent, ...tail.reverse());
+      return path.resolve(realCurrent, ...tail.toReversed());
     } catch {
       const parent = path.dirname(current);
       if (parent === current) {

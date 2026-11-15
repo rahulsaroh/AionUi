@@ -7,7 +7,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { orgStorageService } from './orgStorageService';
+import { OrgStorageService } from './orgStorageService';
 import { assertWithinScope } from './pathGuard';
 
 export type SetMasterRootResult = {
@@ -18,7 +18,14 @@ export type SetMasterRootResult = {
 
 let inMemoryMasterRoot: string | null = null;
 
+function getStorage(): OrgStorageService {
+  return OrgStorageService.getInstance();
+}
+
 function isStorageAvailable(): boolean {
+  if (OrgStorageService.hasInstance()) {
+    return true;
+  }
   // In unit test runners outside Electron, avoid calling SQLite directly if platform services are uninitialized
   if (process.env.NODE_ENV === 'test' && !process.versions?.electron) {
     return false;
@@ -34,8 +41,23 @@ function normalizePathForCompare(targetPath: string): string {
 function getSystemDirectories(): string[] {
   const dirs: string[] = [];
 
-  // Posix system directories
-  dirs.push('/etc', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/var', '/sys', '/proc', '/dev', '/boot', '/root');
+  // Posix system directories (note: /var removed from top-level blocklist; /var/lib, /var/log, /var/run retained)
+  dirs.push(
+    '/etc',
+    '/usr',
+    '/bin',
+    '/sbin',
+    '/lib',
+    '/lib64',
+    '/var/lib',
+    '/var/log',
+    '/var/run',
+    '/sys',
+    '/proc',
+    '/dev',
+    '/boot',
+    '/root'
+  );
 
   // Windows system directories
   if (process.platform === 'win32') {
@@ -54,7 +76,7 @@ function getSystemDirectories(): string[] {
 
 /**
  * Checks whether a canonical directory is a filesystem root, drive root,
- * user home directory, or system directory.
+ * user home directory, home parent directory, home dot-directory, or system directory.
  */
 export function isForbiddenSystemOrRootPath(canonicalPath: string): { forbidden: boolean; reason?: string } {
   const parsed = path.parse(canonicalPath);
@@ -69,7 +91,34 @@ export function isForbiddenSystemOrRootPath(canonicalPath: string): { forbidden:
     };
   }
 
-  // 2. User home directory itself
+  // 2. Parent of user home directory (/home, /Users, C:\Users)
+  const homeParentDirs = ['/home', '/Users', 'C:\\Users', 'c:\\users'];
+  try {
+    const parentOfHome = path.dirname(os.homedir());
+    if (parentOfHome && parentOfHome !== path.parse(parentOfHome).root) {
+      homeParentDirs.push(parentOfHome);
+    }
+  } catch {
+    // Ignore
+  }
+  for (const hp of homeParentDirs) {
+    let canonicalHp: string;
+    try {
+      canonicalHp = fs.realpathSync(hp);
+    } catch {
+      canonicalHp = path.resolve(hp);
+    }
+    const normHp = normalizePathForCompare(canonicalHp);
+    if (normCanonical === normHp) {
+      return {
+        forbidden: true,
+        reason: `Cannot set home parent directory "${canonicalPath}" as master organization root`,
+      };
+    }
+  }
+
+  // 3. User home directory itself and protected dot-directories directly under home
+  const FORBIDDEN_HOME_DOT_DIRS = ['.ssh', '.aws', '.gnupg', '.config', '.kube', '.docker'];
   try {
     const homeDir = os.homedir();
     let canonicalHome: string;
@@ -85,11 +134,41 @@ export function isForbiddenSystemOrRootPath(canonicalPath: string): { forbidden:
         reason: `Cannot set user home directory "${canonicalPath}" as master organization root`,
       };
     }
+
+    for (const dotDir of FORBIDDEN_HOME_DOT_DIRS) {
+      const dotPath = path.join(canonicalHome, dotDir);
+      let canonicalDot: string;
+      try {
+        canonicalDot = fs.realpathSync(dotPath);
+      } catch {
+        canonicalDot = path.resolve(dotPath);
+      }
+      const normDot = normalizePathForCompare(canonicalDot);
+      if (normCanonical === normDot || normCanonical.startsWith(normDot + path.sep)) {
+        return {
+          forbidden: true,
+          reason: `Cannot set protected home directory "${dotDir}" as master organization root`,
+        };
+      }
+    }
   } catch {
     // If os.homedir fails, proceed with system directory checks
   }
 
-  // 3. System directories (e.g. /etc, /usr, C:\Windows) and any sub-path inside them
+  // Also catch protected dot directories under mock/test home paths (e.g. /home/user/.ssh)
+  const normLower = canonicalPath.toLowerCase().replace(/\\/g, '/');
+  for (const dotDir of FORBIDDEN_HOME_DOT_DIRS) {
+    if (normLower.includes(`/${dotDir}/`) || normLower.endsWith(`/${dotDir}`)) {
+      if (normLower.startsWith('/home/') || normLower.startsWith('/users/') || normLower.startsWith('c:/users/')) {
+        return {
+          forbidden: true,
+          reason: `Cannot set protected home directory "${dotDir}" as master organization root`,
+        };
+      }
+    }
+  }
+
+  // 4. System directories (e.g. /etc, /usr, /var/lib, C:\Windows) and any sub-path inside them
   const sysDirs = getSystemDirectories();
   for (const sysDir of sysDirs) {
     let canonicalSys: string;
@@ -111,19 +190,20 @@ export function isForbiddenSystemOrRootPath(canonicalPath: string): { forbidden:
 }
 
 /**
- * Sets the organization master root after verifying it exists, is a directory,
- * and is not a filesystem root, home directory, or system directory.
- * Persists the validated path in org_state.
+ * Validates a candidate path for master root (existence, directory, not forbidden).
  */
-export async function setMasterRoot(candidatePath: string): Promise<SetMasterRootResult> {
+export function validateCandidateMasterRoot(candidatePath: string): {
+  valid: boolean;
+  canonical?: string;
+  reason?: string;
+} {
   if (!candidatePath || typeof candidatePath !== 'string' || !candidatePath.trim()) {
-    return { success: false, error: 'Master folder path cannot be empty' };
+    return { valid: false, reason: 'Master folder path cannot be empty' };
   }
 
   const resolved = path.resolve(candidatePath.trim());
-
   if (!fs.existsSync(resolved)) {
-    return { success: false, error: `Path does not exist: "${candidatePath}"` };
+    return { valid: false, reason: `Path does not exist: "${candidatePath}"` };
   }
 
   let canonical: string;
@@ -131,8 +211,8 @@ export async function setMasterRoot(candidatePath: string): Promise<SetMasterRoo
     canonical = fs.realpathSync(resolved);
   } catch (err) {
     return {
-      success: false,
-      error: `Cannot resolve canonical path for "${candidatePath}": ${err instanceof Error ? err.message : String(err)}`,
+      valid: false,
+      reason: `Cannot resolve canonical path for "${candidatePath}": ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
@@ -141,25 +221,41 @@ export async function setMasterRoot(candidatePath: string): Promise<SetMasterRoo
     stat = fs.statSync(canonical);
   } catch (err) {
     return {
-      success: false,
-      error: `Cannot inspect path "${canonical}": ${err instanceof Error ? err.message : String(err)}`,
+      valid: false,
+      reason: `Cannot inspect path "${canonical}": ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
   if (!stat.isDirectory()) {
-    return { success: false, error: `Path is a file, not a directory: "${candidatePath}"` };
+    return { valid: false, reason: `Path is a file, not a directory: "${candidatePath}"` };
   }
 
   const forbiddenCheck = isForbiddenSystemOrRootPath(canonical);
   if (forbiddenCheck.forbidden) {
-    return { success: false, error: forbiddenCheck.reason };
+    return { valid: false, reason: forbiddenCheck.reason };
   }
 
+  return { valid: true, canonical };
+}
+
+/**
+ * Sets the organization master root after verifying it exists, is a directory,
+ * and is not a filesystem root, home directory, or system directory.
+ * Persists the validated path in org_state.
+ */
+export async function setMasterRoot(candidatePath: string): Promise<SetMasterRootResult> {
+  const check = validateCandidateMasterRoot(candidatePath);
+  if (!check.valid || !check.canonical) {
+    return { success: false, error: check.reason };
+  }
+
+  const canonical = check.canonical;
   inMemoryMasterRoot = canonical;
 
   if (isStorageAvailable()) {
     try {
-      await orgStorageService.saveData('master_root', canonical);
+      await getStorage().saveData('master_root', canonical, true);
+      await getStorage().saveData('master_root_configured', 'true', true);
     } catch {
       // If storage is not initialized, proceed in-memory
     }
@@ -169,10 +265,41 @@ export async function setMasterRoot(candidatePath: string): Promise<SetMasterRoo
 }
 
 /**
- * Retrieves the organization master root, falling back to org_state storage or root_ceo.
+ * Explicitly clears the master root and marks it as configured.
+ */
+export async function clearMasterRoot(): Promise<void> {
+  inMemoryMasterRoot = null;
+  if (isStorageAvailable()) {
+    try {
+      await getStorage().saveData('master_root', '', true);
+      await getStorage().saveData('master_root_configured', 'true', true);
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+/**
+ * Retrieves the organization master root, re-validating the stored value on every load.
+ * If invalid, clears it, returns null (fail closed), and logs a warning.
+ * The root_ceo fallback goes through the same validation and will not run if master_root
+ * was explicitly set or cleared by the user.
  */
 export async function getMasterRoot(): Promise<string | null> {
+  // If cached in memory, revalidate it exists and is still valid on disk
   if (inMemoryMasterRoot) {
+    const val = validateCandidateMasterRoot(inMemoryMasterRoot);
+    if (!val.valid || !val.canonical) {
+      console.warn(`[orgScope] Cached master root "${inMemoryMasterRoot}" is invalid (${val.reason}); clearing.`);
+      inMemoryMasterRoot = null;
+      if (isStorageAvailable()) {
+        try {
+          await getStorage().saveData('master_root', '', true);
+        } catch {}
+      }
+      return null;
+    }
+    inMemoryMasterRoot = val.canonical;
     return inMemoryMasterRoot;
   }
 
@@ -181,26 +308,39 @@ export async function getMasterRoot(): Promise<string | null> {
   }
 
   try {
-    const saved = await orgStorageService.loadData('master_root');
+    const configuredFlag = await getStorage().loadData('master_root_configured', true);
+    const saved = await getStorage().loadData('master_root', true);
     if (saved && typeof saved === 'string' && saved.trim()) {
-      inMemoryMasterRoot = saved.trim();
-      return inMemoryMasterRoot;
+      const val = validateCandidateMasterRoot(saved.trim());
+      if (val.valid && val.canonical) {
+        inMemoryMasterRoot = val.canonical;
+        return inMemoryMasterRoot;
+      }
+      console.warn(`[orgScope] Stored master root "${saved}" is invalid (${val.reason}); clearing and failing closed.`);
+      inMemoryMasterRoot = null;
+      await getStorage().saveData('master_root', '', true);
+      return null;
     }
 
-    // Fallback: check if root_ceo has an existing configured workspace
-    const rootCeoRaw = await orgStorageService.loadData('root_ceo');
+    // If master_root was explicitly configured or cleared by the user, do not run root_ceo fallback
+    if (configuredFlag === 'true') {
+      return null;
+    }
+
+    // Fallback: check if root_ceo has an existing configured workspace (legacy migration only)
+    const rootCeoRaw = await getStorage().loadData('root_ceo');
     if (rootCeoRaw) {
       const parsed = JSON.parse(rootCeoRaw);
       if (parsed?.workspacePath && typeof parsed.workspacePath === 'string') {
         const candidate = parsed.workspacePath.trim();
-        if (candidate && fs.existsSync(candidate)) {
-          const canonical = fs.realpathSync(candidate);
-          const stat = fs.statSync(canonical);
-          if (stat.isDirectory() && !isForbiddenSystemOrRootPath(canonical).forbidden) {
-            inMemoryMasterRoot = canonical;
-            await orgStorageService.saveData('master_root', canonical);
-            return inMemoryMasterRoot;
-          }
+        const val = validateCandidateMasterRoot(candidate);
+        if (val.valid && val.canonical) {
+          inMemoryMasterRoot = val.canonical;
+          await getStorage().saveData('master_root', val.canonical, true);
+          await getStorage().saveData('master_root_configured', 'true', true);
+          return inMemoryMasterRoot;
+        } else {
+          console.warn(`[orgScope] Legacy root_ceo workspacePath "${candidate}" is invalid (${val.reason}); ignoring.`);
         }
       }
     }
@@ -235,6 +375,7 @@ export function resetMasterRoot(): void {
  *    any circumstances (e.g. passing "/" or "C:\" is completely ignored).
  * 4. A renderer-supplied value MAY only be used if it is a strict sub-path of the
  *    master root, acting as an additional narrowing constraint.
+ * 5. If a renderer-supplied boundary is NOT within the master root, throw (fail closed).
  */
 export async function resolveEffectiveScope(clientWorkspace?: string): Promise<string> {
   const masterRoot = await getMasterRoot();
@@ -243,18 +384,15 @@ export async function resolveEffectiveScope(clientWorkspace?: string): Promise<s
   }
 
   if (clientWorkspace && typeof clientWorkspace === 'string' && clientWorkspace.trim()) {
-    try {
-      const narrowingCheck = await assertWithinScope(clientWorkspace.trim(), masterRoot);
-      if (narrowingCheck.allowed) {
-        // Stricter narrowing requested by caller and verified to be within masterRoot
-        return narrowingCheck.resolved;
-      }
-    } catch {
-      // Narrowing check threw; ignore clientWorkspace and fall back to masterRoot
+    const narrowingCheck = await assertWithinScope(clientWorkspace.trim(), masterRoot);
+    if (narrowingCheck.allowed) {
+      // Stricter narrowing requested by caller and verified to be within masterRoot
+      return narrowingCheck.resolved;
     }
+    throw new Error(
+      `Access denied: client workspace "${clientWorkspace}" is not within organization master root "${masterRoot}" (fail closed).`
+    );
   }
 
-  // Client workspace was missing, invalid, or outside/wider than masterRoot (e.g. "/").
-  // Never trust the client value to widen scope: enforce masterRoot.
   return masterRoot;
 }

@@ -51,6 +51,16 @@ export const OrgProposalCard: React.FC<OrgProposalCardProps> = ({ cardData, onAp
             </div>
           ))}
         </div>
+        {cardData.rejected && cardData.rejected.length > 0 && (
+          <div className='flex flex-col gap-4px p-8px rounded-6px bg-red-500/10 border border-red-500/30 text-red-500 text-11px'>
+            <span className='font-semibold'>Rejected ({cardData.rejected.length} outside scope):</span>
+            {cardData.rejected.map((rej, idx) => (
+              <div key={idx} className='truncate font-mono'>
+                • {rej.folder}: {rej.reason}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Card>
   );

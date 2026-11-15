@@ -2742,6 +2742,15 @@ export const knowledgeRepo = {
 };
 
 export const org = {
+  pickMasterRoot: async (): Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgPickMasterRoot) {
+      return window.electronAPI.orgPickMasterRoot();
+    }
+    return {
+      success: false,
+      error: 'pickMasterRoot is only supported in desktop mode (fail closed)',
+    };
+  },
   setMasterRoot: async (masterRoot: string): Promise<{ success: boolean; error?: string; masterRoot?: string }> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgSetMasterRoot) {
       return window.electronAPI.orgSetMasterRoot({ masterRoot });

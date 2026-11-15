@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { assertWithinScope, type ScopeCheckResult } from '../services/org/pathGuard';
-import { orgStorageService } from '../services/org/orgStorageService';
+import { orgStorageService, isValidOrgStorageKey, MAX_STORAGE_VALUE_BYTES } from '../services/org/orgStorageService';
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
 import { issueCommandApprovalToken, issueFileApprovalToken } from '../services/org/orgApproval';
@@ -22,10 +22,18 @@ export function registerOrgBridge(): void {
     'org:assertWithinScope',
     async (_event, params: { targetPath: string; allowedRoot?: string }): Promise<ScopeCheckResult> => {
       try {
-        if (!params || typeof params.targetPath !== 'string' || !params.targetPath.trim() || params.targetPath.length > 4096) {
+        if (
+          !params ||
+          typeof params.targetPath !== 'string' ||
+          !params.targetPath.trim() ||
+          params.targetPath.length > 4096
+        ) {
           return { allowed: false, reason: 'Invalid or missing targetPath parameter', resolved: '' };
         }
-        if (params.allowedRoot !== undefined && (typeof params.allowedRoot !== 'string' || params.allowedRoot.length > 4096)) {
+        if (
+          params.allowedRoot !== undefined &&
+          (typeof params.allowedRoot !== 'string' || params.allowedRoot.length > 4096)
+        ) {
           return { allowed: false, reason: 'Invalid allowedRoot parameter', resolved: params.targetPath };
         }
         // Enforce main-process master root. The allowedRoot parameter is kept for backward
@@ -42,10 +50,49 @@ export function registerOrgBridge(): void {
     }
   );
 
+  ipcMain.handle(
+    'org:pickMasterRoot',
+    async (): Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }> => {
+      try {
+        const focusedWindow = BrowserWindow.getFocusedWindow();
+        const result = focusedWindow
+          ? await dialog.showOpenDialog(focusedWindow, { properties: ['openDirectory', 'createDirectory'] })
+          : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+
+        if (result.canceled || !result.filePaths || result.filePaths.length === 0 || !result.filePaths[0]) {
+          return { success: false, cancelled: true };
+        }
+
+        const chosenPath = result.filePaths[0];
+        const validation = await setMasterRoot(chosenPath);
+        return validation;
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  );
+
   ipcMain.handle('org:setMasterRoot', async (_event, params: { masterRoot: string }): Promise<SetMasterRootResult> => {
     try {
-      if (!params || typeof params.masterRoot !== 'string' || !params.masterRoot.trim() || params.masterRoot.length > 4096) {
-        return { success: false, error: 'Invalid or missing masterRoot parameter (must be non-empty string <= 4096 chars)' };
+      if (process.env.NODE_ENV !== 'test') {
+        return {
+          success: false,
+          error: 'Direct setMasterRoot is only permitted in test environments. Use org:pickMasterRoot in production.',
+        };
+      }
+      if (
+        !params ||
+        typeof params.masterRoot !== 'string' ||
+        !params.masterRoot.trim() ||
+        params.masterRoot.length > 4096
+      ) {
+        return {
+          success: false,
+          error: 'Invalid or missing masterRoot parameter (must be non-empty string <= 4096 chars)',
+        };
       }
       return await setMasterRoot(params.masterRoot);
     } catch (err) {
@@ -68,7 +115,12 @@ export function registerOrgBridge(): void {
     'org:discoverProjects',
     async (_event, params: { folderPath: string; allowedRoot?: string }): Promise<DiscoveredProject[]> => {
       try {
-        if (!params || typeof params.folderPath !== 'string' || !params.folderPath.trim() || params.folderPath.length > 4096) {
+        if (
+          !params ||
+          typeof params.folderPath !== 'string' ||
+          !params.folderPath.trim() ||
+          params.folderPath.length > 4096
+        ) {
           return [];
         }
         return await discoverProjectsInFolder(params.folderPath, params.allowedRoot);
@@ -84,7 +136,19 @@ export function registerOrgBridge(): void {
       if (!params || typeof params.key !== 'string' || typeof params.value !== 'string') {
         return false;
       }
-      return await orgStorageService.saveData(params.key, params.value);
+      if (params.key === 'master_root' || params.key === 'master_root_configured') {
+        console.error('[OrgBridge] Rejected reserved key for external saveData:', params.key);
+        return false;
+      }
+      if (!isValidOrgStorageKey(params.key, false)) {
+        console.error('[OrgBridge] Rejected unwhitelisted storage key:', params.key);
+        return false;
+      }
+      if (Buffer.byteLength(params.value, 'utf8') > MAX_STORAGE_VALUE_BYTES) {
+        console.error('[OrgBridge] Value exceeds 10 MB limit for saveData key:', params.key);
+        return false;
+      }
+      return await orgStorageService.saveData(params.key, params.value, false);
     } catch (err) {
       console.error('[OrgBridge] saveData failed:', err);
       return false;
@@ -96,7 +160,15 @@ export function registerOrgBridge(): void {
       if (!params || typeof params.key !== 'string') {
         return null;
       }
-      return await orgStorageService.loadData(params.key);
+      if (params.key === 'master_root' || params.key === 'master_root_configured') {
+        console.error('[OrgBridge] Rejected reserved key for external loadData:', params.key);
+        return null;
+      }
+      if (!isValidOrgStorageKey(params.key, false)) {
+        console.error('[OrgBridge] Rejected unwhitelisted storage key:', params.key);
+        return null;
+      }
+      return await orgStorageService.loadData(params.key, false);
     } catch (err) {
       console.error('[OrgBridge] loadData failed:', err);
       return null;
@@ -190,7 +262,12 @@ export function registerOrgBridge(): void {
     'org:readFile',
     async (
       _event,
-      params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number; options?: { approvalToken?: string } }
+      params: {
+        targetFilePath: string;
+        allowedWorkspace: string;
+        maxBytes?: number;
+        options?: { approvalToken?: string };
+      }
     ) => {
       if (
         !params ||
@@ -202,7 +279,12 @@ export function registerOrgBridge(): void {
         throw new Error('Invalid arguments for org:readFile');
       }
       try {
-        return await OrgFolderTools.readFile(params.targetFilePath, params.allowedWorkspace, params.maxBytes, params.options);
+        return await OrgFolderTools.readFile(
+          params.targetFilePath,
+          params.allowedWorkspace,
+          params.maxBytes,
+          params.options
+        );
       } catch (err: any) {
         if (err?.needsApproval) {
           return {
@@ -295,43 +377,48 @@ export function registerOrgBridge(): void {
     }
   );
 
-  ipcMain.handle(
-    'org:approveCommand',
-    async (_event, params: { command: string; cwd: string }) => {
-      if (!params || typeof params.command !== 'string' || typeof params.cwd !== 'string' || params.command.length > 65536 || params.cwd.length > 4096) {
-        throw new Error('Invalid arguments for org:approveCommand');
-      }
-      const masterRoot = await getMasterRoot();
-      if (!masterRoot) {
-        throw new Error('No master root configured');
-      }
-      const check = await assertWithinScope(params.cwd, masterRoot);
-      if (!check.allowed) {
-        throw new Error(`Cannot approve command outside master root: ${params.cwd}`);
-      }
-      const token = issueCommandApprovalToken(params.command, params.cwd);
-      return { token, command: params.command, cwd: params.cwd, expiresInMs: 60000 };
+  ipcMain.handle('org:approveCommand', async (_event, params: { command: string; cwd: string }) => {
+    if (
+      !params ||
+      typeof params.command !== 'string' ||
+      typeof params.cwd !== 'string' ||
+      params.command.length > 65536 ||
+      params.cwd.length > 4096
+    ) {
+      throw new Error('Invalid arguments for org:approveCommand');
     }
-  );
+    const masterRoot = await getMasterRoot();
+    if (!masterRoot) {
+      throw new Error('No master root configured');
+    }
+    const check = await assertWithinScope(params.cwd, masterRoot);
+    if (!check.allowed) {
+      throw new Error(`Cannot approve command outside master root: ${params.cwd}`);
+    }
+    const token = issueCommandApprovalToken(params.command, params.cwd);
+    return { token, command: params.command, cwd: params.cwd, expiresInMs: 60000 };
+  });
 
-  ipcMain.handle(
-    'org:approveFileRead',
-    async (_event, params: { targetFilePath: string }) => {
-      if (!params || typeof params.targetFilePath !== 'string' || !params.targetFilePath.trim() || params.targetFilePath.length > 4096) {
-        throw new Error('Invalid arguments for org:approveFileRead');
-      }
-      const masterRoot = await getMasterRoot();
-      if (!masterRoot) {
-        throw new Error('No master root configured');
-      }
-      const check = await assertWithinScope(params.targetFilePath, masterRoot);
-      if (!check.allowed) {
-        throw new Error(`Cannot approve file read outside master root: ${params.targetFilePath}`);
-      }
-      const token = issueFileApprovalToken(params.targetFilePath);
-      return { token, targetFilePath: params.targetFilePath, expiresInMs: 60000 };
+  ipcMain.handle('org:approveFileRead', async (_event, params: { targetFilePath: string }) => {
+    if (
+      !params ||
+      typeof params.targetFilePath !== 'string' ||
+      !params.targetFilePath.trim() ||
+      params.targetFilePath.length > 4096
+    ) {
+      throw new Error('Invalid arguments for org:approveFileRead');
     }
-  );
+    const masterRoot = await getMasterRoot();
+    if (!masterRoot) {
+      throw new Error('No master root configured');
+    }
+    const check = await assertWithinScope(params.targetFilePath, masterRoot);
+    if (!check.allowed) {
+      throw new Error(`Cannot approve file read outside master root: ${params.targetFilePath}`);
+    }
+    const token = issueFileApprovalToken(params.targetFilePath);
+    return { token, targetFilePath: params.targetFilePath, expiresInMs: 60000 };
+  });
 
   ipcMain.handle('org:checkRiskyCommand', async (_event, params: { command: string }) => {
     if (!params || typeof params.command !== 'string') {

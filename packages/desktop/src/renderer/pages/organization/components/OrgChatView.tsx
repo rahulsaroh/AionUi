@@ -514,13 +514,13 @@ export const OrgChatView: React.FC = () => {
                 const { departments, teams, projects: createdProjects, members } = event.data.createdEntities;
                 // Apply to store
                 if (departments?.length) {
-                  for (const dept of departments) addDepartment(dept);
+                  for (const dept of departments) await addDepartment(dept);
                 }
                 if (teams?.length) {
                   for (const { departmentId, team } of teams) addSubTeam(departmentId, team);
                 }
                 if (createdProjects?.length) {
-                  for (const proj of createdProjects) addOrgProject(proj);
+                  for (const proj of createdProjects) await addOrgProject(proj);
                 }
                 if (members?.length) {
                   for (const { teamId, member } of members) addTeamMember(teamId, member);

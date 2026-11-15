@@ -138,6 +138,7 @@ export interface ProposalCardData {
   departmentId: string;
   departmentName: string;
   projects: Array<{ name: string; folder: string; description?: string }>;
+  rejected?: Array<{ folder: string; reason: string }>;
 }
 
 export class RootCeoAgent {
@@ -390,27 +391,48 @@ Always inspect your tools before responding. When a tool call is needed, invoke 
         const masterRoot = this.hierarchy.rootCeo.workspacePath;
         const parentFolder = dept?.workspacePath || masterRoot;
         const validatedProposals = [];
+        const rejected: Array<{ folder: string; reason: string }> = [];
+
         if (parentFolder) {
           for (const p of args.proposals || []) {
             if (p.folder) {
               const check = await validateOrgFolder(p.folder, parentFolder, 'project');
               if (check.valid) {
                 validatedProposals.push({ ...p, folder: check.resolvedPath || p.folder });
+              } else {
+                rejected.push({
+                  folder: p.folder,
+                  reason: check.error || 'Folder is outside department or organization root',
+                });
               }
             } else {
               validatedProposals.push(p);
             }
+          }
+        } else {
+          for (const p of args.proposals || []) {
+            rejected.push({ folder: p.folder || '', reason: 'No organization or department master folder configured' });
           }
         }
         const card: ProposalCardData = {
           departmentId: args.departmentId,
           departmentName: dept?.name || 'Department',
           projects: validatedProposals,
+          rejected,
         };
         this.callbacks.onProposalCard?.(card);
+
+        let formattedSummary = `Generated bulk proposal approval card with ${card.projects.length} projects for department "${card.departmentName}".`;
+        if (rejected.length > 0) {
+          formattedSummary += ` (${rejected.length} proposed project(s) rejected: outside scope).`;
+        }
+
         return {
-          result: card,
-          formattedSummary: `Generated bulk proposal approval card with ${card.projects.length} projects for department "${card.departmentName}".`,
+          result: {
+            card,
+            rejected,
+          },
+          formattedSummary,
         };
       }
 

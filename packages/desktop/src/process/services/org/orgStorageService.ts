@@ -21,19 +21,31 @@ import type {
 
 export const MAX_STORAGE_VALUE_BYTES = 10 * 1024 * 1024; // 10 MB
 
+export const ORG_EXTERNAL_STORAGE_WHITELIST = [
+  'active_scope',
+  'root_ceo',
+  'cron_jobs',
+  'conversations',
+  'initialized',
+  'aionui:active-scope',
+];
+
 /**
  * Validates whether a storage key is whitelisted.
  * Allowed keys are strictly 'aionui:active-scope', 'aionui:org-*', and internal org persistence keys.
+ * External callers (via IPC) are never permitted to write or read reserved keys like 'master_root'.
  */
-export function isValidOrgStorageKey(key: unknown): boolean {
+export function isValidOrgStorageKey(key: unknown, allowInternal = false): boolean {
   if (typeof key !== 'string' || !key || key.length > 256) {
     return false;
+  }
+  if (key === 'master_root' || key === 'master_root_configured') {
+    return allowInternal === true;
   }
   if (key === 'aionui:active-scope' || key.startsWith('aionui:org-')) {
     return true;
   }
-  const internalKeys = ['root_ceo', 'cron_jobs', 'conversations', 'active_scope', 'initialized', 'master_root'];
-  return internalKeys.includes(key);
+  return ORG_EXTERNAL_STORAGE_WHITELIST.includes(key);
 }
 
 /**
@@ -44,7 +56,8 @@ export function validateMemberShape(m: any): boolean {
   if (typeof m.id !== 'string' || !m.id || m.id.length > 128) return false;
   if (typeof m.name !== 'string' || !m.name || m.name.length > 256) return false;
   if (typeof m.role !== 'string' || !m.role || m.role.length > 256) return false;
-  if (m.systemPrompt !== undefined && (typeof m.systemPrompt !== 'string' || m.systemPrompt.length > 50000)) return false;
+  if (m.systemPrompt !== undefined && (typeof m.systemPrompt !== 'string' || m.systemPrompt.length > 50000))
+    return false;
   return true;
 }
 
@@ -68,10 +81,19 @@ export function validateBundleShape(bundle: any): boolean {
   if (!bundle.hierarchy || typeof bundle.hierarchy !== 'object') return false;
   if (!bundle.hierarchy.rootCeo || typeof bundle.hierarchy.rootCeo !== 'object') return false;
   if (!Array.isArray(bundle.hierarchy.departments) || bundle.hierarchy.departments.length > 100) return false;
-  if (bundle.members && (!Array.isArray(bundle.members) || bundle.members.length > 1000 || !bundle.members.every(validateMemberShape))) return false;
-  if (bundle.projects && (!Array.isArray(bundle.projects) || bundle.projects.length > 500 || !bundle.projects.every(validateProjectShape))) return false;
+  if (
+    bundle.members &&
+    (!Array.isArray(bundle.members) || bundle.members.length > 1000 || !bundle.members.every(validateMemberShape))
+  )
+    return false;
+  if (
+    bundle.projects &&
+    (!Array.isArray(bundle.projects) || bundle.projects.length > 500 || !bundle.projects.every(validateProjectShape))
+  )
+    return false;
   if (bundle.cronJobs && (!Array.isArray(bundle.cronJobs) || bundle.cronJobs.length > 200)) return false;
-  if (bundle.conversations && (!Array.isArray(bundle.conversations) || bundle.conversations.length > 1000)) return false;
+  if (bundle.conversations && (!Array.isArray(bundle.conversations) || bundle.conversations.length > 1000))
+    return false;
   return true;
 }
 
@@ -83,6 +105,10 @@ export class OrgStorageService {
     if (customDriver) {
       this.driver = customDriver;
     }
+  }
+
+  public static hasInstance(): boolean {
+    return OrgStorageService.instance !== null;
   }
 
   public static getInstance(): OrgStorageService {
@@ -113,8 +139,8 @@ export class OrgStorageService {
     }
   }
 
-  public async saveData(key: string, value: string): Promise<boolean> {
-    if (!isValidOrgStorageKey(key)) {
+  public async saveData(key: string, value: string, allowInternal = false): Promise<boolean> {
+    if (!isValidOrgStorageKey(key, allowInternal)) {
       console.error(`[OrgStorageService] Rejected unwhitelisted storage key: "${key}"`);
       return false;
     }
@@ -137,8 +163,8 @@ export class OrgStorageService {
     }
   }
 
-  public async loadData(key: string): Promise<string | null> {
-    if (!isValidOrgStorageKey(key)) {
+  public async loadData(key: string, allowInternal = false): Promise<string | null> {
+    if (!isValidOrgStorageKey(key, allowInternal)) {
       console.error(`[OrgStorageService] Rejected unwhitelisted storage key: "${key}"`);
       return null;
     }

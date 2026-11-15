@@ -49,6 +49,9 @@ Mandate:
     discovered: Array<{ name: string; folder: string; recommendedMemberIds: string[] }>;
     summary: string;
   }> {
+    if (this.department.status === 'error') {
+      throw new Error(`Department "${this.department.name}" has error status and cannot perform folder operations`);
+    }
     const deptFolder = this.department.workspacePath;
     if (!deptFolder) {
       throw new Error(`Department "${this.department.name}" does not have an assigned workspace folder.`);
@@ -103,6 +106,9 @@ Mandate:
    * Creates a project and assigns members after validating the folder boundary.
    */
   public async createProject(name: string, folder: string, memberIds: string[]): Promise<OrgProject> {
+    if (this.department.status === 'error') {
+      throw new Error(`Department "${this.department.name}" has error status and cannot create projects`);
+    }
     let finalFolder = folder;
     if (this.department.workspacePath) {
       const check = await validateOrgFolder(folder, this.department.workspacePath, 'project');
@@ -185,6 +191,9 @@ Capabilities & Safety Boundaries:
   }
 
   public async readFile(relativePath: string): Promise<string> {
+    if (this.project.status === 'dormant') {
+      throw new Error(`Project "${this.project.name}" is dormant and cannot perform file operations`);
+    }
     const projFolder = this.project.workspacePath;
     if (!projFolder) throw new Error('Project workspace path not set');
     const fullPath = `${projFolder.replace(/[\\/]$/, '')}/${relativePath.replace(/^[\\/]/, '')}`;
@@ -193,6 +202,9 @@ Capabilities & Safety Boundaries:
   }
 
   public async writeFile(relativePath: string, content: string): Promise<boolean> {
+    if (this.project.status === 'dormant') {
+      throw new Error(`Project "${this.project.name}" is dormant and cannot perform file operations`);
+    }
     const projFolder = this.project.workspacePath;
     if (!projFolder) throw new Error('Project workspace path not set');
     const fullPath = `${projFolder.replace(/[\\/]$/, '')}/${relativePath.replace(/^[\\/]/, '')}`;
@@ -200,6 +212,9 @@ Capabilities & Safety Boundaries:
   }
 
   public async runShell(command: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    if (this.project.status === 'dormant') {
+      throw new Error(`Project "${this.project.name}" is dormant and cannot execute shell commands`);
+    }
     const projFolder = this.project.workspacePath;
     if (!projFolder) throw new Error('Project workspace path not set');
     return ipcBridge.org.runShell(command, projFolder, projFolder);

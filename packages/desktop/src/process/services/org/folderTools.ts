@@ -11,6 +11,7 @@ import { assertWithinScope } from './pathGuard';
 import { resolveEffectiveScope } from './orgScope';
 import { consumeCommandApprovalToken, consumeFileApprovalToken } from './orgApproval';
 import { recordShellExecution } from './orgTelemetry';
+import { scanFolderCompact, type ScanFolderResult, type ScanFolderOptions } from './scanFolder';
 
 export interface FolderScanEntry {
   name: string;
@@ -315,6 +316,16 @@ export function killProcessTree(child: ChildProcess): void {
 
 export class OrgFolderTools {
   /**
+   * Scans a directory and returns a compact tree with project-type hints.
+   */
+  public static async scanFolderCompact(
+    targetPath?: string,
+    options?: ScanFolderOptions
+  ): Promise<ScanFolderResult> {
+    return scanFolderCompact(targetPath, options);
+  }
+
+  /**
    * Scans a directory within an allowed workspace up to maxDepth and maxEntries.
    */
   public static async scanFolder(
@@ -465,7 +476,7 @@ export class OrgFolderTools {
 
     // Keep default maxBytes (256 KB) and cap caller-supplied maxBytes at 1 MB
     const MAX_READ_BYTES = 1024 * 1024;
-    const effectiveMaxBytes = Math.min(Math.max(1, maxBytes ?? (256 * 1024)), MAX_READ_BYTES);
+    const effectiveMaxBytes = Math.min(Math.max(1, maxBytes ?? 256 * 1024), MAX_READ_BYTES);
 
     let truncated = false;
     let readSize = stat.size;
@@ -527,7 +538,9 @@ export class OrgFolderTools {
     const realParent = fs.realpathSync(dir);
     const parentCheck = await assertWithinScope(realParent, effectiveScope);
     if (!parentCheck.allowed) {
-      throw new Error(`Access denied: Realpath of target directory "${realParent}" is outside workspace "${effectiveScope}"`);
+      throw new Error(
+        `Access denied: Realpath of target directory "${realParent}" is outside workspace "${effectiveScope}"`
+      );
     }
 
     fs.writeFileSync(targetFilePath, content, 'utf8');

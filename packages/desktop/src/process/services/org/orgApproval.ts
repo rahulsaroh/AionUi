@@ -45,11 +45,7 @@ export function issueCommandApprovalToken(command: string, cwd: string): string 
  * Verify and immediately consume a single-use command approval token.
  * Returns true if valid, matching command and cwd, and unexpired.
  */
-export function consumeCommandApprovalToken(
-  token: string | undefined,
-  command: string,
-  cwd: string
-): boolean {
+export function consumeCommandApprovalToken(token: string | undefined, command: string, cwd: string): boolean {
   if (!token) return false;
   const payload = activeCommandTokens.get(token);
   if (!payload) return false;
@@ -82,10 +78,7 @@ export function issueFileApprovalToken(filePath: string): string {
 /**
  * Verify and immediately consume a single-use file approval token.
  */
-export function consumeFileApprovalToken(
-  token: string | undefined,
-  filePath: string
-): boolean {
+export function consumeFileApprovalToken(token: string | undefined, filePath: string): boolean {
   if (!token) return false;
   const payload = activeFileTokens.get(token);
   if (!payload) return false;

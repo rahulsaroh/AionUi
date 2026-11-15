@@ -11,10 +11,7 @@ import {
   wrapUntrustedContent,
   UNTRUSTED_CONTENT_INSTRUCTION,
 } from '@/renderer/pages/organization/utils/headAgents';
-import {
-  OrgDelegationEngine,
-  MAX_DELEGATION_DEPTH,
-} from '@/renderer/pages/organization/utils/orgDelegationEngine';
+import { OrgDelegationEngine, MAX_DELEGATION_DEPTH } from '@/renderer/pages/organization/utils/orgDelegationEngine';
 import { MAX_DELEGATION_DEPTH as CANONICAL_MAX_DEPTH } from '@/types/organization';
 import { ipcBridge } from '@/common';
 

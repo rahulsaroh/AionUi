@@ -348,14 +348,17 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       if (!chosenPath) return;
 
       if (selectedNodeType === 'ceo' || selectedNodeId === 'root-ceo') {
-        const res = await ipcBridge.org.setMasterRoot(chosenPath);
+        const res = await ipcBridge.org.pickMasterRoot();
+        if (res.cancelled) return;
         if (!res.success) {
           Message.error(res.error || 'Failed to set master folder: access denied or invalid directory');
           return;
         }
-        const verifiedPath = res.masterRoot || chosenPath;
-        updateRootCeo({ workspacePath: verifiedPath });
-        Message.success(`Master organization workspace folder set to: ${verifiedPath}`);
+        const verifiedPath = res.masterRoot;
+        if (verifiedPath) {
+          updateRootCeo({ workspacePath: verifiedPath });
+          Message.success(`Master organization workspace folder set to: ${verifiedPath}`);
+        }
         return;
       }
 
@@ -485,7 +488,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       );
       if (result.createdDepartments && result.createdDepartments.length > 0) {
         for (const dept of result.createdDepartments) {
-          addDepartment(dept);
+          await addDepartment(dept);
         }
       }
       if (result.createdTeams && result.createdTeams.length > 0) {
@@ -495,7 +498,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       }
       if (result.createdProjects && result.createdProjects.length > 0) {
         for (const proj of result.createdProjects) {
-          upsertOrgProject(proj);
+          await upsertOrgProject(proj);
         }
       }
       if (result.createdMembers && result.createdMembers.length > 0) {

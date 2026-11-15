@@ -116,13 +116,11 @@ describe('Phase 1: OrgScope & Master Root Hardening', () => {
       );
     });
 
-    it('malicious caller: client supplies root "/" to widen boundary -> ignored, enforces master root', async () => {
+    it('malicious caller: client supplies root "/" to widen boundary -> throws (fail closed)', async () => {
       setMasterRootForTesting(validDir);
       const evilWorkspace = process.platform === 'win32' ? 'C:\\' : '/';
 
-      const effective = await resolveEffectiveScope(evilWorkspace);
-      // Scope must remain the master root, NOT the root folder!
-      expect(effective).toBe(path.resolve(validDir));
+      await expect(resolveEffectiveScope(evilWorkspace)).rejects.toThrow(/not within organization master root/i);
     });
 
     it('accepts narrower sub-path of master root as an additional restriction', async () => {

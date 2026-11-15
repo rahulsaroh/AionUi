@@ -308,6 +308,7 @@ export interface ElectronBridgeAPI {
   onGatewayLogAdded?: (callback: (log: import('../gateway/gatewayTypes').GatewayTelemetryLog) => void) => () => void;
   onGatewayQuotaUpdated?: (callback: (account: import('../gateway/gatewayTypes').GatewayAccount) => void) => () => void;
   // Org Mode APIs
+  orgPickMasterRoot?: () => Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }>;
   orgSetMasterRoot?: (params: {
     masterRoot: string;
   }) => Promise<{ success: boolean; error?: string; masterRoot?: string }>;

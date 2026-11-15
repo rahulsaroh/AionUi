@@ -39,12 +39,14 @@ describe('Phase 2: Validate Every Folder CEO/UI Creates', () => {
     setMasterRootForTesting(masterRoot);
 
     // Mock ipcBridge.org.assertWithinScope to use the real main-process pathGuard
-    vi.spyOn(ipcBridge.org, 'assertWithinScope').mockImplementation(async (targetPath: string, allowedRoot?: string) => {
-      if (!allowedRoot) {
-        return { allowed: false, reason: 'No allowed root configured (fail closed)', resolved: targetPath };
+    vi.spyOn(ipcBridge.org, 'assertWithinScope').mockImplementation(
+      async (targetPath: string, allowedRoot?: string) => {
+        if (!allowedRoot) {
+          return { allowed: false, reason: 'No allowed root configured (fail closed)', resolved: targetPath };
+        }
+        return assertWithinScope(targetPath, allowedRoot);
       }
-      return assertWithinScope(targetPath, allowedRoot);
-    });
+    );
   });
 
   afterEach(() => {

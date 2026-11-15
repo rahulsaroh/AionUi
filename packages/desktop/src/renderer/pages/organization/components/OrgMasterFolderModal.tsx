@@ -40,35 +40,16 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
   const handleBrowseFolder = async () => {
     try {
       setLoading(true);
-      const files = await ipcBridge.dialog.showOpen.invoke({
-        properties: ['openDirectory', 'createDirectory'],
-        defaultPath: selectedPath || undefined,
-      });
-      if (files && files.length > 0 && files[0]) {
-        setSelectedPath(files[0]);
+      const res = await ipcBridge.org.pickMasterRoot();
+      if (res.cancelled) {
+        return;
       }
-    } catch (err) {
-      console.warn('[OrgMasterFolderModal] browse failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirm = async () => {
-    const trimmed = selectedPath.trim();
-    if (!trimmed) {
-      Message.warning('Please select a master folder for the organization.');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const res = await ipcBridge.org.setMasterRoot(trimmed);
       if (!res.success) {
         Message.error(res.error || 'Failed to set master folder: access denied or invalid directory');
         return;
       }
-      const verifiedPath = res.masterRoot || trimmed;
+      const verifiedPath = res.masterRoot || '';
+      setSelectedPath(verifiedPath);
       updateRootCeo({ workspacePath: verifiedPath });
       addRecentWorkspace(verifiedPath);
       Message.success(`Master organization folder set to: ${verifiedPath}`);
@@ -78,6 +59,14 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConfirm = async () => {
+    if (!selectedPath) {
+      await handleBrowseFolder();
+      return;
+    }
+    onClose();
   };
 
   return (
@@ -125,8 +114,8 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
           <div className='flex items-center gap-8px'>
             <Input
               value={selectedPath}
-              onChange={setSelectedPath}
-              placeholder='Select or paste absolute folder path (e.g. C:\MyCompany or /Users/me/Org)...'
+              readOnly
+              placeholder='Click Browse to select master organization folder...'
               className='flex-1 !text-12px !font-mono'
             />
             <Button
