@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { assertWithinScope } from './pathGuard';
 import { resolveEffectiveScope } from './orgScope';
-import { consumeCommandApprovalToken } from './orgApproval';
+import { consumeCommandApprovalToken, consumeFileApprovalToken } from './orgApproval';
 import { recordShellExecution } from './orgTelemetry';
 
 export interface FolderScanEntry {
@@ -42,6 +42,51 @@ export interface ShellRunResult {
   needsApproval?: boolean;
   reason?: string;
   command?: string;
+}
+
+/**
+ * Checks whether a target file path matches forbidden or sensitive write destinations.
+ */
+export function isProtectedWriteTarget(targetFilePath: string): { blocked: boolean; reason?: string } {
+  const normalized = targetFilePath.replace(/\\/g, '/');
+  const base = path.basename(normalized);
+
+  if (/(?:^|\/)\.git(?:\/|$)/i.test(normalized) || /(?:^|\/)node_modules\/\.git(?:\/|$)/i.test(normalized)) {
+    return { blocked: true, reason: 'Writing to .git internal directories is strictly forbidden' };
+  }
+  if (/^\.env/i.test(base)) {
+    return { blocked: true, reason: 'Writing to environment configuration files (.env*) is forbidden' };
+  }
+  if (/\.pem$/i.test(base)) {
+    return { blocked: true, reason: 'Writing to certificate files (*.pem) is forbidden' };
+  }
+  if (/\.key$/i.test(base)) {
+    return { blocked: true, reason: 'Writing to private key files (*.key) is forbidden' };
+  }
+  if (/^id_rsa/i.test(base)) {
+    return { blocked: true, reason: 'Writing to SSH identity files (id_rsa*) is forbidden' };
+  }
+  return { blocked: false };
+}
+
+/**
+ * Checks whether a target file path contains sensitive credentials or secret configurations.
+ */
+export function isSensitiveReadTarget(filePath: string): { isSensitive: boolean; reason?: string } {
+  const normalized = filePath.replace(/\\/g, '/');
+  const base = path.basename(normalized);
+
+  if (
+    /^\.env/i.test(base) ||
+    /\.pem$/i.test(base) ||
+    /\.key$/i.test(base) ||
+    /^id_rsa/i.test(base) ||
+    /^credentials/i.test(base) ||
+    /\.kdbx$/i.test(base)
+  ) {
+    return { isSensitive: true, reason: `File "${base}" contains sensitive secrets/credentials` };
+  }
+  return { isSensitive: false };
 }
 
 /**
@@ -287,8 +332,9 @@ export class OrgFolderTools {
       );
     }
 
-    const maxDepth = options?.depth ?? 3;
-    const maxEntries = options?.maxEntries ?? 1000;
+    // Cap depth at 6 and maxEntries at 5000 regardless of caller input
+    const maxDepth = Math.min(Math.max(1, options?.depth ?? 3), 6);
+    const maxEntries = Math.min(Math.max(1, options?.maxEntries ?? 1000), 5000);
     const entries: FolderScanEntry[] = [];
     let truncated = false;
     let count = 0;
@@ -335,7 +381,8 @@ export class OrgFolderTools {
 
         const fullPath = path.join(currentDir, dirent.name);
         const relPath = path.relative(targetDir, fullPath).replace(/\\/g, '/');
-        const isDir = dirent.isDirectory();
+        // Do not follow symlinked directories
+        const isDir = dirent.isDirectory() && !dirent.isSymbolicLink();
 
         count++;
         let size: number | undefined;
@@ -384,7 +431,8 @@ export class OrgFolderTools {
   public static async readFile(
     targetFilePath: string,
     allowedWorkspace: string,
-    maxBytes = 256 * 1024
+    maxBytes = 256 * 1024,
+    options?: { approvalToken?: string }
   ): Promise<FileReadResult> {
     // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
     const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
@@ -397,15 +445,32 @@ export class OrgFolderTools {
       throw new Error(`File does not exist: ${targetFilePath}`);
     }
 
+    // Check for sensitive files requiring manual approval token
+    const sensitive = isSensitiveReadTarget(targetFilePath);
+    if (sensitive.isSensitive) {
+      const isApproved = consumeFileApprovalToken(options?.approvalToken, targetFilePath);
+      if (!isApproved) {
+        const err = new Error(`Blocked access to sensitive file requiring approval: ${sensitive.reason}`) as any;
+        err.needsApproval = true;
+        err.targetFilePath = targetFilePath;
+        err.reason = sensitive.reason;
+        throw err;
+      }
+    }
+
     const stat = fs.statSync(targetFilePath);
     if (stat.isDirectory()) {
       throw new Error(`Path is a directory, not a file: ${targetFilePath}`);
     }
 
+    // Keep default maxBytes (256 KB) and cap caller-supplied maxBytes at 1 MB
+    const MAX_READ_BYTES = 1024 * 1024;
+    const effectiveMaxBytes = Math.min(Math.max(1, maxBytes ?? (256 * 1024)), MAX_READ_BYTES);
+
     let truncated = false;
     let readSize = stat.size;
-    if (stat.size > maxBytes) {
-      readSize = maxBytes;
+    if (stat.size > effectiveMaxBytes) {
+      readSize = effectiveMaxBytes;
       truncated = true;
     }
 
@@ -422,9 +487,22 @@ export class OrgFolderTools {
   }
 
   /**
-   * Writes content to a file with boundary validation and recursive directory creation.
+   * Writes content to a file with boundary validation, symlink checks, size limits,
+   * TOCTOU parent realpath verification, and sensitive path restrictions.
    */
   public static async writeFile(targetFilePath: string, content: string, allowedWorkspace: string): Promise<boolean> {
+    // Max content size 5 MB
+    const MAX_WRITE_BYTES = 5 * 1024 * 1024;
+    if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) {
+      throw new Error(`Content size exceeds maximum allowed limit (5 MB)`);
+    }
+
+    // Protected destination check (.git, .env*, *.pem, *.key, id_rsa*, node_modules/.git)
+    const protectedCheck = isProtectedWriteTarget(targetFilePath);
+    if (protectedCheck.blocked) {
+      throw new Error(`Access denied: ${protectedCheck.reason}`);
+    }
+
     // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
     const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
     const scopeCheck = await assertWithinScope(targetFilePath, effectiveScope);
@@ -432,9 +510,24 @@ export class OrgFolderTools {
       throw new Error(`Access denied: Target file "${targetFilePath}" is outside workspace "${effectiveScope}"`);
     }
 
+    // Refuse if target path itself exists and is a symbolic link
+    if (fs.existsSync(targetFilePath)) {
+      const lstat = fs.lstatSync(targetFilePath);
+      if (lstat.isSymbolicLink()) {
+        throw new Error(`Access denied: Target file "${targetFilePath}" is a symbolic link`);
+      }
+    }
+
     const dir = path.dirname(targetFilePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Re-check scope on the REALPATH of the target's parent after mkdir (close TOCTOU gap)
+    const realParent = fs.realpathSync(dir);
+    const parentCheck = await assertWithinScope(realParent, effectiveScope);
+    if (!parentCheck.allowed) {
+      throw new Error(`Access denied: Realpath of target directory "${realParent}" is outside workspace "${effectiveScope}"`);
     }
 
     fs.writeFileSync(targetFilePath, content, 'utf8');

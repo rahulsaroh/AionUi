@@ -249,8 +249,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     allowedWorkspace: string;
     options?: { depth?: number; maxEntries?: number };
   }) => ipcRenderer.invoke('org:scanFolder', params),
-  orgReadFile: (params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number }) =>
-    ipcRenderer.invoke('org:readFile', params),
+  orgReadFile: (params: {
+    targetFilePath: string;
+    allowedWorkspace: string;
+    maxBytes?: number;
+    options?: { approvalToken?: string };
+  }) => ipcRenderer.invoke('org:readFile', params),
   orgWriteFile: (params: { targetFilePath: string; content: string; allowedWorkspace: string }) =>
     ipcRenderer.invoke('org:writeFile', params),
   orgListDir: (params: { targetDir: string; allowedWorkspace: string }) => ipcRenderer.invoke('org:listDir', params),
@@ -261,6 +265,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     options?: { timeoutMs?: number; requiresApproval?: boolean; approvalToken?: string };
   }) => ipcRenderer.invoke('org:runShell', params),
   orgApproveCommand: (params: { command: string; cwd: string }) => ipcRenderer.invoke('org:approveCommand', params),
+  orgApproveFileRead: (params: { targetFilePath: string }) => ipcRenderer.invoke('org:approveFileRead', params),
   orgCheckRiskyCommand: (params: { command: string }) => ipcRenderer.invoke('org:checkRiskyCommand', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),

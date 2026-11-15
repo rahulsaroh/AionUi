@@ -19,6 +19,62 @@ import type {
   RootCEO,
 } from '@/types/organization';
 
+export const MAX_STORAGE_VALUE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Validates whether a storage key is whitelisted.
+ * Allowed keys are strictly 'aionui:active-scope', 'aionui:org-*', and internal org persistence keys.
+ */
+export function isValidOrgStorageKey(key: unknown): boolean {
+  if (typeof key !== 'string' || !key || key.length > 256) {
+    return false;
+  }
+  if (key === 'aionui:active-scope' || key.startsWith('aionui:org-')) {
+    return true;
+  }
+  const internalKeys = ['root_ceo', 'cron_jobs', 'conversations', 'active_scope', 'initialized', 'master_root'];
+  return internalKeys.includes(key);
+}
+
+/**
+ * Validates member shape.
+ */
+export function validateMemberShape(m: any): boolean {
+  if (!m || typeof m !== 'object') return false;
+  if (typeof m.id !== 'string' || !m.id || m.id.length > 128) return false;
+  if (typeof m.name !== 'string' || !m.name || m.name.length > 256) return false;
+  if (typeof m.role !== 'string' || !m.role || m.role.length > 256) return false;
+  if (m.systemPrompt !== undefined && (typeof m.systemPrompt !== 'string' || m.systemPrompt.length > 50000)) return false;
+  return true;
+}
+
+/**
+ * Validates project shape.
+ */
+export function validateProjectShape(p: any): boolean {
+  if (!p || typeof p !== 'object') return false;
+  if (typeof p.id !== 'string' || !p.id || p.id.length > 128) return false;
+  if (typeof p.name !== 'string' || !p.name || p.name.length > 256) return false;
+  if (typeof p.departmentId !== 'string' || !p.departmentId || p.departmentId.length > 128) return false;
+  if (p.workspacePath !== null && p.workspacePath !== undefined && typeof p.workspacePath !== 'string') return false;
+  return true;
+}
+
+/**
+ * Validates full bundle shape.
+ */
+export function validateBundleShape(bundle: any): boolean {
+  if (!bundle || typeof bundle !== 'object') return false;
+  if (!bundle.hierarchy || typeof bundle.hierarchy !== 'object') return false;
+  if (!bundle.hierarchy.rootCeo || typeof bundle.hierarchy.rootCeo !== 'object') return false;
+  if (!Array.isArray(bundle.hierarchy.departments) || bundle.hierarchy.departments.length > 100) return false;
+  if (bundle.members && (!Array.isArray(bundle.members) || bundle.members.length > 1000 || !bundle.members.every(validateMemberShape))) return false;
+  if (bundle.projects && (!Array.isArray(bundle.projects) || bundle.projects.length > 500 || !bundle.projects.every(validateProjectShape))) return false;
+  if (bundle.cronJobs && (!Array.isArray(bundle.cronJobs) || bundle.cronJobs.length > 200)) return false;
+  if (bundle.conversations && (!Array.isArray(bundle.conversations) || bundle.conversations.length > 1000)) return false;
+  return true;
+}
+
 export class OrgStorageService {
   private static instance: OrgStorageService | null = null;
   private driver: ISqliteDriver | null = null;
@@ -58,6 +114,15 @@ export class OrgStorageService {
   }
 
   public async saveData(key: string, value: string): Promise<boolean> {
+    if (!isValidOrgStorageKey(key)) {
+      console.error(`[OrgStorageService] Rejected unwhitelisted storage key: "${key}"`);
+      return false;
+    }
+    if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > MAX_STORAGE_VALUE_BYTES) {
+      console.error(`[OrgStorageService] Value size exceeds 10 MB limit for key: "${key}"`);
+      return false;
+    }
+
     const db = await this.getDriver();
     const now = Date.now();
     try {
@@ -73,6 +138,11 @@ export class OrgStorageService {
   }
 
   public async loadData(key: string): Promise<string | null> {
+    if (!isValidOrgStorageKey(key)) {
+      console.error(`[OrgStorageService] Rejected unwhitelisted storage key: "${key}"`);
+      return null;
+    }
+
     const db = await this.getDriver();
     try {
       const row = db.prepare('SELECT value FROM org_state WHERE key = ?').get(key) as { value: string } | undefined;
@@ -149,6 +219,10 @@ export class OrgStorageService {
   }
 
   public async saveMembers(members: OrgAgentMember[]): Promise<boolean> {
+    if (!Array.isArray(members) || members.length > 1000 || !members.every(validateMemberShape)) {
+      console.error('[OrgStorageService] Invalid members payload shape');
+      return false;
+    }
     const db = await this.getDriver();
     const now = Date.now();
     try {
@@ -272,6 +346,10 @@ export class OrgStorageService {
   }
 
   public async saveProjects(projects: OrgProject[]): Promise<boolean> {
+    if (!Array.isArray(projects) || projects.length > 500 || !projects.every(validateProjectShape)) {
+      console.error('[OrgStorageService] Invalid projects payload shape');
+      return false;
+    }
     const db = await this.getDriver();
     const now = Date.now();
     try {
@@ -477,6 +555,10 @@ export class OrgStorageService {
   }
 
   public async saveFullBundle(bundle: OrgStorageBundle): Promise<boolean> {
+    if (!validateBundleShape(bundle)) {
+      console.error('[OrgStorageService] Invalid bundle payload shape');
+      return false;
+    }
     const db = await this.getDriver();
     const now = Date.now();
     try {

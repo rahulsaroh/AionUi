@@ -9,7 +9,7 @@ import { assertWithinScope, type ScopeCheckResult } from '../services/org/pathGu
 import { orgStorageService } from '../services/org/orgStorageService';
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
-import { issueCommandApprovalToken } from '../services/org/orgApproval';
+import { issueCommandApprovalToken, issueFileApprovalToken } from '../services/org/orgApproval';
 import {
   setMasterRoot,
   getMasterRoot,
@@ -22,8 +22,11 @@ export function registerOrgBridge(): void {
     'org:assertWithinScope',
     async (_event, params: { targetPath: string; allowedRoot?: string }): Promise<ScopeCheckResult> => {
       try {
-        if (!params?.targetPath) {
-          return { allowed: false, reason: 'empty path', resolved: params?.targetPath || '' };
+        if (!params || typeof params.targetPath !== 'string' || !params.targetPath.trim() || params.targetPath.length > 4096) {
+          return { allowed: false, reason: 'Invalid or missing targetPath parameter', resolved: '' };
+        }
+        if (params.allowedRoot !== undefined && (typeof params.allowedRoot !== 'string' || params.allowedRoot.length > 4096)) {
+          return { allowed: false, reason: 'Invalid allowedRoot parameter', resolved: params.targetPath };
         }
         // Enforce main-process master root. The allowedRoot parameter is kept for backward
         // compatibility but cannot widen scope; if valid, it may only narrow it.
@@ -41,6 +44,9 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle('org:setMasterRoot', async (_event, params: { masterRoot: string }): Promise<SetMasterRootResult> => {
     try {
+      if (!params || typeof params.masterRoot !== 'string' || !params.masterRoot.trim() || params.masterRoot.length > 4096) {
+        return { success: false, error: 'Invalid or missing masterRoot parameter (must be non-empty string <= 4096 chars)' };
+      }
       return await setMasterRoot(params.masterRoot);
     } catch (err) {
       return {
@@ -62,6 +68,9 @@ export function registerOrgBridge(): void {
     'org:discoverProjects',
     async (_event, params: { folderPath: string; allowedRoot?: string }): Promise<DiscoveredProject[]> => {
       try {
+        if (!params || typeof params.folderPath !== 'string' || !params.folderPath.trim() || params.folderPath.length > 4096) {
+          return [];
+        }
         return await discoverProjectsInFolder(params.folderPath, params.allowedRoot);
       } catch (err) {
         console.error('[OrgBridge] discoverProjects failed:', err);
@@ -72,6 +81,9 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle('org:saveData', async (_event, params: { key: string; value: string }): Promise<boolean> => {
     try {
+      if (!params || typeof params.key !== 'string' || typeof params.value !== 'string') {
+        return false;
+      }
       return await orgStorageService.saveData(params.key, params.value);
     } catch (err) {
       console.error('[OrgBridge] saveData failed:', err);
@@ -81,6 +93,9 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle('org:loadData', async (_event, params: { key: string }): Promise<string | null> => {
     try {
+      if (!params || typeof params.key !== 'string') {
+        return null;
+      }
       return await orgStorageService.loadData(params.key);
     } catch (err) {
       console.error('[OrgBridge] loadData failed:', err);
@@ -99,6 +114,9 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle('org:saveFullBundle', async (_event, bundle: any): Promise<boolean> => {
     try {
+      if (!bundle || typeof bundle !== 'object') {
+        return false;
+      }
       return await orgStorageService.saveFullBundle(bundle);
     } catch (err) {
       console.error('[OrgBridge] saveFullBundle failed:', err);
@@ -117,6 +135,9 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle('org:saveMembers', async (_event, members: any[]): Promise<boolean> => {
     try {
+      if (!Array.isArray(members)) {
+        return false;
+      }
       return await orgStorageService.saveMembers(members);
     } catch (err) {
       console.error('[OrgBridge] saveMembers failed:', err);
@@ -135,6 +156,9 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle('org:saveProjects', async (_event, projects: any[]): Promise<boolean> => {
     try {
+      if (!Array.isArray(projects)) {
+        return false;
+      }
       return await orgStorageService.saveProjects(projects);
     } catch (err) {
       console.error('[OrgBridge] saveProjects failed:', err);
@@ -149,25 +173,79 @@ export function registerOrgBridge(): void {
       _event,
       params: { targetDir: string; allowedWorkspace: string; options?: { depth?: number; maxEntries?: number } }
     ) => {
+      if (
+        !params ||
+        typeof params.targetDir !== 'string' ||
+        typeof params.allowedWorkspace !== 'string' ||
+        params.targetDir.length > 4096 ||
+        params.allowedWorkspace.length > 4096
+      ) {
+        throw new Error('Invalid arguments for org:scanFolder');
+      }
       return OrgFolderTools.scanFolder(params.targetDir, params.allowedWorkspace, params.options);
     }
   );
 
   ipcMain.handle(
     'org:readFile',
-    async (_event, params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number }) => {
-      return OrgFolderTools.readFile(params.targetFilePath, params.allowedWorkspace, params.maxBytes);
+    async (
+      _event,
+      params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number; options?: { approvalToken?: string } }
+    ) => {
+      if (
+        !params ||
+        typeof params.targetFilePath !== 'string' ||
+        typeof params.allowedWorkspace !== 'string' ||
+        params.targetFilePath.length > 4096 ||
+        params.allowedWorkspace.length > 4096
+      ) {
+        throw new Error('Invalid arguments for org:readFile');
+      }
+      try {
+        return await OrgFolderTools.readFile(params.targetFilePath, params.allowedWorkspace, params.maxBytes, params.options);
+      } catch (err: any) {
+        if (err?.needsApproval) {
+          return {
+            content: '',
+            size: 0,
+            truncated: false,
+            needsApproval: true,
+            targetFilePath: params.targetFilePath,
+            reason: err.reason,
+          };
+        }
+        throw err;
+      }
     }
   );
 
   ipcMain.handle(
     'org:writeFile',
     async (_event, params: { targetFilePath: string; content: string; allowedWorkspace: string }) => {
+      if (
+        !params ||
+        typeof params.targetFilePath !== 'string' ||
+        typeof params.content !== 'string' ||
+        typeof params.allowedWorkspace !== 'string' ||
+        params.targetFilePath.length > 4096 ||
+        params.allowedWorkspace.length > 4096
+      ) {
+        return false;
+      }
       return OrgFolderTools.writeFile(params.targetFilePath, params.content, params.allowedWorkspace);
     }
   );
 
   ipcMain.handle('org:listDir', async (_event, params: { targetDir: string; allowedWorkspace: string }) => {
+    if (
+      !params ||
+      typeof params.targetDir !== 'string' ||
+      typeof params.allowedWorkspace !== 'string' ||
+      params.targetDir.length > 4096 ||
+      params.allowedWorkspace.length > 4096
+    ) {
+      return [];
+    }
     return OrgFolderTools.listDir(params.targetDir, params.allowedWorkspace);
   });
 
@@ -182,6 +260,22 @@ export function registerOrgBridge(): void {
         options?: { timeoutMs?: number; requiresApproval?: boolean; approvalToken?: string };
       }
     ) => {
+      if (
+        !params ||
+        typeof params.command !== 'string' ||
+        typeof params.cwd !== 'string' ||
+        typeof params.allowedWorkspace !== 'string' ||
+        params.command.length > 65536 ||
+        params.cwd.length > 4096 ||
+        params.allowedWorkspace.length > 4096
+      ) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: 'Invalid arguments for org:runShell',
+          timedOut: false,
+        };
+      }
       try {
         return await OrgFolderTools.runShell(params.command, params.cwd, params.allowedWorkspace, params.options);
       } catch (err: any) {
@@ -204,7 +298,7 @@ export function registerOrgBridge(): void {
   ipcMain.handle(
     'org:approveCommand',
     async (_event, params: { command: string; cwd: string }) => {
-      if (!params || typeof params.command !== 'string' || typeof params.cwd !== 'string') {
+      if (!params || typeof params.command !== 'string' || typeof params.cwd !== 'string' || params.command.length > 65536 || params.cwd.length > 4096) {
         throw new Error('Invalid arguments for org:approveCommand');
       }
       const masterRoot = await getMasterRoot();
@@ -220,7 +314,29 @@ export function registerOrgBridge(): void {
     }
   );
 
+  ipcMain.handle(
+    'org:approveFileRead',
+    async (_event, params: { targetFilePath: string }) => {
+      if (!params || typeof params.targetFilePath !== 'string' || !params.targetFilePath.trim() || params.targetFilePath.length > 4096) {
+        throw new Error('Invalid arguments for org:approveFileRead');
+      }
+      const masterRoot = await getMasterRoot();
+      if (!masterRoot) {
+        throw new Error('No master root configured');
+      }
+      const check = await assertWithinScope(params.targetFilePath, masterRoot);
+      if (!check.allowed) {
+        throw new Error(`Cannot approve file read outside master root: ${params.targetFilePath}`);
+      }
+      const token = issueFileApprovalToken(params.targetFilePath);
+      return { token, targetFilePath: params.targetFilePath, expiresInMs: 60000 };
+    }
+  );
+
   ipcMain.handle('org:checkRiskyCommand', async (_event, params: { command: string }) => {
+    if (!params || typeof params.command !== 'string') {
+      return { isRisky: false };
+    }
     return checkRiskyCommand(params.command);
   });
 }

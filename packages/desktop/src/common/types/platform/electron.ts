@@ -333,7 +333,12 @@ export interface ElectronBridgeAPI {
     allowedWorkspace: string;
     options?: { depth?: number; maxEntries?: number };
   }) => Promise<unknown>;
-  orgReadFile?: (params: { targetFilePath: string; allowedWorkspace: string; maxBytes?: number }) => Promise<unknown>;
+  orgReadFile?: (params: {
+    targetFilePath: string;
+    allowedWorkspace: string;
+    maxBytes?: number;
+    options?: { approvalToken?: string };
+  }) => Promise<unknown>;
   orgWriteFile?: (params: { targetFilePath: string; content: string; allowedWorkspace: string }) => Promise<boolean>;
   orgListDir?: (params: { targetDir: string; allowedWorkspace: string }) => Promise<unknown[]>;
   orgRunShell?: (params: {
@@ -346,6 +351,9 @@ export interface ElectronBridgeAPI {
     command: string;
     cwd: string;
   }) => Promise<{ token: string; command: string; cwd: string; expiresInMs: number }>;
+  orgApproveFileRead?: (params: {
+    targetFilePath: string;
+  }) => Promise<{ token: string; targetFilePath: string; expiresInMs: number }>;
   orgCheckRiskyCommand?: (params: { command: string }) => Promise<{ isRisky: boolean; reason?: string }>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;

@@ -2835,9 +2835,14 @@ export const org = {
     }
     throw new Error('scanFolder is only supported in desktop mode');
   },
-  readFile: async (targetFilePath: string, allowedWorkspace: string, maxBytes?: number): Promise<any> => {
+  readFile: async (
+    targetFilePath: string,
+    allowedWorkspace: string,
+    maxBytes?: number,
+    options?: { approvalToken?: string }
+  ): Promise<any> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgReadFile) {
-      return window.electronAPI.orgReadFile({ targetFilePath, allowedWorkspace, maxBytes });
+      return window.electronAPI.orgReadFile({ targetFilePath, allowedWorkspace, maxBytes, options });
     }
     throw new Error('readFile is only supported in desktop mode');
   },
@@ -2872,6 +2877,14 @@ export const org = {
       return window.electronAPI.orgApproveCommand({ command, cwd });
     }
     throw new Error('approveCommand is only supported in desktop mode');
+  },
+  approveFileRead: async (
+    targetFilePath: string
+  ): Promise<{ token: string; targetFilePath: string; expiresInMs: number }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgApproveFileRead) {
+      return window.electronAPI.orgApproveFileRead({ targetFilePath });
+    }
+    throw new Error('approveFileRead is only supported in desktop mode');
   },
   checkRiskyCommand: async (command: string): Promise<{ isRisky: boolean; reason?: string }> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgCheckRiskyCommand) {
