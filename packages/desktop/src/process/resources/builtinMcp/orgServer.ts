@@ -247,13 +247,56 @@ async function main() {
 
   server.tool(
     'assign_task',
-    'Delegates an execution task to a specific department or project head. Cross-department tasks can run in parallel.',
+    'Delegates an execution task to a specific project lead or department. If new team members should be recruited, pass approved_lineup after getting explicit user approval first.',
     {
-      target: z.string().describe('ID or name of target department or project'),
-      task: z.string().describe('Clear, actionable technical directive for execution'),
+      project_id: z.string().optional().describe('ID or name of target project'),
+      target: z.string().optional().describe('Target project ID or department (alias for project_id)'),
+      text: z.string().optional().describe('Clear, actionable technical directive for execution'),
+      task: z.string().optional().describe('Clear, actionable directive for execution (alias for text)'),
+      approved_lineup: z
+        .union([
+          z.string(),
+          z.array(
+            z.union([
+              z.string(),
+              z.object({
+                name: z.string(),
+                assistant: z.string(),
+              }),
+            ])
+          ),
+        ])
+        .optional()
+        .describe(
+          'User-approved lineup for member recruitment (e.g. [{ name: "Coder", assistant: "claude-code" }]). Must only be passed after user explicitly approves.'
+        ),
     },
     async (args) => {
       const res = await callBridgeTool('assign_task', args);
+      return formatToolResponse(res);
+    }
+  );
+
+  server.tool(
+    'get_project_status',
+    'Retrieves the current execution run state, active agent turns, and mailbox messages for a project team.',
+    {
+      project_id: z.string().describe('Target project ID'),
+    },
+    async (args) => {
+      const res = await callBridgeTool('get_project_status', args);
+      return formatToolResponse(res);
+    }
+  );
+
+  server.tool(
+    'list_project_tasks',
+    'Lists the current tasks and their execution status (completed, in_progress, blocked) for a project team.',
+    {
+      project_id: z.string().describe('Target project ID'),
+    },
+    async (args) => {
+      const res = await callBridgeTool('list_project_tasks', args);
       return formatToolResponse(res);
     }
   );

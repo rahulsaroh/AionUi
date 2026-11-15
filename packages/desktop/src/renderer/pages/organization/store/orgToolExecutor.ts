@@ -8,6 +8,13 @@ import { ipcBridge } from '@/common';
 import { getOrgStoreSnapshot } from './useOrgStore';
 import { updateNodeStatus, updateActivityTicker } from './useOrgTelemetryStore';
 import { validateOrgFolder } from '../utils/orgPathUtils';
+import { createProjectBackendTeam } from './orgBackendTeam';
+import type {
+  ITeamRunStateResponse,
+  ITeamMailboxMessage,
+  ITeamTaskItem,
+  ITeamSlotWork,
+} from '@/common/types/team/teamTypes';
 import type { OrgDepartmentNode, OrgProject, OrgAgentMember, OrgNodeStatus } from '@/types/organization';
 
 export interface StructureProposal {
@@ -51,6 +58,15 @@ export function emitStructureProposed(proposal: StructureProposal): void {
  * Executes an organizational tool call against the renderer store.
  * Returns structured results with created entity IDs.
  */
+function isNetworkRefused(err: unknown): boolean {
+  if (!err) return false;
+  const msg = String(err);
+  if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) return true;
+  const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+  if (cause?.code === 'ECONNREFUSED' || String(cause).includes('ECONNREFUSED')) return true;
+  return false;
+}
+
 export async function executeOrgToolInStore(
   tool: string,
   args: Record<string, any>,
@@ -204,6 +220,14 @@ export async function executeOrgToolInStore(
       const projId = `proj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const resolvedFolder = check.resolvedPath || folder;
 
+      // Initialize real AionCore backend team for this project
+      const backendTeamId = await createProjectBackendTeam({
+        name,
+        workspacePath: resolvedFolder,
+        description: goal,
+        masterRoot,
+      });
+
       const newProj: OrgProject = {
         id: projId,
         name,
@@ -214,6 +238,7 @@ export async function executeOrgToolInStore(
         memberIds,
         status: 'active',
         teamIds: [],
+        backendTeamId,
       };
 
       const nextProjects = [...store.projects, newProj];
@@ -247,6 +272,7 @@ export async function executeOrgToolInStore(
         name: newProj.name,
         departmentId: newProj.departmentId,
         folder: newProj.workspacePath,
+        backendTeamId: newProj.backendTeamId,
         created: true,
       };
     }
@@ -331,11 +357,11 @@ export async function executeOrgToolInStore(
     }
 
     case 'assign_task': {
-      const target = String(args.target || '').trim();
-      const task = String(args.task || '').trim();
+      const target = String(args.project_id || args.target || meta?.projectId || '').trim();
+      const taskText = String(args.text || args.task || '').trim();
 
-      if (!target || !task) {
-        throw new Error('assign_task requires "target" and "task".');
+      if (!target || !taskText) {
+        throw new Error('assign_task requires "project_id" (or "target") and "text" (or "task").');
       }
 
       const dept = store.hierarchy.departments.find(
@@ -346,9 +372,64 @@ export async function executeOrgToolInStore(
       const resolvedTargetId = dept ? dept.id : proj ? proj.id : target;
       const targetName = dept ? dept.name : proj ? proj.name : target;
 
+      const matchedProj =
+        proj ||
+        (args.projectId
+          ? store.projects.find((p) => p.id === String(args.projectId).trim())
+          : args.project_id
+            ? store.projects.find((p) => p.id === String(args.project_id).trim())
+            : undefined);
+
+      const resolvedProjectId = matchedProj?.id || args.projectId || args.project_id;
+      const backendTeamId = matchedProj?.backendTeamId;
+
+      let enrichedText = taskText;
+      const approvedLineup = args.approved_lineup;
+      if (approvedLineup) {
+        let approvalStr = '';
+        if (Array.isArray(approvedLineup)) {
+          approvalStr = approvedLineup
+            .map((item) => {
+              if (typeof item === 'string') {
+                return item.startsWith('User approved:') ? item : `User approved: ${item}`;
+              }
+              if (item && typeof item === 'object') {
+                const name = (item as { name?: string }).name || 'Specialist';
+                const assistant =
+                  (item as { assistant?: string }).assistant ||
+                  (item as { assistant_id?: string }).assistant_id ||
+                  'default';
+                return `User approved: add ${name} using ${assistant}`;
+              }
+              return 'User approved: add member';
+            })
+            .join('\n');
+        } else if (typeof approvedLineup === 'string') {
+          approvalStr = approvedLineup.startsWith('User approved:')
+            ? approvedLineup
+            : `User approved: ${approvedLineup}`;
+        }
+        if (approvalStr) {
+          enrichedText = `${enrichedText}\n\n${approvalStr}`;
+        }
+      }
+
+      if (backendTeamId) {
+        try {
+          await ipcBridge.team.sendMessage.invoke({
+            team_id: backendTeamId,
+            input: enrichedText,
+          });
+        } catch (err) {
+          if (!isNetworkRefused(err)) {
+            throw err;
+          }
+        }
+      }
+
       updateNodeStatus(resolvedTargetId, 'delegating');
       updateActivityTicker(resolvedTargetId, {
-        message: `Delegated task to ${targetName}: ${task}`,
+        message: `Delegated task to ${targetName}: ${enrichedText}`,
         timestamp: Date.now(),
         status: 'delegating',
       });
@@ -358,9 +439,104 @@ export async function executeOrgToolInStore(
         dispatched: true,
         target: resolvedTargetId,
         targetName,
-        task,
-        projectId: args.projectId,
-        status: 'delegated',
+        task: enrichedText,
+        projectId: resolvedProjectId,
+        backendTeamId,
+        status: backendTeamId ? 'dispatched_to_team' : 'delegated',
+      };
+    }
+
+    case 'get_project_status': {
+      const projectId = String(args.project_id || args.projectId || args.target || meta?.projectId || '').trim();
+      if (!projectId) {
+        throw new Error('get_project_status requires "project_id".');
+      }
+      const proj = store.projects.find((p) => p.id === projectId || p.name.toLowerCase() === projectId.toLowerCase());
+      if (!proj) {
+        throw new Error(`Project "${projectId}" not found.`);
+      }
+      const teamId = proj.backendTeamId;
+      if (!teamId) {
+        return {
+          projectId: proj.id,
+          projectName: proj.name,
+          status: proj.status,
+          summary: `Project "${proj.name}" is active (no backend team attached).`,
+        };
+      }
+
+      const [runState, mailbox]: [ITeamRunStateResponse | null, ITeamMailboxMessage[]] = await Promise.all([
+        ipcBridge.team.getRunState.invoke({ team_id: teamId }).catch((): null => null),
+        ipcBridge.team.listMailbox.invoke({ team_id: teamId, limit: 10 }).catch((): ITeamMailboxMessage[] => []),
+      ]);
+
+      const activeRun = runState?.active_run;
+      const slotWork: ITeamSlotWork[] = runState?.slot_work || activeRun?.slot_work || [];
+      const activeSlots = slotWork.filter((s: ITeamSlotWork) => s.state === 'running' || s.state === 'starting');
+
+      const recentMessages = (mailbox || []).slice(0, 5).map((m: ITeamMailboxMessage) => ({
+        from: m.from_agent_id,
+        to: m.to_agent_id,
+        type: m.msg_type,
+        summary: m.summary || (m.content ? m.content.slice(0, 100) : ''),
+      }));
+
+      const summary = `Project "${proj.name}" (Team ID: ${teamId}): Run status is "${activeRun?.status || 'idle'}". ${activeSlots.length} active agent slot(s). ${mailbox.length} message(s) in mailbox.`;
+
+      return {
+        projectId: proj.id,
+        projectName: proj.name,
+        backendTeamId: teamId,
+        runStatus: activeRun?.status || 'idle',
+        activeSlots: activeSlots.map((s: ITeamSlotWork) => ({ slot_id: s.slot_id, role: s.role, state: s.state })),
+        recentMessages,
+        summary,
+      };
+    }
+
+    case 'list_project_tasks': {
+      const projectId = String(args.project_id || args.projectId || args.target || meta?.projectId || '').trim();
+      if (!projectId) {
+        throw new Error('list_project_tasks requires "project_id".');
+      }
+      const proj = store.projects.find((p) => p.id === projectId || p.name.toLowerCase() === projectId.toLowerCase());
+      if (!proj) {
+        throw new Error(`Project "${projectId}" not found.`);
+      }
+      const teamId = proj.backendTeamId;
+      if (!teamId) {
+        return {
+          projectId: proj.id,
+          projectName: proj.name,
+          tasks: [],
+          summary: `Project "${proj.name}" has no backend team attached.`,
+        };
+      }
+
+      const tasks: ITeamTaskItem[] = await ipcBridge.team.listTasks
+        .invoke({ team_id: teamId, limit: 50 })
+        .catch((): ITeamTaskItem[] => []);
+      const taskList = tasks.map((t: ITeamTaskItem) => ({
+        id: t.id,
+        subject: t.subject,
+        status: t.status,
+        owner: t.owner,
+        blocked_by: t.blocked_by,
+      }));
+
+      const completed = taskList.filter((t) => t.status === 'completed').length;
+      const inProgress = taskList.filter((t) => t.status === 'in_progress').length;
+      const blocked = taskList.filter((t) => t.status === 'blocked').length;
+      const pending = taskList.filter((t) => t.status === 'pending').length;
+
+      const summary = `Project "${proj.name}" has ${taskList.length} tasks: ${completed} completed, ${inProgress} in progress, ${blocked} blocked, ${pending} pending.`;
+
+      return {
+        projectId: proj.id,
+        projectName: proj.name,
+        backendTeamId: teamId,
+        tasks: taskList,
+        summary,
       };
     }
 

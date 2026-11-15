@@ -499,6 +499,7 @@ export const OrgChatView: React.FC = () => {
         let accumulatedText = '';
         let finalSynthesis = '';
         let createdEntitiesMsg: OrgConversationMessage | null = null;
+        let lastBackendConvId: string | undefined = activeConversation?.backendConversationId;
 
         // Unified execution: CEO, project head, team lead and member all go
         // through runAgentTurn with the active thread's target.
@@ -613,6 +614,9 @@ export const OrgChatView: React.FC = () => {
               throw new Error(event.data.error || 'Unknown error');
             case 'done':
               finalSynthesis = event.data.finalSynthesis || accumulatedText;
+              if (event.data.backendConversationId) {
+                lastBackendConvId = event.data.backendConversationId;
+              }
               break;
           }
         }
@@ -635,6 +639,8 @@ export const OrgChatView: React.FC = () => {
           targetNodeId: activeDept?.id || interimConversation.targetNodeId,
           projectId: activeProject?.id,
           teamId: activeConversation?.teamId || activeProject?.teamIds?.[0],
+          backendConversationId:
+            lastBackendConvId || interimConversation.backendConversationId || activeConversation?.backendConversationId,
           messages: [...cleanMessages, userMessage, ...(createdEntitiesMsg ? [createdEntitiesMsg] : []), agentMessage],
         };
         addOrgConversation(finalConversation);

@@ -298,13 +298,8 @@ export function initApplicationBridge(): void {
         );
         if (!teamRow) return;
 
-        if (parent_id !== undefined) {
-          db.run('UPDATE teams SET parent_id = ?, updated_at = ? WHERE id = ?', parent_id, now, id);
-        }
-
-        if (department_role !== undefined) {
-          db.run('UPDATE teams SET department_role = ?, updated_at = ? WHERE id = ?', department_role.trim(), now, id);
-        }
+        // Note: teams.parent_id and teams.department_role do not exist in the pinned AionCore SQLite schema.
+        // Department links and roles are maintained in the Organization store.
 
         if (description !== undefined) {
           db.run('UPDATE teams SET description = ?, updated_at = ? WHERE id = ?', description.trim(), now, id);

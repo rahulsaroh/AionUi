@@ -69,6 +69,8 @@ export interface OrgTeamNode {
   description?: string;
   /** Persistent local disk directory bound to this team. */
   workspacePath?: string | null;
+  /** Underlying AionCore backend team ID (if backed by a real team) */
+  backendTeamId?: string;
 }
 
 export interface OrgDepartmentNode {
@@ -125,6 +127,8 @@ export interface OrgProject {
   path?: string;
   /** Persistent local disk directory bound to this project (canonical folder path). */
   workspacePath?: string | null;
+  /** Underlying AionCore backend team ID (if backed by a real team) */
+  backendTeamId?: string;
 }
 
 export interface OrgStorageBundle {

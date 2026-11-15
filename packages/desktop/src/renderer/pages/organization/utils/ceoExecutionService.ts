@@ -37,6 +37,7 @@ export interface CeoEvent {
     finalSynthesis?: string;
     involvedDepartmentIds?: string[];
     involvedTeamIds?: string[];
+    backendConversationId?: string;
   };
 }
 
@@ -51,6 +52,7 @@ export interface RunCeoTurnOptions {
   useRealExecution?: boolean;
   onNodeStatusUpdate?: (nodeId: string, status: string) => void;
   signal?: AbortSignal;
+  conversationId?: string;
 }
 
 export interface RunCeoTurnResult {
@@ -125,7 +127,8 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
         targetTeamId,
         targetProjectId,
         useRealExecution,
-        fallbackPath
+        fallbackPath,
+        options.conversationId
       );
 
       // Collect conversation IDs from the engine if available
@@ -180,6 +183,7 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
           finalSynthesis: finalResult.finalSynthesis,
           involvedDepartmentIds: finalResult.involvedDepartmentIds,
           involvedTeamIds: finalResult.involvedTeamIds,
+          backendConversationId: finalResult.backendConversationId || engine.lastBackendConversationId,
         },
       };
     } catch (err) {

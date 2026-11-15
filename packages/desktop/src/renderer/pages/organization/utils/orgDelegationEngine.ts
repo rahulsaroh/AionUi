@@ -45,6 +45,7 @@ export interface DelegationExecutionResult {
   deletedDepartmentIds?: string[];
   updatedDepartment?: { departmentId: string; patch: Partial<OrgDepartmentNode> };
   updatedRootCeoWorkspace?: string;
+  backendConversationId?: string;
 }
 
 export interface OrgActionPayload {
@@ -638,6 +639,8 @@ type UpdateNodeStatus = (nodeId: string, status: OrgNodeStatus) => void;
 
 export { MAX_DELEGATION_DEPTH };
 
+const DEBUG_ORG_STREAM = true;
+
 export class OrgDelegationEngine {
   private hierarchy: OrgHierarchy;
   private onStepCallback?: (log: DelegationStepLog) => void;
@@ -672,7 +675,7 @@ export class OrgDelegationEngine {
    * Executes a single agent step against the real AionUi backend (conversation runner).
    * Runs inside the agent's bound `workspacePath` as the working directory.
    */
-  private async runOrgAgentStep(opts: AgentExecutionOptions): Promise<string> {
+  public async runOrgAgentStep(opts: AgentExecutionOptions): Promise<string> {
     if (opts.agent.status === 'error' || opts.agent.status === 'dormant') {
       throw new Error(`Cannot run agent "${opts.agent.name}": agent has ${opts.agent.status} status.`);
     }
@@ -723,27 +726,59 @@ export class OrgDelegationEngine {
 
     const collectedText: string[] = [];
     let finished = false;
+    let contentCount = 0;
+    let lastNoticeChunk = '';
     let lastActivity = Date.now();
+    let checkFinish: () => void = () => {};
     let unsubscribe: (() => void) | undefined;
     let unsubLiveStep: (() => void) | undefined;
     let runError: string | null = null;
 
+    const pushNotice = (notice: string) => {
+      if (!notice || notice === lastNoticeChunk) return;
+      lastNoticeChunk = notice;
+      collectedText.push(notice);
+      opts.onStreamUpdate(notice);
+      this.onAgentStream?.(notice);
+    };
+
     try {
       // 1. Resolve real available assistant from backend
       let assistantId = opts.agent.canonicalAgentId || opts.agent.id;
+      let isAcp = opts.agent.assistant_backend === 'acp';
       try {
         const assistants = (await ipcBridge.assistants.list.invoke()) ?? [];
         const enabled = assistants.filter((a) => a.enabled !== false);
-        const preferred =
-          enabled.find((a) => a.source === 'generated' && a.agent?.type === 'aionrs') ??
-          enabled.find((a) => a.agent?.type === 'aionrs') ??
-          enabled.find((a) => a.id.includes('aionrs'));
-        if (preferred?.id) {
-          assistantId = preferred.id;
+        if (isAcp) {
+          const acpPreferred =
+            enabled.find((a) => a.id === opts.agent.canonicalAgentId) ??
+            enabled.find(
+              (a) =>
+                a.agent?.type === 'acp' &&
+                (a.id.includes('claude') || (typeof a.name === 'string' && a.name.toLowerCase().includes('claude')))
+            ) ??
+            enabled.find((a) => a.agent?.type === 'acp');
+          if (acpPreferred?.id) {
+            assistantId = acpPreferred.id;
+          } else {
+            isAcp = false;
+          }
+        }
+        if (!isAcp) {
+          const preferred =
+            enabled.find((a) => a.source === 'generated' && a.agent?.type === 'aionrs') ??
+            enabled.find((a) => a.agent?.type === 'aionrs') ??
+            enabled.find((a) => a.id.includes('aionrs')) ??
+            enabled.find((a) => a.id === 'bare:632f31d2' || a.id === 'aionui-assistant');
+          if (preferred?.id) {
+            assistantId = preferred.id;
+          } else {
+            assistantId = 'bare:632f31d2';
+          }
         }
       } catch {
-        // Fallback to bare:aionrs
-        assistantId = 'bare:aionrs';
+        assistantId = 'bare:632f31d2';
+        isAcp = false;
       }
 
       // 2. Resolve model from configured App Settings
@@ -825,14 +860,45 @@ export class OrgDelegationEngine {
           },
         };
         if (resolvedModel) {
-          createPayload.model = resolvedModel;
+          if (isAcp) {
+            (createPayload.extra as Record<string, unknown>).current_model_id = resolvedModel.use_model;
+          } else {
+            createPayload.model = resolvedModel;
+          }
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const createdConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as {
-          id?: string;
-        } | null;
-        convId = createdConv?.id;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const createdConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as {
+            id?: string;
+          } | null;
+          convId = createdConv?.id;
+        } catch (createErr) {
+          console.warn(
+            '[OrgDelegationEngine] Primary conversation creation failed, falling back to clean aionrs session:',
+            createErr
+          );
+          const fallbackPayload: Record<string, unknown> = {
+            name: `Org: ${opts.agent.name}`,
+            assistant: { id: 'bare:632f31d2' },
+            extra: {
+              workspace: effectiveWorkspace,
+              custom_workspace: isCustomWorkspace,
+            },
+          };
+          if (resolvedModel) {
+            fallbackPayload.model = resolvedModel;
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fallbackConv = (await ipcBridge.conversation.create.invoke(fallbackPayload as any)) as {
+            id?: string;
+          } | null;
+          convId = fallbackConv?.id;
+          if (!convId) {
+            throw createErr;
+          }
+        }
+
         if (!convId) {
           throw new Error('Failed to create conversation: backend returned no conversation id');
         }
@@ -844,21 +910,121 @@ export class OrgDelegationEngine {
           lastActivity = Date.now();
           if (data.step) {
             const stepNotice = `\n[Tool: ${data.tool || 'aionui-org'}] ${data.step}\n`;
-            collectedText.push(stepNotice);
-            opts.onStreamUpdate(stepNotice);
-            this.onAgentStream?.(stepNotice);
+            pushNotice(stepNotice);
           }
         });
       } catch {}
 
       unsubscribe = ipcBridge.conversation.responseStream.on((msg: unknown) => {
-        const m = msg as { conversation_id?: string; data?: unknown; type?: string; status?: string };
+        const m = msg as {
+          conversation_id?: string;
+          msg_id?: string;
+          data?: unknown;
+          type?: string;
+          status?: string;
+          position?: string;
+        };
         if (m.conversation_id !== convId) return;
+
+        // Skip user echo events (position === 'right') so they do not prematurely terminate turn
+        if (m.position === 'right') return;
+
+        if (DEBUG_ORG_STREAM) {
+          console.debug('[OrgDelegationEngine:stream]', {
+            convId: m.conversation_id,
+            type: m.type,
+            status: m.status,
+            position: m.position,
+            dataType: typeof m.data,
+            dataSnippet: typeof m.data === 'string' ? m.data.slice(0, 120) : m.data,
+          });
+        }
+
         if (m.type === 'error' || m.status === 'error') {
           const errText = typeof m.data === 'string' ? m.data : JSON.stringify(m.data);
-          collectedText.push(`\n[Inference Error: ${errText}]`);
+          pushNotice(`\n[Inference Error: ${errText}]\n`);
           finished = true;
-        } else if (m.data) {
+          checkFinish();
+          lastActivity = Date.now();
+          return;
+        }
+
+        if (m.type === 'tips') {
+          const tipData = m.data as { type?: string; content?: string } | undefined;
+          if (tipData?.type === 'error') {
+            const errContent = tipData.content || 'Unknown error';
+            pushNotice(`\n[Inference Error: ${errContent}]\n`);
+            finished = true;
+            checkFinish();
+          }
+          // Otherwise (info/warning/success, including code CLI_VERSION_NEWER/OLDER) ignore it entirely
+          lastActivity = Date.now();
+          return;
+        }
+
+        if (m.type === 'permission' || m.type === 'acp_permission' || m.type === 'ask') {
+          const rawData = m.data as Record<string, unknown> | undefined;
+          const toolCall = rawData?.tool_call as Record<string, unknown> | undefined;
+          const rawInput = toolCall?.raw_input as Record<string, unknown> | undefined;
+          const desc =
+            toolCall?.title ||
+            rawInput?.command ||
+            toolCall?.description ||
+            rawData?.title ||
+            rawData?.description ||
+            rawData?.command ||
+            rawData?.question ||
+            (typeof m.data === 'string' ? m.data : JSON.stringify(m.data ?? ''));
+
+          const permNotice = `\nAgent is waiting for permission/answer: ${desc || 'permission requested'}\n`;
+          pushNotice(permNotice);
+
+          const callId =
+            (toolCall?.tool_call_id as string) ||
+            (rawData?.call_id as string) ||
+            (rawData?.id as string) ||
+            (rawData?.request_id as string);
+
+          if (m.type === 'ask' || !callId) {
+            const err = `Agent requested input or permission (${desc || m.type}) which cannot be interactively answered during org execution.`;
+            pushNotice(`\n[Inference Error: ${err}]\n`);
+            runError = err;
+            finished = true;
+            checkFinish();
+          } else {
+            let confirmData: unknown = { value: 'proceed_once' };
+            if (m.type === 'acp_permission' && Array.isArray(rawData?.options)) {
+              const options = rawData.options as Array<{ option_id?: string; kind?: string; name?: string }>;
+              const allowOpt =
+                options.find((o) => o.kind === 'allow_once' || o.kind === 'allow_always') ||
+                options.find((o) => o.option_id?.includes('allow') || o.name?.toLowerCase().includes('allow')) ||
+                options[0];
+              if (allowOpt?.option_id) {
+                confirmData = { option_id: allowOpt.option_id };
+              }
+            }
+            ipcBridge.conversation.confirmation.confirm
+              .invoke({
+                conversation_id: convId,
+                call_id: callId,
+                msg_id: m.msg_id || '',
+                data: confirmData,
+                always_allow: false,
+              })
+              .catch((confirmErr) => {
+                const err = `Failed to auto-resolve permission for ${desc || callId}: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`;
+                pushNotice(`\n[Inference Error: ${err}]\n`);
+                runError = err;
+                finished = true;
+                checkFinish();
+              });
+          }
+          lastActivity = Date.now();
+          return;
+        }
+
+        // 1. Only collect reply text when m.type is 'content' or 'text' (NOT 'user_content'). Ignore every other type for collectedText/onStreamUpdate.
+        if (m.type === 'content' || m.type === 'text') {
           const text =
             typeof m.data === 'string'
               ? m.data
@@ -869,10 +1035,13 @@ export class OrgDelegationEngine {
             collectedText.push(text);
             opts.onStreamUpdate(text);
             this.onAgentStream?.(text);
+            contentCount++;
           }
         }
+
         if (m.status === 'finish' || m.type === 'finish') {
           finished = true;
+          checkFinish();
         }
         lastActivity = Date.now();
       });
@@ -897,7 +1066,13 @@ export class OrgDelegationEngine {
               custom_workspace: isCustomWorkspace,
             },
           };
-          if (resolvedModel) createPayload.model = resolvedModel;
+          if (resolvedModel) {
+            if (isAcp) {
+              (createPayload.extra as Record<string, unknown>).current_model_id = resolvedModel.use_model;
+            } else {
+              createPayload.model = resolvedModel;
+            }
+          }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const freshConv = (await ipcBridge.conversation.create.invoke(createPayload as any)) as {
             id?: string;
@@ -918,17 +1093,57 @@ export class OrgDelegationEngine {
         }
       }
 
-      // Wait for stream finish or 120s inactivity timeout
+      // Wait for stream finish or 45s inactivity timeout
       await new Promise<void>((resolve, reject) => {
-        const inactivityCheck = setInterval(() => {
+        let inactivityCheck: ReturnType<typeof setInterval> | undefined;
+        checkFinish = () => {
+          if (finished) {
+            if (inactivityCheck) clearInterval(inactivityCheck);
+            resolve();
+          }
+        };
+
+        if (finished) {
+          resolve();
+          return;
+        }
+
+        inactivityCheck = setInterval(async () => {
           if (finished) {
             clearInterval(inactivityCheck);
             resolve();
             return;
           }
-          if (Date.now() - lastActivity > 120000) {
+          if (Date.now() - lastActivity > 45000) {
             clearInterval(inactivityCheck);
-            reject(new Error('Org agent step timed out: no stream activity for 120s'));
+            // Check if backend recorded assistant messages before declaring timeout
+            try {
+              if (convId) {
+                const page = await ipcBridge.database.getConversationMessages.invoke({
+                  conversation_id: convId,
+                  limit: 5,
+                });
+                const assistantMsg = page?.items?.find(
+                  (item) =>
+                    item.position === 'left' &&
+                    item.content &&
+                    typeof item.content === 'object' &&
+                    'content' in item.content
+                );
+                const msgText =
+                  (assistantMsg?.content as { content?: string; text?: string })?.content ??
+                  (assistantMsg?.content as { content?: string; text?: string })?.text;
+                if (msgText) {
+                  collectedText.push(msgText);
+                  opts.onStreamUpdate(msgText);
+                  this.onAgentStream?.(msgText);
+                  contentCount++;
+                  resolve();
+                  return;
+                }
+              }
+            } catch {}
+            reject(new Error('Org agent step timed out: no stream activity for 45s'));
           }
         }, 500);
       });
@@ -940,7 +1155,32 @@ export class OrgDelegationEngine {
       unsubscribe?.();
     }
 
-    if (collectedText.length > 0) {
+    if (contentCount === 0 && this.lastBackendConversationId) {
+      try {
+        const page = await ipcBridge.database.getConversationMessages.invoke({
+          conversation_id: this.lastBackendConversationId,
+          limit: 5,
+        });
+        const assistantMsg = page?.items?.find(
+          (item) =>
+            item.position === 'left' && item.content && typeof item.content === 'object' && 'content' in item.content
+        );
+        const msgText =
+          (assistantMsg?.content as { content?: string; text?: string })?.content ??
+          (assistantMsg?.content as { content?: string; text?: string })?.text;
+        if (msgText) {
+          collectedText.push(msgText);
+          contentCount++;
+        }
+      } catch {}
+    }
+
+    const hasInferenceError = collectedText.some((t) => t.includes('[Inference Error:'));
+    if (contentCount > 0) {
+      return collectedText.join('');
+    }
+
+    if (hasInferenceError) {
       return collectedText.join('');
     }
 
@@ -948,7 +1188,12 @@ export class OrgDelegationEngine {
       return `Hello! I am ${opts.agent.name} (${opts.agent.title || opts.agent.role}). I received your directive: "${opts.userDirective}".\n\n(Notice: Model provider connection reported: ${runError}. Please configure your API key or active model under Settings -> Model).`;
     }
 
-    return `Hello! I am ${opts.agent.name} (${opts.agent.title || opts.agent.role}). I am ready and on duty. How can I assist you with our team's objectives?`;
+    const noReplyMsg =
+      'The agent finished without producing a reply. Check the model/provider settings and the org MCP server.';
+    if (collectedText.length > 0) {
+      return `${collectedText.join('')}\n\n${noReplyMsg}`;
+    }
+    return noReplyMsg;
   }
 
   /**
@@ -1006,7 +1251,8 @@ export class OrgDelegationEngine {
     targetTeamId?: string,
     projectId?: string,
     useRealExecution = false,
-    fallbackPath?: string
+    fallbackPath?: string,
+    conversationId?: string
   ): Promise<DelegationExecutionResult> {
     this.simulationMode = !useRealExecution;
     const directiveId = `dir-${Date.now()}`;
@@ -1797,6 +2043,7 @@ export class OrgDelegationEngine {
             userDirective: userPrompt,
             workspacePath: rootCeo.workspacePath || '',
             onStreamUpdate: (text) => this.onAgentStream?.(text),
+            conversationId,
           });
         } catch {
           ceoSynthesis = `Executive strategic roadmap formulated by ${rootCeo.ceoAgent.name}.`;
@@ -2057,6 +2304,7 @@ export class OrgDelegationEngine {
         createdTeams: createdTeams.length > 0 ? createdTeams : undefined,
         createdProjects: createdProjects.length > 0 ? createdProjects : undefined,
         createdMembers: createdMembers.length > 0 ? createdMembers : undefined,
+        backendConversationId: this.lastBackendConversationId,
       };
     }
 
@@ -2120,121 +2368,177 @@ export class OrgDelegationEngine {
     this.updateNodeStatus?.(targetTeam.teamLeadAgent.id, 'working');
     this.updateNodeStatus?.(targetTeam.id, 'department_standby');
 
-    // Team Lead & HR -> Specialists
-    addLog({
-      depth: 3,
-      fromName: targetTeam.hrCoordinatorAgent.name,
-      fromRole: 'HR & Workload Coordinator',
-      toName: targetTeam.specialistMembers.map((s) => s.name).join(', ') || 'Specialists',
-      toRole: 'Specialist Roster',
-      message: `Assigning execution across ${targetTeam.specialistMembers.length} specialists inside ${projectFolder || 'workspace'}...`,
-      status: 'working',
-    });
+    const backendTeamId =
+      (foundProject && 'backendTeamId' in foundProject ? (foundProject as OrgProject).backendTeamId : undefined) ||
+      targetTeam?.backendTeamId;
 
-    this.updateNodeStatus?.(targetTeam.hrCoordinatorAgent.id, 'department_standby');
-    this.updateNodeStatus?.(targetTeam.id, 'department_standby');
-
-    // Specialist or Team Lead execution
     const specialistOutputs: string[] = [];
-    if (targetTeam.specialistMembers.length === 0) {
-      const leadAgent = targetTeam.teamLeadAgent || targetDept.departmentCeoAgent;
-      this.updateNodeStatus?.(leadAgent.id, 'working');
+
+    if (backendTeamId) {
+      const teamDisplayName =
+        targetTeam?.name ||
+        (foundProject && 'name' in foundProject ? (foundProject as OrgProject).name : 'Project Team');
+
       addLog({
-        depth: 4,
+        depth: 3,
         fromName: targetDept.departmentCeoAgent.name,
         fromRole: 'Department CEO',
-        toName: leadAgent.name,
-        toRole: leadAgent.title || 'Team Manager',
-        message: `Executing deliverable in project workspace "${targetTeam.linkedProjectName || projectFolder || 'Main'}"...`,
+        toName: teamDisplayName,
+        toRole: 'AionCore Team Lead',
+        message: `Forwarding directive to AionCore team "${teamDisplayName}" (ID: ${backendTeamId}): "${userPrompt}"`,
         status: 'working',
       });
+
+      this.updateNodeStatus?.(targetTeam?.id || targetDept.id, 'working');
+
       try {
-        const leadOutput = await this.runOrgAgentStep({
-          agent: leadAgent,
-          systemPrompt: `You are ${leadAgent.name}, leading ${targetTeam.name}. Operating in workspace: ${projectFolder}. Coordinate and address the user's directive directly.`,
-          userDirective: userPrompt,
-          workspacePath: projectFolder,
-          onStreamUpdate: (text) => {
-            this.onAgentStream?.(text);
-          },
+        await ipcBridge.team.sendMessage.invoke({
+          team_id: backendTeamId,
+          input: userPrompt,
         });
-        if (leadOutput) {
-          specialistOutputs.push(leadOutput);
-        }
-        this.updateNodeStatus?.(leadAgent.id, 'recently_finished');
+
+        this.updateNodeStatus?.(targetTeam?.id || targetDept.id, 'recently_finished');
+        const completionMsg = `Dispatched directive to team "${teamDisplayName}". Execution scheduled via AionCore team engine.`;
         addLog({
           depth: 4,
-          fromName: leadAgent.name,
-          fromRole: leadAgent.title || 'Team Manager',
+          fromName: teamDisplayName,
+          fromRole: 'AionCore Team Lead',
           toName: targetDept.departmentCeoAgent.name,
           toRole: 'Department CEO',
-          message: leadOutput || `Completed deliverable in ${projectFolder || 'workspace'}.`,
+          message: completionMsg,
           status: 'completed',
         });
+        specialistOutputs.push(completionMsg);
       } catch (err) {
+        this.updateNodeStatus?.(targetTeam?.id || targetDept.id, 'error');
+        const errMsg = `Failed to forward directive to team "${teamDisplayName}": ${err instanceof Error ? err.message : String(err)}`;
         addLog({
           depth: 4,
-          fromName: leadAgent.name,
-          fromRole: leadAgent.title || 'Team Manager',
+          fromName: teamDisplayName,
+          fromRole: 'AionCore Team Lead',
           toName: targetDept.departmentCeoAgent.name,
           toRole: 'Department CEO',
-          message: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          message: errMsg,
           status: 'error',
         });
+        throw err;
       }
     } else {
-      for (let i = 0; i < Math.min(targetTeam.specialistMembers.length, 3); i++) {
-        const spec = targetTeam.specialistMembers[i];
+      // Team Lead & HR -> Specialists (legacy plain-conversation path)
+      addLog({
+        depth: 3,
+        fromName: targetTeam.hrCoordinatorAgent.name,
+        fromRole: 'HR & Workload Coordinator',
+        toName: targetTeam.specialistMembers.map((s) => s.name).join(', ') || 'Specialists',
+        toRole: 'Specialist Roster',
+        message: `Assigning execution across ${targetTeam.specialistMembers.length} specialists inside ${projectFolder || 'workspace'}...`,
+        status: 'working',
+      });
 
-        this.updateNodeStatus?.(spec.id, 'queued_next');
+      this.updateNodeStatus?.(targetTeam.hrCoordinatorAgent.id, 'department_standby');
+      this.updateNodeStatus?.(targetTeam.id, 'department_standby');
 
+      // Specialist or Team Lead execution
+      if (targetTeam.specialistMembers.length === 0) {
+        const leadAgent = targetTeam.teamLeadAgent || targetDept.departmentCeoAgent;
+        this.updateNodeStatus?.(leadAgent.id, 'working');
         addLog({
           depth: 4,
-          fromName: targetTeam.teamLeadAgent.name,
-          fromRole: 'Team Manager',
-          toName: spec.name,
-          toRole: spec.title || 'Specialist',
+          fromName: targetDept.departmentCeoAgent.name,
+          fromRole: 'Department CEO',
+          toName: leadAgent.name,
+          toRole: leadAgent.title || 'Team Manager',
           message: `Executing deliverable in project workspace "${targetTeam.linkedProjectName || projectFolder || 'Main'}"...`,
           status: 'working',
         });
-
-        this.updateNodeStatus?.(spec.id, 'working');
-
-        const workspacePath = targetProjectPath || targetTeam.workspacePath || targetDept.workspacePath || '';
-
         try {
-          // eslint-disable-next-line no-await-in-loop
-          const output = await this.runOrgAgentStep({
-            agent: spec,
-            systemPrompt: spec.title || spec.role,
+          const leadOutput = await this.runOrgAgentStep({
+            agent: leadAgent,
+            systemPrompt: `You are ${leadAgent.name}, leading ${targetTeam.name}. Operating in workspace: ${projectFolder}. Coordinate and address the user's directive directly.`,
             userDirective: userPrompt,
-            workspacePath,
+            workspacePath: projectFolder,
             onStreamUpdate: (text) => {
               this.onAgentStream?.(text);
             },
           });
-          specialistOutputs.push(output);
-
-          this.updateNodeStatus?.(spec.id, 'recently_finished');
+          if (leadOutput) {
+            specialistOutputs.push(leadOutput);
+          }
+          this.updateNodeStatus?.(leadAgent.id, 'recently_finished');
           addLog({
             depth: 4,
-            fromName: spec.name,
-            fromRole: spec.title || 'Specialist',
-            toName: targetTeam.teamLeadAgent.name,
-            toRole: 'Team Manager',
-            message: output || `Completed deliverable in ${workspacePath || 'workspace'}.`,
+            fromName: leadAgent.name,
+            fromRole: leadAgent.title || 'Team Manager',
+            toName: targetDept.departmentCeoAgent.name,
+            toRole: 'Department CEO',
+            message: leadOutput || `Completed deliverable in ${projectFolder || 'workspace'}.`,
             status: 'completed',
           });
         } catch (err) {
           addLog({
             depth: 4,
-            fromName: spec.name,
-            fromRole: spec.title || 'Specialist',
-            toName: targetTeam.teamLeadAgent.name,
-            toRole: 'Team Manager',
+            fromName: leadAgent.name,
+            fromRole: leadAgent.title || 'Team Manager',
+            toName: targetDept.departmentCeoAgent.name,
+            toRole: 'Department CEO',
             message: `Error: ${err instanceof Error ? err.message : String(err)}`,
             status: 'error',
           });
+        }
+      } else {
+        for (let i = 0; i < Math.min(targetTeam.specialistMembers.length, 3); i++) {
+          const spec = targetTeam.specialistMembers[i];
+
+          this.updateNodeStatus?.(spec.id, 'queued_next');
+
+          addLog({
+            depth: 4,
+            fromName: targetTeam.teamLeadAgent.name,
+            fromRole: 'Team Manager',
+            toName: spec.name,
+            toRole: spec.title || 'Specialist',
+            message: `Executing deliverable in project workspace "${targetTeam.linkedProjectName || projectFolder || 'Main'}"...`,
+            status: 'working',
+          });
+
+          this.updateNodeStatus?.(spec.id, 'working');
+
+          const workspacePath = targetProjectPath || targetTeam.workspacePath || targetDept.workspacePath || '';
+
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const output = await this.runOrgAgentStep({
+              agent: spec,
+              systemPrompt: spec.title || spec.role,
+              userDirective: userPrompt,
+              workspacePath,
+              onStreamUpdate: (text) => {
+                this.onAgentStream?.(text);
+              },
+            });
+            specialistOutputs.push(output);
+
+            this.updateNodeStatus?.(spec.id, 'recently_finished');
+            addLog({
+              depth: 4,
+              fromName: spec.name,
+              fromRole: spec.title || 'Specialist',
+              toName: targetTeam.teamLeadAgent.name,
+              toRole: 'Team Manager',
+              message: output || `Completed deliverable in ${workspacePath || 'workspace'}.`,
+              status: 'completed',
+            });
+          } catch (err) {
+            addLog({
+              depth: 4,
+              fromName: spec.name,
+              fromRole: spec.title || 'Specialist',
+              toName: targetTeam.teamLeadAgent.name,
+              toRole: 'Team Manager',
+              message: `Error: ${err instanceof Error ? err.message : String(err)}`,
+              status: 'error',
+            });
+          }
         }
       }
     }
@@ -2268,6 +2572,7 @@ export class OrgDelegationEngine {
       involvedDepartmentIds: [targetDept.id],
       involvedTeamIds: [targetTeam.id],
       createdTeams: newlyCreatedTeams,
+      backendConversationId: this.lastBackendConversationId,
     };
   }
 }

@@ -190,6 +190,8 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'assign_task',
       'list_org',
       'get_status',
+      'get_project_status',
+      'list_project_tasks',
       'ask_user',
     ]);
     if (!allowed.has(tool)) {
@@ -199,7 +201,14 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       };
     }
   } else if (role === 'project_head') {
-    const allowed = new Set(['assign_task', 'get_status', 'list_org', 'ask_user']);
+    const allowed = new Set([
+      'assign_task',
+      'get_status',
+      'get_project_status',
+      'list_project_tasks',
+      'list_org',
+      'ask_user',
+    ]);
     if (!allowed.has(tool)) {
       return {
         success: false,
@@ -210,7 +219,13 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
 
   // 2. Folder boundaries enforcement
   const masterRoot = await getMasterRoot();
-  if (!masterRoot && tool !== 'ask_user' && tool !== 'get_status') {
+  if (
+    !masterRoot &&
+    tool !== 'ask_user' &&
+    tool !== 'get_status' &&
+    tool !== 'get_project_status' &&
+    tool !== 'list_project_tasks'
+  ) {
     return {
       success: false,
       error: 'No organization master root is configured. Please configure a master root folder first.',
@@ -276,10 +291,28 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
   }
 
   if (tool === 'assign_task') {
-    if (!args.target || !args.task) {
-      return { success: false, error: 'assign_task requires "target" and "task".' };
+    const target = args.project_id || args.target;
+    const task = args.text || args.task;
+    if (!target || !task) {
+      return { success: false, error: 'assign_task requires "project_id" (or "target") and "text" (or "task").' };
     }
-    broadcastOrgLiveStep({ step: `Delegating task to ${args.target}: ${args.task}`, tool, args });
+    broadcastOrgLiveStep({ step: `Delegating task to ${target}: ${task}`, tool, args });
+  }
+
+  if (tool === 'get_project_status') {
+    const target = args.project_id || args.projectId || args.target;
+    if (!target) {
+      return { success: false, error: 'get_project_status requires "project_id".' };
+    }
+    broadcastOrgLiveStep({ step: `Retrieving project status for ${target}`, tool, args });
+  }
+
+  if (tool === 'list_project_tasks') {
+    const target = args.project_id || args.projectId || args.target;
+    if (!target) {
+      return { success: false, error: 'list_project_tasks requires "project_id".' };
+    }
+    broadcastOrgLiveStep({ step: `Listing project tasks for ${target}`, tool, args });
   }
 
   if (tool === 'propose_structure') {

@@ -12,6 +12,7 @@ import type { OrgProject } from '@/types/organization';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { useOrgStore } from '../store/useOrgStore';
 import { validateWithinMaster, getDefaultProjectPath } from '../utils/orgPathUtils';
+import { createProjectBackendTeam } from '../store/orgBackendTeam';
 
 type OrgProjectModalProps = {
   visible: boolean;
@@ -37,6 +38,7 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<NonNullable<OrgProject['status']>>('active');
   const [pathScopeError, setPathScopeError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const masterRoot = hierarchy.rootCeo.workspacePath || null;
 
@@ -90,10 +92,12 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
   }, [teamId, teamOptions]);
 
   const handleSave = async () => {
-    if (!name.trim() || !departmentId) return;
+    if (!name.trim() || !departmentId || saving) return;
 
-    if (path.trim() && masterRoot) {
-      const check = await validateWithinMaster(path, masterRoot);
+    const effectivePath = path.trim() || (masterRoot ? getDefaultProjectPath(masterRoot, name.trim()) : '');
+
+    if (effectivePath && masterRoot) {
+      const check = await validateWithinMaster(effectivePath, masterRoot);
       if (!check.valid) {
         Message.error(check.error || 'Project folder must be inside the organization master folder');
         setPathScopeError(check.error || 'Project folder must be inside the organization master folder');
@@ -101,20 +105,39 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
       }
     }
 
+    setSaving(true);
+    let backendTeamId = project?.backendTeamId;
+
     try {
+      if (!backendTeamId) {
+        if (!effectivePath) {
+          throw new Error('Project folder path is required to initialize the project team.');
+        }
+        backendTeamId = await createProjectBackendTeam({
+          name: name.trim(),
+          workspacePath: effectivePath,
+          description: description.trim() || undefined,
+          masterRoot,
+        });
+      }
+
       upsertOrgProject({
         id: project?.id ?? `proj-${Date.now()}`,
         name: name.trim(),
         departmentId,
         teamIds: teamId ? [teamId] : [],
-        path: path.trim() || undefined,
+        path: effectivePath || undefined,
+        workspacePath: effectivePath || undefined,
         description: description.trim() || undefined,
         status,
+        backendTeamId,
       });
       Message.success(t('team.organization.projectSaved', { defaultValue: 'Project saved' }));
       onClose();
     } catch (error) {
       Message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -151,8 +174,15 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
             ) : null}
           </div>
           <div className='flex items-center gap-8px'>
-            <Button onClick={onClose}>{t('team.organization.cancel', { defaultValue: 'Cancel' })}</Button>
-            <Button type='primary' disabled={!name.trim() || !departmentId} onClick={handleSave}>
+            <Button onClick={onClose} disabled={saving}>
+              {t('team.organization.cancel', { defaultValue: 'Cancel' })}
+            </Button>
+            <Button
+              type='primary'
+              loading={saving}
+              disabled={!name.trim() || !departmentId || saving}
+              onClick={handleSave}
+            >
               {t('team.organization.save', { defaultValue: 'Save' })}
             </Button>
           </div>

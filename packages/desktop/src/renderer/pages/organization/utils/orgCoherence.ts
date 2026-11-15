@@ -41,6 +41,7 @@ export function normalizeOrgProject(project: OrgProject): OrgProject {
     description: normalizeText(project.description),
     path: normalizePath(project.path),
     status: (project.status ?? 'active') as 'active' | 'dormant' | 'done',
+    backendTeamId: project.backendTeamId ? project.backendTeamId.trim() : undefined,
   };
 }
 

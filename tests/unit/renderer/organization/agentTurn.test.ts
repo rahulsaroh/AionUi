@@ -85,6 +85,43 @@ describe('runAgentTurn', () => {
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
 
+  it('forwards conversation.backendConversationId to runCeoTurn', async () => {
+    mocks.runCeoTurnMock.mockReturnValue({
+      events: (async function* () {
+        yield { type: 'done', data: { finalSynthesis: 'ok', backendConversationId: 'backend-conv-123' } };
+      })(),
+      cancel: vi.fn(async () => {}),
+    });
+
+    const result = runAgentTurn({
+      hierarchy,
+      projects,
+      threadId: 't1',
+      target: { type: 'ceo', id: 'root-ceo' },
+      userText: 'hello',
+      agent: hierarchy.rootCeo.ceoAgent,
+      workspacePath: '/root',
+      systemContext: 'ctx',
+      isCeo: true,
+      conversation: {
+        id: 'conv-1',
+        title: 'CEO Chat',
+        targetNodeId: 'root-ceo',
+        backendConversationId: 'backend-conv-123',
+        timestamp: Date.now(),
+        messages: [],
+      },
+    });
+
+    const events = [];
+    for await (const ev of result.events) events.push(ev);
+    expect(mocks.runCeoTurnMock).toHaveBeenCalledWith(
+      't1',
+      'hello',
+      expect.objectContaining({ conversationId: 'backend-conv-123' })
+    );
+  });
+
   it('routes non-CEO turns through executeDirectMessage, not runCeoTurn', async () => {
     mocks.executeDirectMessageMock.mockResolvedValue('direct response');
     const agent = {

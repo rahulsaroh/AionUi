@@ -26,6 +26,7 @@ export interface AgentTurnEvent {
     createdEntities?: CeoEvent['data']['createdEntities'];
     error?: string;
     finalSynthesis?: string;
+    backendConversationId?: string;
   };
 }
 
@@ -73,6 +74,7 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
       useRealExecution: true,
       onNodeStatusUpdate,
       signal,
+      conversationId: conversation?.backendConversationId,
     });
     return {
       events: (async function* () {
@@ -109,7 +111,13 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
       if (response) {
         yield { type: 'text-delta', data: { text: response } } as AgentTurnEvent;
       }
-      yield { type: 'done', data: { finalSynthesis: response || '' } } as AgentTurnEvent;
+      yield {
+        type: 'done',
+        data: {
+          finalSynthesis: response || '',
+          backendConversationId: engine.lastBackendConversationId,
+        },
+      } as AgentTurnEvent;
     } catch (err) {
       if (cancelled) return;
       yield {

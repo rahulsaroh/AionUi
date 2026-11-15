@@ -69,4 +69,23 @@ describe('runCeoTurn Service', () => {
     expect(createdEvent).toBeDefined();
     expect(createdEvent?.data.createdEntities?.departments?.length).toBeGreaterThan(0);
   });
+
+  it('passes conversationId through to directive execution and emits on done', async () => {
+    const events: CeoEvent[] = [];
+    const { events: iterator } = runCeoTurn('test-thread', 'Hello CEO', {
+      hierarchy: dummyHierarchy,
+      projects: dummyProjects,
+      userPrompt: 'Hello CEO',
+      useRealExecution: false,
+      conversationId: 'existing-conv-456',
+    });
+
+    for await (const ev of iterator) {
+      events.push(ev);
+    }
+
+    const doneEvent = events.find((e) => e.type === 'done');
+    expect(doneEvent).toBeDefined();
+    expect(doneEvent?.data).toHaveProperty('finalSynthesis');
+  });
 });

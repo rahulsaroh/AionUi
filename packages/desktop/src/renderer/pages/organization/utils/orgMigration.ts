@@ -103,6 +103,7 @@ function normalizeProjectV2(project: OrgProject): OrgProject {
     status: (project.status ?? 'active') as 'active' | 'dormant' | 'done',
     path: project.path,
     workspacePath: project.workspacePath,
+    backendTeamId: project.backendTeamId,
   };
 }
 
