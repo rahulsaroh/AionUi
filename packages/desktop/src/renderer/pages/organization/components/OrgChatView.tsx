@@ -17,6 +17,7 @@ import { runAgentTurn, buildAgentSystemContext, type OrgChatTarget } from '../ut
 import { OrgMasterFolderModal } from './OrgMasterFolderModal';
 import { OrgProposalCard, type StructureProposalData } from './OrgProposalCard';
 import { setupOrgToolBridgeListener, onStructureProposed } from '../store/orgToolExecutor';
+import { onOrgPermissionRequested, type OrgPermissionRequest } from '../utils/orgDelegationEngine';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import { computeAutoTitle } from '../utils/orgCoherence';
 import type {
@@ -91,6 +92,7 @@ export const OrgChatView: React.FC = () => {
   const [errorState, setErrorState] = useState<{ message: string; threadId: string } | null>(null);
   const [draftsByThreadId, setDraftsByThreadId] = useState<Record<string, string>>({});
   const [activeProposal, setActiveProposal] = useState<StructureProposalData | null>(null);
+  const [activePermission, setActivePermission] = useState<OrgPermissionRequest | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<(() => Promise<void>) | null>(null);
@@ -99,6 +101,9 @@ export const OrgChatView: React.FC = () => {
     const unsubBridge = setupOrgToolBridgeListener();
     const unsubProposal = onStructureProposed((proposal) => {
       setActiveProposal(proposal);
+    });
+    const unsubPermission = onOrgPermissionRequested((req) => {
+      setActivePermission(req);
     });
     let unsubLive: (() => void) | undefined;
     try {
@@ -112,6 +117,7 @@ export const OrgChatView: React.FC = () => {
     return () => {
       unsubBridge();
       unsubProposal();
+      unsubPermission();
       unsubLive?.();
     };
   }, []);
@@ -1293,6 +1299,72 @@ export const OrgChatView: React.FC = () => {
                       }
                     }}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Active permission request card */}
+            {activePermission && (
+              <div className='flex gap-12px max-w-800px w-full mr-auto'>
+                <div className='size-32px rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center justify-center text-14px shrink-0 mt-2px shadow-sm'>
+                  ⚠️
+                </div>
+                <div className='flex flex-col gap-4px min-w-0 max-w-[90%]'>
+                  <div className='text-11px font-mono text-t-tertiary px-2px'>Agent • Permission Request</div>
+                  <div className='p-14px rounded-8px border border-orange-500/30 bg-bg-2 shadow-sm flex flex-col gap-10px'>
+                    <div className='text-13px font-semibold text-t-primary'>{activePermission.description}</div>
+                    <div className='text-12px text-t-secondary'>
+                      This agent action requires confirmation before proceeding.
+                    </div>
+                    <div className='flex items-center gap-8px flex-wrap pt-4px'>
+                      {activePermission.options && activePermission.options.length > 0 ? (
+                        activePermission.options.map((opt) => (
+                          <Button
+                            key={opt.option_id || opt.name}
+                            type={
+                              opt.kind?.includes('allow') || opt.option_id?.includes('allow') ? 'primary' : 'default'
+                            }
+                            status={
+                              opt.kind?.includes('deny') || opt.option_id?.includes('deny') ? 'danger' : 'default'
+                            }
+                            size='small'
+                            onClick={async () => {
+                              const handler = activePermission.respond;
+                              setActivePermission(null);
+                              await handler(opt.option_id);
+                            }}
+                          >
+                            {opt.name || opt.option_id || 'Allow'}
+                          </Button>
+                        ))
+                      ) : (
+                        <>
+                          <Button
+                            type='primary'
+                            size='small'
+                            onClick={async () => {
+                              const handler = activePermission.respond;
+                              setActivePermission(null);
+                              await handler('proceed_once');
+                            }}
+                          >
+                            Allow Once
+                          </Button>
+                          <Button
+                            size='small'
+                            status='danger'
+                            onClick={async () => {
+                              const handler = activePermission.respond;
+                              setActivePermission(null);
+                              await handler('deny');
+                            }}
+                          >
+                            Deny
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

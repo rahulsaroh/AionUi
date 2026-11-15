@@ -380,37 +380,70 @@ export async function executeOrgToolInStore(
             ? store.projects.find((p) => p.id === String(args.project_id).trim())
             : undefined);
 
+      const isTargetingProject = Boolean(
+        proj || args.projectId || args.project_id || store.projects.some((p) => p.id === resolvedTargetId)
+      );
+
       const resolvedProjectId = matchedProj?.id || args.projectId || args.project_id;
       const backendTeamId = matchedProj?.backendTeamId;
+
+      if (isTargetingProject && !backendTeamId) {
+        return {
+          success: false,
+          error:
+            'Project has no backend team configured. Create or repair the project team first before assigning tasks.',
+          dispatched: false,
+          target: resolvedTargetId,
+          targetName,
+          projectId: resolvedProjectId,
+          status: 'error',
+        };
+      }
 
       let enrichedText = taskText;
       const approvedLineup = args.approved_lineup;
       if (approvedLineup) {
-        let approvalStr = '';
-        if (Array.isArray(approvedLineup)) {
-          approvalStr = approvedLineup
-            .map((item) => {
-              if (typeof item === 'string') {
-                return item.startsWith('User approved:') ? item : `User approved: ${item}`;
-              }
-              if (item && typeof item === 'object') {
-                const name = (item as { name?: string }).name || 'Specialist';
-                const assistant =
-                  (item as { assistant?: string }).assistant ||
-                  (item as { assistant_id?: string }).assistant_id ||
-                  'default';
-                return `User approved: add ${name} using ${assistant}`;
-              }
-              return 'User approved: add member';
-            })
-            .join('\n');
-        } else if (typeof approvedLineup === 'string') {
-          approvalStr = approvedLineup.startsWith('User approved:')
-            ? approvedLineup
-            : `User approved: ${approvedLineup}`;
-        }
-        if (approvalStr) {
-          enrichedText = `${enrichedText}\n\n${approvalStr}`;
+        // Validate approved_lineup against approved lineups recorded in the store
+        const approvedRecords = store.approvedLineups || [];
+        const isApproved = approvedRecords.some((record) => {
+          if (!record) return false;
+          // Match by ID if approved_lineup is a string matching record.id
+          if (typeof approvedLineup === 'string' && record.id === approvedLineup) return true;
+          // Match by stringified comparison
+          try {
+            return JSON.stringify(record.lineup) === JSON.stringify(approvedLineup);
+          } catch {
+            return false;
+          }
+        });
+
+        if (isApproved) {
+          let approvalStr = '';
+          if (Array.isArray(approvedLineup)) {
+            approvalStr = approvedLineup
+              .map((item) => {
+                if (typeof item === 'string') {
+                  return item.startsWith('User approved:') ? item : `User approved: ${item}`;
+                }
+                if (item && typeof item === 'object') {
+                  const name = (item as { name?: string }).name || 'Specialist';
+                  const assistant =
+                    (item as { assistant?: string }).assistant ||
+                    (item as { assistant_id?: string }).assistant_id ||
+                    'default';
+                  return `User approved: add ${name} using ${assistant}`;
+                }
+                return 'User approved: add member';
+              })
+              .join('\n');
+          } else if (typeof approvedLineup === 'string') {
+            approvalStr = approvedLineup.startsWith('User approved:')
+              ? approvedLineup
+              : `User approved: ${approvedLineup}`;
+          }
+          if (approvalStr) {
+            enrichedText = `${enrichedText}\n\n${approvalStr}`;
+          }
         }
       }
 
@@ -421,9 +454,17 @@ export async function executeOrgToolInStore(
             input: enrichedText,
           });
         } catch (err) {
-          if (!isNetworkRefused(err)) {
-            throw err;
-          }
+          return {
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+            dispatched: false,
+            target: resolvedTargetId,
+            targetName,
+            task: enrichedText,
+            projectId: resolvedProjectId,
+            backendTeamId,
+            status: 'error',
+          };
         }
       }
 

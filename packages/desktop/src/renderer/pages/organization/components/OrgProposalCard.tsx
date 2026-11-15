@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Card, Button, Typography, Space, Input, Message } from '@arco-design/web-react';
 import { FolderClose, Check, Close, Edit, Peoples } from '@icon-park/react';
 import { executeOrgToolInStore } from '../store/orgToolExecutor';
+import { recordApprovedLineupInStore } from '../store/useOrgStore';
 import type { ProposalCardData } from '../utils/rootCeoAgent';
 import type { OrgCreatedEntityRef } from '@/types/organization';
 
@@ -100,6 +101,9 @@ export const OrgProposalCard: React.FC<OrgProposalCardProps> = ({ cardData, onAp
     const createdRefs: OrgCreatedEntityRef[] = [];
 
     try {
+      if (proposal.suggestedMembers && proposal.suggestedMembers.length > 0) {
+        recordApprovedLineupInStore(proposal.suggestedMembers);
+      }
       for (const dept of proposal.departments) {
         let deptId = '';
         if (dept.name && dept.folder) {

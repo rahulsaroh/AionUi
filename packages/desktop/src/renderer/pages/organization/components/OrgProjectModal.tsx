@@ -9,6 +9,7 @@ import { Button, Input, Message, Modal, Select } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import type { OrgProject } from '@/types/organization';
+import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { useOrgStore } from '../store/useOrgStore';
 import { validateWithinMaster, getDefaultProjectPath } from '../utils/orgPathUtils';
@@ -30,6 +31,14 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
+  let user: { id?: string } | undefined;
+  try {
+    const auth = useAuth();
+    user = auth.user;
+  } catch {
+    // In standalone or test environments without AuthProvider
+    user = undefined;
+  }
   const { hierarchy, upsertOrgProject, deleteOrgProject } = useOrgStore();
   const [name, setName] = useState('');
   const [departmentId, setDepartmentId] = useState('');
@@ -118,6 +127,7 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
           workspacePath: effectivePath,
           description: description.trim() || undefined,
           masterRoot,
+          userId: user?.id ?? 'system_default_user',
         });
       }
 

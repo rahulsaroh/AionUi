@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { executeOrgToolInStore, onStructureProposed } from '@/renderer/pages/organization/store/orgToolExecutor';
 import { getOrgStoreSnapshot, setOrgStoreSnapshot } from '@/renderer/pages/organization/store/useOrgStore';
 import { org } from '@/common/adapter/ipcBridge';
+import { ipcBridge } from '@/common';
 
 describe('executeOrgToolInStore (Step 1 & Step 2)', () => {
   beforeEach(() => {
@@ -37,6 +38,25 @@ describe('executeOrgToolInStore (Step 1 & Step 2)', () => {
       projects: [],
       members: [],
     });
+
+    vi.spyOn(ipcBridge.assistants.list, 'invoke').mockResolvedValue([
+      {
+        id: 'ast-default',
+        name: 'Lead Assistant',
+        enabled: true,
+        team_selectable: true,
+        agent: { type: 'claude', source: 'builtin' },
+      } as any,
+    ]);
+    vi.spyOn(ipcBridge.team.create, 'invoke').mockImplementation(async (payload: any) => ({
+      id: `team-${payload.name || 'test'}`,
+      name: payload.name,
+      workspace: payload.workspace,
+    }));
+    vi.spyOn(ipcBridge.team.sendMessage, 'invoke').mockResolvedValue({
+      enqueue_status: 'accepted',
+      message_id: 'msg-accepted',
+    } as any);
 
     vi.spyOn(org, 'getMasterRoot').mockResolvedValue('/company/master');
     vi.spyOn(org, 'assertWithinScope').mockImplementation(async (targetPath: string, allowedRoot?: string) => {

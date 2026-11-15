@@ -18,6 +18,7 @@ import { scanFolderCompact } from '@process/services/org/scanFolder';
 import { handleOrgToolRequest, setOrgToolExecutor } from '@process/resources/builtinMcp/orgBridgeServer';
 import { setMasterRootForTesting, resetMasterRoot } from '@process/services/org/orgScope';
 import { org } from '@/common/adapter/ipcBridge';
+import { ipcBridge } from '@/common';
 import type { OrgStorageBundle } from '@/types/organization';
 
 describe('Root CEO Tools Acceptance Tests (Steps 1-7)', () => {
@@ -93,6 +94,25 @@ describe('Root CEO Tools Acceptance Tests (Steps 1-7)', () => {
     });
 
     // Mock IPC bridge
+    vi.spyOn(ipcBridge.assistants.list, 'invoke').mockResolvedValue([
+      {
+        id: 'ast-default',
+        name: 'Lead Assistant',
+        enabled: true,
+        team_selectable: true,
+        agent: { type: 'claude', source: 'builtin' },
+      } as any,
+    ]);
+    vi.spyOn(ipcBridge.team.create, 'invoke').mockImplementation(async (payload: any) => ({
+      id: `team-${payload.name || 'test'}`,
+      name: payload.name,
+      workspace: payload.workspace,
+    }));
+    vi.spyOn(ipcBridge.team.sendMessage, 'invoke').mockResolvedValue({
+      enqueue_status: 'accepted',
+      message_id: 'msg-accepted',
+    } as any);
+
     vi.spyOn(org, 'getMasterRoot').mockResolvedValue(tempMasterRoot);
     vi.spyOn(org, 'assertWithinScope').mockImplementation(async (targetPath: string, allowedRoot?: string) => {
       const root = allowedRoot || tempMasterRoot;

@@ -6,8 +6,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { executeOrgToolInStore } from '@/renderer/pages/organization/store/orgToolExecutor';
-import { getOrgStoreSnapshot, setOrgStoreSnapshot } from '@/renderer/pages/organization/store/useOrgStore';
-import { createProjectBackendTeam } from '@/renderer/pages/organization/store/orgBackendTeam';
+import {
+  getOrgStoreSnapshot,
+  setOrgStoreSnapshot,
+  recordApprovedLineupInStore,
+} from '@/renderer/pages/organization/store/useOrgStore';
+import { createProjectBackendTeam, pickLeadAssistant } from '@/renderer/pages/organization/store/orgBackendTeam';
 import { normalizeOrgProject } from '@/renderer/pages/organization/utils/orgCoherence';
 import { migrateOrgStorageV2 } from '@/renderer/pages/organization/utils/orgMigration';
 import { ipcBridge } from '@/common';
@@ -147,6 +151,63 @@ describe('Organization Backend Teams Integration (Real AionCore Team Engine)', (
         })
       ).rejects.toThrow(/Disk permission denied on backend/);
     });
+
+    it('throws "AionCore backend is not reachable" on network error in pickLeadAssistant', async () => {
+      vi.spyOn(ipcBridge.assistants.list, 'invoke').mockRejectedValue(
+        new Error('connect ECONNREFUSED 127.0.0.1:13400')
+      );
+
+      await expect(pickLeadAssistant()).rejects.toThrow('AionCore backend is not reachable');
+    });
+
+    it('throws "AionCore backend is not reachable" on network error in createProjectBackendTeam', async () => {
+      vi.spyOn(ipcBridge.assistants.list, 'invoke').mockResolvedValue([
+        {
+          id: 'ast-1',
+          name: 'Lead',
+          enabled: true,
+          team_selectable: true,
+        } as any,
+      ]);
+
+      vi.spyOn(ipcBridge.team.create, 'invoke').mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:13400'));
+
+      await expect(
+        createProjectBackendTeam({
+          name: 'offline_proj',
+          workspacePath: '/company/master/engineering/offline_proj',
+          masterRoot: '/company/master',
+        })
+      ).rejects.toThrow('AionCore backend is not reachable');
+    });
+
+    it('passes logged-in userId to team.create', async () => {
+      vi.spyOn(ipcBridge.assistants.list, 'invoke').mockResolvedValue([
+        {
+          id: 'ast-1',
+          name: 'Lead',
+          enabled: true,
+          team_selectable: true,
+        } as any,
+      ]);
+
+      const createSpy = vi.spyOn(ipcBridge.team.create, 'invoke').mockResolvedValue({
+        id: 'team-backend-user-123',
+      } as any);
+
+      await createProjectBackendTeam({
+        name: 'user_proj',
+        workspacePath: '/company/master/engineering/user_proj',
+        masterRoot: '/company/master',
+        userId: 'user-custom-42',
+      });
+
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'user-custom-42',
+        })
+      );
+    });
   });
 
   describe('2. assign_task -> sendMessage with approved_lineup', () => {
@@ -188,7 +249,10 @@ describe('Organization Backend Teams Integration (Real AionCore Team Engine)', (
       });
     });
 
-    it('appends user-approval lines when approved_lineup is passed', async () => {
+    it('appends user-approval lines when approved_lineup is passed and matches approved lineup', async () => {
+      const lineupData = [{ name: 'Alex Coder', assistant: 'claude-code' }, 'add Senior QA using gemini-cli'];
+      recordApprovedLineupInStore(lineupData);
+
       const sendSpy = vi.spyOn(ipcBridge.team.sendMessage, 'invoke').mockResolvedValue({
         enqueue_status: 'accepted',
         message_id: 'msg-2',
@@ -197,7 +261,7 @@ describe('Organization Backend Teams Integration (Real AionCore Team Engine)', (
       const res = await executeOrgToolInStore('assign_task', {
         project_id: 'proj-mobile',
         text: 'Scaffold authentication flow',
-        approved_lineup: [{ name: 'Alex Coder', assistant: 'claude-code' }, 'add Senior QA using gemini-cli'],
+        approved_lineup: lineupData,
       });
 
       expect(res.success).toBe(true);
@@ -209,6 +273,70 @@ describe('Organization Backend Teams Integration (Real AionCore Team Engine)', (
         team_id: 'team-backend-mobile',
         input: expect.stringContaining('User approved: add Senior QA using gemini-cli'),
       });
+    });
+
+    it('ignores invented approved_lineup when not recorded in store', async () => {
+      const sendSpy = vi.spyOn(ipcBridge.team.sendMessage, 'invoke').mockResolvedValue({
+        enqueue_status: 'accepted',
+        message_id: 'msg-invented',
+      } as any);
+
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: 'proj-mobile',
+        text: 'Scaffold authentication flow',
+        approved_lineup: [{ name: 'Hallucinated Specialist', assistant: 'claude-3-opus' }],
+      });
+
+      expect(res.success).toBe(true);
+      expect(sendSpy).toHaveBeenCalledWith({
+        team_id: 'team-backend-mobile',
+        input: 'Scaffold authentication flow',
+      });
+    });
+
+    it('returns error when target project has no backendTeamId and does not mark delegating', async () => {
+      setOrgStoreSnapshot({
+        ...getOrgStoreSnapshot(),
+        projects: [
+          {
+            id: 'proj-no-team',
+            name: 'No Team Project',
+            departmentId: 'dept-eng',
+            teamIds: [],
+            status: 'active',
+            workspacePath: '/company/master/engineering/no_team',
+            backendTeamId: undefined,
+          },
+        ],
+      });
+
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: 'proj-no-team',
+        text: 'Run unit tests',
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('Project has no backend team configured');
+      expect(res.dispatched).toBe(false);
+      const snapshot = getOrgStoreSnapshot();
+      expect(snapshot.nodeStatuses['proj-no-team']).not.toBe('delegating');
+    });
+
+    it('returns error when team.sendMessage fails and does not mark delegating', async () => {
+      vi.spyOn(ipcBridge.team.sendMessage, 'invoke').mockRejectedValue(
+        new Error('connect ECONNREFUSED 127.0.0.1:13400')
+      );
+
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: 'proj-mobile',
+        text: 'Run deployment',
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('ECONNREFUSED');
+      expect(res.dispatched).toBe(false);
+      const snapshot = getOrgStoreSnapshot();
+      expect(snapshot.nodeStatuses['proj-mobile']).not.toBe('delegating');
     });
   });
 

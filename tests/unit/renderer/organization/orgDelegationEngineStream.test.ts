@@ -175,13 +175,17 @@ describe('OrgDelegationEngine responseStream handling', () => {
     expect(result).toContain('[Inference Error: Failed to launch Claude CLI process: binary not found]');
   });
 
-  it('surfaces visible line for permission and attempts auto-resolve', async () => {
+  it('auto-resolves permission when autoApprovePermissions is true', async () => {
+    const autoEngine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, {
+      simulationMode: false,
+      autoApprovePermissions: true,
+    });
     const confirmSpy = vi
       .spyOn(ipcBridge.conversation.confirmation.confirm, 'invoke')
       .mockResolvedValue(undefined as any);
     const streamUpdates: string[] = [];
 
-    const stepPromise = engine.runOrgAgentStep({
+    const stepPromise = autoEngine.runOrgAgentStep({
       agent: testAgent,
       systemPrompt: 'You are an agent',
       userDirective: 'analyze the subfolders',
@@ -236,6 +240,87 @@ describe('OrgDelegationEngine responseStream handling', () => {
     const result = await stepPromise;
     expect(result).toContain('Agent is waiting for permission/answer: Read folder /src');
     expect(result).toContain('Scanned 10 items.');
+  });
+
+  it('emits permission request and waits for user click when autoApprovePermissions is false (default)', async () => {
+    const manualEngine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, {
+      simulationMode: false,
+      autoApprovePermissions: false,
+    });
+    const confirmSpy = vi
+      .spyOn(ipcBridge.conversation.confirmation.confirm, 'invoke')
+      .mockResolvedValue(undefined as any);
+    const streamUpdates: string[] = [];
+
+    let capturedRequest: import('@/renderer/pages/organization/utils/orgDelegationEngine').OrgPermissionRequest | null =
+      null;
+    const unsub = (await import('@/renderer/pages/organization/utils/orgDelegationEngine')).onOrgPermissionRequested(
+      (req) => {
+        capturedRequest = req;
+      }
+    );
+
+    const stepPromise = manualEngine.runOrgAgentStep({
+      agent: testAgent,
+      systemPrompt: 'You are an agent',
+      userDirective: 'analyze the subfolders',
+      workspacePath: '',
+      onStreamUpdate: (t) => streamUpdates.push(t),
+    });
+
+    const waitForStreamHandler = async () => {
+      for (let i = 0; i < 50 && !streamHandler; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    };
+
+    await waitForStreamHandler();
+    expect(streamHandler).toBeDefined();
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      msg_id: 'msg-perm-manual-1',
+      type: 'acp_permission',
+      data: {
+        tool_call: {
+          tool_call_id: 'tc-perm-99',
+          title: 'Delete old artifacts',
+        },
+        options: [{ option_id: 'allow_once', kind: 'allow_once', name: 'Allow Once' }],
+      },
+    });
+
+    // Permission is NOT auto-confirmed immediately
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(capturedRequest).toBeDefined();
+    expect(capturedRequest!.callId).toBe('tc-perm-99');
+    expect(capturedRequest!.description).toBe('Delete old artifacts');
+
+    // Simulate user clicking allow_once in UI
+    await capturedRequest!.respond('allow_once');
+
+    expect(confirmSpy).toHaveBeenCalledWith({
+      conversation_id: 'conv-123',
+      call_id: 'tc-perm-99',
+      msg_id: 'msg-perm-manual-1',
+      data: { option_id: 'allow_once' },
+      always_allow: false,
+    });
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'content',
+      data: 'Artifacts cleared.',
+    });
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'finish',
+      status: 'finish',
+    });
+
+    const result = await stepPromise;
+    expect(result).toContain('Artifacts cleared.');
+    unsub();
   });
 
   it('dedupes consecutive identical notices but never content', async () => {

@@ -46,6 +46,8 @@ const STORAGE_KEYS = {
   CONVERSATIONS: 'aionui:org-conversations',
   CRON_JOBS: 'aionui:org-cron-jobs',
   VERSION: 'aionui:org-storage-version',
+  APPROVED_LINEUPS: 'aionui:org-approved-lineups',
+  AUTO_APPROVE_PERMISSIONS: 'aionui:org-auto-approve-permissions',
 };
 
 let orgMutationQueue: Promise<unknown> = Promise.resolve();
@@ -58,6 +60,7 @@ function enqueueOrgMutation<T>(mutation: () => Promise<T>): Promise<T> {
 
 function loadStored<T>(key: string, fallback: () => T): T {
   try {
+    if (typeof localStorage === 'undefined') return fallback();
     const raw = localStorage.getItem(key);
     if (!raw) return fallback();
     return JSON.parse(raw) as T;
@@ -70,12 +73,21 @@ function loadStored<T>(key: string, fallback: () => T): T {
 function saveStored<T>(key: string, value: T): void {
   try {
     const serialized = JSON.stringify(value);
-    localStorage.setItem(key, serialized);
-    void ipcBridge.org.saveData(key, serialized).catch(() => {});
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, serialized);
+    }
+    void ipcBridge.org?.saveData?.(key, serialized)?.catch?.(() => {});
   } catch (e) {
     console.warn(`[useOrgStore] Failed to save key "${key}" to localStorage:`, e);
   }
 }
+
+export type ApprovedLineupRecord = {
+  id: string;
+  proposalId?: string;
+  lineup: unknown;
+  approvedAt: number;
+};
 
 type OrgStoreState = {
   activeScope: OrgScope;
@@ -84,6 +96,8 @@ type OrgStoreState = {
   members: OrgAgentMember[];
   conversations: OrgConversation[];
   cronJobs: OrgCronJob[];
+  approvedLineups: ApprovedLineupRecord[];
+  autoApprovePermissions: boolean;
   nodeStatuses: Record<string, OrgNodeStatus>;
   hoveredCanonicalAgentId: string | null;
   selectedCanonicalAgentId: string | null;
@@ -159,6 +173,8 @@ function createInitialState(): OrgStoreState {
     members: loadStored<OrgAgentMember[]>(STORAGE_KEYS.MEMBERS, (): OrgAgentMember[] => []),
     conversations: conversationReconciled.conversations,
     cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
+    approvedLineups: loadStored<ApprovedLineupRecord[]>(STORAGE_KEYS.APPROVED_LINEUPS, () => []),
+    autoApprovePermissions: loadStored<boolean>(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, () => false),
     nodeStatuses: {},
     hoveredCanonicalAgentId: null,
     selectedCanonicalAgentId: null,
@@ -1043,8 +1059,37 @@ export function useOrgStore() {
     return { ok: true };
   }, []);
 
+  const recordApprovedLineup = useCallback((lineup: unknown, proposalId?: string): string => {
+    const id = `lineup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const record: ApprovedLineupRecord = {
+      id,
+      proposalId,
+      lineup,
+      approvedAt: Date.now(),
+    };
+    const nextRecords = [record, ...(globalState.approvedLineups || [])].slice(0, 50);
+    globalState = {
+      ...globalState,
+      approvedLineups: nextRecords,
+    };
+    saveStored(STORAGE_KEYS.APPROVED_LINEUPS, nextRecords);
+    notify();
+    return id;
+  }, []);
+
+  const setAutoApprovePermissions = useCallback((enabled: boolean) => {
+    globalState = {
+      ...globalState,
+      autoApprovePermissions: enabled,
+    };
+    saveStored(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, enabled);
+    notify();
+  }, []);
+
   return {
     ...state,
+    recordApprovedLineup,
+    setAutoApprovePermissions,
     setActiveScope,
     updateNodeStatus,
     setHoveredCanonicalAgentId,
@@ -1090,5 +1135,32 @@ export function getOrgStoreSnapshot(): OrgStoreState {
 
 export function setOrgStoreSnapshot(next: Partial<OrgStoreState>): void {
   globalState = { ...globalState, ...next };
+  notify();
+}
+
+export function recordApprovedLineupInStore(lineup: unknown, proposalId?: string): string {
+  const id = `lineup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const record: ApprovedLineupRecord = {
+    id,
+    proposalId,
+    lineup,
+    approvedAt: Date.now(),
+  };
+  const nextRecords = [record, ...(globalState.approvedLineups || [])].slice(0, 50);
+  globalState = {
+    ...globalState,
+    approvedLineups: nextRecords,
+  };
+  saveStored(STORAGE_KEYS.APPROVED_LINEUPS, nextRecords);
+  notify();
+  return id;
+}
+
+export function setAutoApprovePermissionsInStore(enabled: boolean): void {
+  globalState = {
+    ...globalState,
+    autoApprovePermissions: enabled,
+  };
+  saveStored(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, enabled);
   notify();
 }

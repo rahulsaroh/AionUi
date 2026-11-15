@@ -8,6 +8,7 @@ import { ipcBridge } from '@/common';
 import type { ICreateTeamParams, TeamAssistantInput } from '@/common/adapter/teamMapper';
 import { assistantRuntimeKey, type Assistant } from '@/common/types/agent/assistantTypes';
 import { resolveDefaultTeamAgentModel } from '@renderer/pages/team/components/teamCreateModelResolver';
+import { resolveCurrentUserId } from '@renderer/hooks/system/currentUserId';
 import { validateWithinMaster } from '../utils/orgPathUtils';
 
 export type CreateProjectBackendTeamParams = {
@@ -16,6 +17,7 @@ export type CreateProjectBackendTeamParams = {
   description?: string;
   preferredAssistantId?: string;
   masterRoot?: string | null;
+  userId?: string;
 };
 
 function isNetworkRefused(err: unknown): boolean {
@@ -36,19 +38,10 @@ export async function pickLeadAssistant(preferredAssistantId?: string): Promise<
   try {
     assistants = ((await ipcBridge.assistants.list.invoke()) as Assistant[]) || [];
   } catch (err) {
-    if (!isNetworkRefused(err)) {
-      throw err;
+    if (isNetworkRefused(err)) {
+      throw new Error('AionCore backend is not reachable', { cause: err });
     }
-    // If backend is unavailable (e.g. unit test environment), provide mock assistant
-    assistants = [
-      {
-        id: 'assistant-default',
-        name: 'Lead Assistant',
-        enabled: true,
-        team_selectable: true,
-        agent: { type: 'claude', source: 'builtin' },
-      } as Assistant,
-    ];
+    throw err;
   }
 
   if (!assistants || assistants.length === 0) {
@@ -110,8 +103,10 @@ export async function createProjectBackendTeam(params: CreateProjectBackendTeamP
     model,
   };
 
+  const userId = params.userId ?? (await resolveCurrentUserId()) ?? 'system_default_user';
+
   const createPayload: ICreateTeamParams = {
-    user_id: 'system_default_user',
+    user_id: userId,
     name: trimmedName,
     workspace: trimmedPath,
     workspace_mode: 'shared',
@@ -124,7 +119,7 @@ export async function createProjectBackendTeam(params: CreateProjectBackendTeamP
     newTeam = await ipcBridge.team.create.invoke(createPayload);
   } catch (err) {
     if (isNetworkRefused(err)) {
-      return `team-mock-${Date.now()}`;
+      throw new Error('AionCore backend is not reachable', { cause: err });
     }
     throw err;
   }

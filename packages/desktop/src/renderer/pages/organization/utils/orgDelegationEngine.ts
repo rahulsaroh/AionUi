@@ -624,6 +624,40 @@ export function parseOrgActions(rawText: string): { actions: OrgActionPayload[];
   return { actions, cleanText };
 }
 
+export interface OrgPermissionOption {
+  option_id?: string;
+  kind?: string;
+  name?: string;
+}
+
+export interface OrgPermissionRequest {
+  id: string;
+  conversationId: string;
+  callId: string;
+  msgId: string;
+  description: string;
+  options: OrgPermissionOption[];
+  respond: (optionId?: string) => Promise<void>;
+}
+
+type PermissionRequestListener = (request: OrgPermissionRequest | null) => void;
+const permissionRequestListeners = new Set<PermissionRequestListener>();
+
+export function onOrgPermissionRequested(listener: PermissionRequestListener): () => void {
+  permissionRequestListeners.add(listener);
+  return () => {
+    permissionRequestListeners.delete(listener);
+  };
+}
+
+export function emitOrgPermissionRequest(request: OrgPermissionRequest | null): void {
+  for (const listener of permissionRequestListeners) {
+    try {
+      listener(request);
+    } catch {}
+  }
+}
+
 export interface AgentExecutionOptions {
   agent: OrgAgentMember;
   systemPrompt: string;
@@ -648,6 +682,7 @@ export class OrgDelegationEngine {
   private updateNodeStatus?: UpdateNodeStatus;
   private simulationMode: boolean;
   private projects: OrgProject[] = [];
+  private autoApprovePermissions?: boolean;
   public lastBackendConversationId?: string;
 
   constructor(
@@ -655,7 +690,7 @@ export class OrgDelegationEngine {
     onStepCallback?: (log: DelegationStepLog) => void,
     onAgentStream?: (text: string) => void,
     updateNodeStatus?: UpdateNodeStatus,
-    options?: { simulationMode?: boolean; projects?: OrgProject[] }
+    options?: { simulationMode?: boolean; projects?: OrgProject[]; autoApprovePermissions?: boolean }
   ) {
     this.hierarchy = hierarchy;
     this.onStepCallback = onStepCallback;
@@ -663,6 +698,7 @@ export class OrgDelegationEngine {
     this.updateNodeStatus = updateNodeStatus;
     this.simulationMode = options?.simulationMode ?? true;
     this.projects = options?.projects ?? [];
+    this.autoApprovePermissions = options?.autoApprovePermissions;
   }
 
   private emitStep(step: DelegationStepLog) {
@@ -992,32 +1028,84 @@ export class OrgDelegationEngine {
             finished = true;
             checkFinish();
           } else {
-            let confirmData: unknown = { value: 'proceed_once' };
-            if (m.type === 'acp_permission' && Array.isArray(rawData?.options)) {
-              const options = rawData.options as Array<{ option_id?: string; kind?: string; name?: string }>;
-              const allowOpt =
-                options.find((o) => o.kind === 'allow_once' || o.kind === 'allow_always') ||
-                options.find((o) => o.option_id?.includes('allow') || o.name?.toLowerCase().includes('allow')) ||
-                options[0];
-              if (allowOpt?.option_id) {
-                confirmData = { option_id: allowOpt.option_id };
+            const rawOptions = (Array.isArray(rawData?.options) ? rawData.options : []) as OrgPermissionOption[];
+            const autoApprove =
+              this.autoApprovePermissions ??
+              (typeof localStorage !== 'undefined'
+                ? localStorage.getItem('aionui:org-auto-approve-permissions') === 'true'
+                : false);
+
+            if (autoApprove) {
+              let confirmData: unknown = { value: 'proceed_once' };
+              if (m.type === 'acp_permission' && rawOptions.length > 0) {
+                const allowOpt =
+                  rawOptions.find((o) => o.kind === 'allow_once' || o.kind === 'allow_always') ||
+                  rawOptions.find((o) => o.option_id?.includes('allow') || o.name?.toLowerCase().includes('allow')) ||
+                  rawOptions[0];
+                if (allowOpt?.option_id) {
+                  confirmData = { option_id: allowOpt.option_id };
+                }
               }
-            }
-            ipcBridge.conversation.confirmation.confirm
-              .invoke({
-                conversation_id: convId,
-                call_id: callId,
-                msg_id: m.msg_id || '',
-                data: confirmData,
-                always_allow: false,
-              })
-              .catch((confirmErr) => {
-                const err = `Failed to auto-resolve permission for ${desc || callId}: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`;
-                pushNotice(`\n[Inference Error: ${err}]\n`);
-                runError = err;
-                finished = true;
-                checkFinish();
+              ipcBridge.conversation.confirmation.confirm
+                .invoke({
+                  conversation_id: convId,
+                  call_id: callId,
+                  msg_id: m.msg_id || '',
+                  data: confirmData,
+                  always_allow: false,
+                })
+                .catch((confirmErr) => {
+                  const err = `Failed to auto-resolve permission for ${desc || callId}: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`;
+                  pushNotice(`\n[Inference Error: ${err}]\n`);
+                  runError = err;
+                  finished = true;
+                  checkFinish();
+                });
+            } else {
+              // Surface the permission request as a visible card and wait for user's click
+              const permReqId = `perm-${Date.now()}-${callId}`;
+              emitOrgPermissionRequest({
+                id: permReqId,
+                conversationId: convId,
+                callId,
+                msgId: m.msg_id || '',
+                description: String(desc || 'Permission requested by agent'),
+                options: rawOptions,
+                respond: async (chosenOptionId?: string) => {
+                  lastActivity = Date.now();
+                  emitOrgPermissionRequest(null);
+                  let confirmData: unknown = { value: 'proceed_once' };
+                  if (chosenOptionId) {
+                    confirmData = { option_id: chosenOptionId };
+                  } else if (rawOptions.length > 0) {
+                    const allowOpt =
+                      rawOptions.find((o) => o.kind === 'allow_once' || o.kind === 'allow_always') ||
+                      rawOptions.find(
+                        (o) => o.option_id?.includes('allow') || o.name?.toLowerCase().includes('allow')
+                      ) ||
+                      rawOptions[0];
+                    if (allowOpt?.option_id) {
+                      confirmData = { option_id: allowOpt.option_id };
+                    }
+                  }
+                  try {
+                    await ipcBridge.conversation.confirmation.confirm.invoke({
+                      conversation_id: convId,
+                      call_id: callId,
+                      msg_id: m.msg_id || '',
+                      data: confirmData,
+                      always_allow: false,
+                    });
+                  } catch (confirmErr) {
+                    const err = `Failed to confirm permission for ${desc || callId}: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`;
+                    pushNotice(`\n[Inference Error: ${err}]\n`);
+                    runError = err;
+                    finished = true;
+                    checkFinish();
+                  }
+                },
               });
+            }
           }
           lastActivity = Date.now();
           return;
