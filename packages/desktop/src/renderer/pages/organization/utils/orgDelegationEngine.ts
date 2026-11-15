@@ -5,13 +5,14 @@
  */
 
 import { ipcBridge } from '@/common';
-import type {
-  OrgHierarchy,
-  OrgAgentMember,
-  OrgNodeStatus,
-  OrgDepartmentNode,
-  OrgTeamNode,
-  OrgProject,
+import {
+  MAX_DELEGATION_DEPTH,
+  type OrgHierarchy,
+  type OrgAgentMember,
+  type OrgNodeStatus,
+  type OrgDepartmentNode,
+  type OrgTeamNode,
+  type OrgProject,
 } from '@/types/organization';
 import { createDepartmentShell, createTeamShell, createMemberShell } from './orgCoherence';
 import { getDefaultDeptPath, getDefaultTeamPath, getDefaultProjectPath, validateOrgFolder } from './orgPathUtils';
@@ -634,7 +635,7 @@ export interface AgentExecutionOptions {
 
 type UpdateNodeStatus = (nodeId: string, status: OrgNodeStatus) => void;
 
-export const MAX_DELEGATION_DEPTH = 6;
+export { MAX_DELEGATION_DEPTH };
 
 export class OrgDelegationEngine {
   private hierarchy: OrgHierarchy;
@@ -974,7 +975,24 @@ export class OrgDelegationEngine {
     const logs: DelegationStepLog[] = [];
 
     const rootCeo = this.hierarchy.rootCeo;
-    const addLog = (log: Omit<DelegationStepLog, 'id' | 'timestamp'>) => {
+    let delegationAborted = false;
+    const addLog = (log: Omit<DelegationStepLog, 'id' | 'timestamp'>): DelegationStepLog | null => {
+      if (delegationAborted) {
+        return null;
+      }
+      if (log.depth > MAX_DELEGATION_DEPTH) {
+        delegationAborted = true;
+        const errorLog: DelegationStepLog = {
+          ...log,
+          id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: Date.now(),
+          status: 'error',
+          message: `Delegation stopped: depth ${log.depth} exceeded MAX_DELEGATION_DEPTH (${MAX_DELEGATION_DEPTH}).`,
+        };
+        logs.push(errorLog);
+        this.emitStep(errorLog);
+        return errorLog;
+      }
       const fullLog: DelegationStepLog = {
         ...log,
         id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
