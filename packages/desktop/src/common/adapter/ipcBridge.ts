@@ -2857,12 +2857,21 @@ export const org = {
     command: string,
     cwd: string,
     allowedWorkspace: string,
-    options?: { timeoutMs?: number; requiresApproval?: boolean }
+    options?: { timeoutMs?: number; requiresApproval?: boolean; approvalToken?: string }
   ): Promise<any> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgRunShell) {
       return window.electronAPI.orgRunShell({ command, cwd, allowedWorkspace, options });
     }
     throw new Error('runShell is only supported in desktop mode');
+  },
+  approveCommand: async (
+    command: string,
+    cwd: string
+  ): Promise<{ token: string; command: string; cwd: string; expiresInMs: number }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgApproveCommand) {
+      return window.electronAPI.orgApproveCommand({ command, cwd });
+    }
+    throw new Error('approveCommand is only supported in desktop mode');
   },
   checkRiskyCommand: async (command: string): Promise<{ isRisky: boolean; reason?: string }> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgCheckRiskyCommand) {

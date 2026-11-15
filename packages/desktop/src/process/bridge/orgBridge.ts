@@ -9,6 +9,7 @@ import { assertWithinScope, type ScopeCheckResult } from '../services/org/pathGu
 import { orgStorageService } from '../services/org/orgStorageService';
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
+import { issueCommandApprovalToken } from '../services/org/orgApproval';
 import {
   setMasterRoot,
   getMasterRoot,
@@ -178,10 +179,44 @@ export function registerOrgBridge(): void {
         command: string;
         cwd: string;
         allowedWorkspace: string;
-        options?: { timeoutMs?: number; requiresApproval?: boolean };
+        options?: { timeoutMs?: number; requiresApproval?: boolean; approvalToken?: string };
       }
     ) => {
-      return OrgFolderTools.runShell(params.command, params.cwd, params.allowedWorkspace, params.options);
+      try {
+        return await OrgFolderTools.runShell(params.command, params.cwd, params.allowedWorkspace, params.options);
+      } catch (err: any) {
+        if (err?.needsApproval) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: err.message,
+            timedOut: false,
+            needsApproval: true,
+            command: params.command,
+            reason: err.reason,
+          };
+        }
+        throw err;
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'org:approveCommand',
+    async (_event, params: { command: string; cwd: string }) => {
+      if (!params || typeof params.command !== 'string' || typeof params.cwd !== 'string') {
+        throw new Error('Invalid arguments for org:approveCommand');
+      }
+      const masterRoot = await getMasterRoot();
+      if (!masterRoot) {
+        throw new Error('No master root configured');
+      }
+      const check = await assertWithinScope(params.cwd, masterRoot);
+      if (!check.allowed) {
+        throw new Error(`Cannot approve command outside master root: ${params.cwd}`);
+      }
+      const token = issueCommandApprovalToken(params.command, params.cwd);
+      return { token, command: params.command, cwd: params.cwd, expiresInMs: 60000 };
     }
   );
 

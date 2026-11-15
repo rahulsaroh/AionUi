@@ -340,8 +340,12 @@ export interface ElectronBridgeAPI {
     command: string;
     cwd: string;
     allowedWorkspace: string;
-    options?: { timeoutMs?: number; requiresApproval?: boolean };
+    options?: { timeoutMs?: number; requiresApproval?: boolean; approvalToken?: string };
   }) => Promise<unknown>;
+  orgApproveCommand?: (params: {
+    command: string;
+    cwd: string;
+  }) => Promise<{ token: string; command: string; cwd: string; expiresInMs: number }>;
   orgCheckRiskyCommand?: (params: { command: string }) => Promise<{ isRisky: boolean; reason?: string }>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;

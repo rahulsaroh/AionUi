@@ -258,8 +258,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     command: string;
     cwd: string;
     allowedWorkspace: string;
-    options?: { timeoutMs?: number; requiresApproval?: boolean };
+    options?: { timeoutMs?: number; requiresApproval?: boolean; approvalToken?: string };
   }) => ipcRenderer.invoke('org:runShell', params),
+  orgApproveCommand: (params: { command: string; cwd: string }) => ipcRenderer.invoke('org:approveCommand', params),
   orgCheckRiskyCommand: (params: { command: string }) => ipcRenderer.invoke('org:checkRiskyCommand', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),

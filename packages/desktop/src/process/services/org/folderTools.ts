@@ -6,9 +6,11 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { assertWithinScope } from './pathGuard';
 import { resolveEffectiveScope } from './orgScope';
+import { consumeCommandApprovalToken } from './orgApproval';
+import { recordShellExecution } from './orgTelemetry';
 
 export interface FolderScanEntry {
   name: string;
@@ -37,26 +39,233 @@ export interface ShellRunResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  needsApproval?: boolean;
+  reason?: string;
+  command?: string;
 }
 
-const RISKY_PATTERNS = [
-  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|--force)\b/i,
-  /\bgit\s+push\s+.*--force\b/i,
-  /\bgit\s+reset\s+--hard\b/i,
-  /\b(curl|wget)\b.*\|\s*(sh|bash|zsh|powershell|cmd)/i,
-  /\bsudo\b/i,
-  /\b(mkfs|dd|format)\b/i,
-  /\b(npm|pnpm|yarn|bun)\s+(install|add)\s+.*(-g|--global)\b/i,
-  />\s*(\/etc|\/boot|\/bin|\/usr|C:\\Windows|C:\\Program Files)/i,
-];
+/**
+ * Note: A denylist is defense-in-depth, not an OS sandbox.
+ * It detects known dangerous primitives, destructive commands, privilege escalation,
+ * and directory traversal attempts, but does not provide complete OS-level containerization.
+ */
+export function checkRiskyCommand(cmd: string, cwd?: string): { isRisky: boolean; reason?: string } {
+  if (!cmd || typeof cmd !== 'string') {
+    return { isRisky: false };
+  }
 
-export function checkRiskyCommand(cmd: string): { isRisky: boolean; reason?: string } {
-  for (const pattern of RISKY_PATTERNS) {
-    if (pattern.test(cmd)) {
-      return { isRisky: true, reason: `Command matched potentially destructive pattern: ${pattern.toString()}` };
+  // Normalize whitespace and prepare strings for pattern checks
+  const normalized = cmd.trim().replace(/\s+/g, ' ');
+
+  // 1. Destructive, privilege escalation, shell injection, or scheduled tasks
+  const explicitPatterns: Array<{ regex: RegExp; reason: string }> = [
+    {
+      regex: /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|--force)\b/i,
+      reason: 'Forced recursive deletion (rm -rf)',
+    },
+    {
+      regex: /\bremove-item\b.*(-recurse.*-force|-force.*-recurse)/i,
+      reason: 'PowerShell recursive forced deletion (Remove-Item)',
+    },
+    {
+      regex: /\bdel\b.*\/s\b/i,
+      reason: 'Windows recursive delete (del /s)',
+    },
+    {
+      regex: /\brmdir\b.*\/s\b/i,
+      reason: 'Windows recursive directory removal (rmdir /s)',
+    },
+    {
+      regex: /\bgit\s+push\s+.*--force\b/i,
+      reason: 'Forced git push',
+    },
+    {
+      regex: /\bgit\s+reset\s+--hard\b/i,
+      reason: 'Hard git reset',
+    },
+    {
+      regex: /\b(curl|wget)\b.*\|\s*(sh|bash|zsh|powershell|pwsh|cmd)\b/i,
+      reason: 'Piping network download directly into a shell interpreter',
+    },
+    {
+      regex: /\bsudo\b/i,
+      reason: 'Elevated privileges (sudo)',
+    },
+    {
+      regex: /\b(mkfs|dd|format)\b/i,
+      reason: 'Filesystem formatting or raw disk write',
+    },
+    {
+      regex: /\b(npm|pnpm|yarn|bun)\s+(install|add)\s+.*(-g|--global)\b/i,
+      reason: 'Global package installation',
+    },
+    {
+      regex: /\b(chmod|chown)\s+(-[a-zA-Z]*r|--recursive)\b/i,
+      reason: 'Recursive permission/ownership modification (chmod/chown -R)',
+    },
+    {
+      regex: /\b(powershell|pwsh)\b.*-enc(odedcommand)?\b/i,
+      reason: 'Encoded PowerShell execution',
+    },
+    {
+      regex: /\b(invoke-expression|iex)\b/i,
+      reason: 'Arbitrary string execution (Invoke-Expression / iex)',
+    },
+    {
+      regex: /\breg\s+(add|delete)\b/i,
+      reason: 'Windows Registry modification',
+    },
+    {
+      regex: /\bschtasks\b/i,
+      reason: 'Scheduled task manipulation (schtasks)',
+    },
+    {
+      regex: /\bcrontab\b/i,
+      reason: 'Cron scheduled task manipulation (crontab)',
+    },
+    {
+      regex: /\b(ssh|scp)\b/i,
+      reason: 'Remote network shell/copy tool (ssh/scp)',
+    },
+  ];
+
+  for (const item of explicitPatterns) {
+    if (item.regex.test(normalized)) {
+      return { isRisky: true, reason: item.reason };
     }
   }
+
+  // 2. Traversal or paths outside workspace
+  // Directory traversal ('..')
+  if (/(?:^|[\s"'`=/\\])\.\.(?:[\s"'`=/\\]|$)/.test(normalized)) {
+    return {
+      isRisky: true,
+      reason: 'Command contains parent directory traversal ("..")',
+    };
+  }
+
+  // User home directory references (~, $HOME, %USERPROFILE%)
+  if (
+    /(?:^|[\s"'`=])~[/\\]?/.test(normalized) ||
+    /\$home\b/i.test(normalized) ||
+    /\$\{home\}/i.test(normalized) ||
+    /%userprofile%/i.test(normalized)
+  ) {
+    return {
+      isRisky: true,
+      reason: 'Command references user home directory (~, $HOME, %USERPROFILE%)',
+    };
+  }
+
+  // cd out of workspace
+  if (/\bcd\s+(\.\.|\/|[a-zA-Z]:|~|\$|%)/i.test(normalized)) {
+    return {
+      isRisky: true,
+      reason: 'Command attempts to change directory out of workspace',
+    };
+  }
+
+  // Redirection or tee targeting paths outside workspace or system locations
+  if (
+    /(?:>>?|[|]\s*tee\s+)\s*(\.\.|\/|[a-zA-Z]:|~|\$|%)/i.test(normalized) ||
+    />\s*(\/etc|\/boot|\/bin|\/usr|\/var|C:\\Windows|C:\\Program Files)/i.test(normalized)
+  ) {
+    return {
+      isRisky: true,
+      reason: 'Redirection or tee targeting paths outside workspace',
+    };
+  }
+
+  // Absolute paths
+  const winAbsMatches = normalized.match(/\b([a-zA-Z]:[/\\][^\s"'`<>|]*)/g);
+  if (winAbsMatches) {
+    for (const match of winAbsMatches) {
+      if (!cwd) {
+        return { isRisky: true, reason: `Command contains absolute path: ${match}` };
+      }
+      const normMatch = path.normalize(match).toLowerCase();
+      const normCwd = path.normalize(cwd).toLowerCase();
+      if (!normMatch.startsWith(normCwd)) {
+        return { isRisky: true, reason: `Command references path outside workspace: ${match}` };
+      }
+    }
+  }
+
+  const unixAbsMatches = normalized.match(
+    /(?:^|[\s"'`=])(\/(?:etc|boot|bin|usr|var|tmp|home|root|opt|sbin|dev|sys|proc|windows)[^\s"'`<>|]*)/gi
+  );
+  if (unixAbsMatches) {
+    return {
+      isRisky: true,
+      reason: `Command references system absolute path: ${unixAbsMatches[0].trim()}`,
+    };
+  }
+
   return { isRisky: false };
+}
+
+/**
+ * Builds a strictly minimal environment for spawned child processes.
+ * Drops process.env, confines HOME and USERPROFILE to cwd, and strips all secrets/API keys.
+ */
+export function getMinimalEnv(cwd: string): NodeJS.ProcessEnv {
+  const isWin = process.platform === 'win32';
+  const cleanEnv: NodeJS.ProcessEnv = {};
+
+  const safeKeys = isWin
+    ? ['PATH', 'Path', 'TEMP', 'TMP', 'SystemRoot', 'windir', 'COMSPEC', 'PATHEXT']
+    : ['PATH', 'TEMP', 'TMP', 'LANG', 'LC_ALL'];
+
+  for (const key of safeKeys) {
+    if (process.env[key] !== undefined) {
+      cleanEnv[key] = process.env[key];
+    }
+  }
+
+  cleanEnv.HOME = cwd;
+  cleanEnv.USERPROFILE = cwd;
+
+  // Never forward any variable matching sensitive patterns
+  const secretPattern = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API/i;
+  for (const k of Object.keys(cleanEnv)) {
+    if (secretPattern.test(k)) {
+      delete cleanEnv[k];
+    }
+  }
+
+  return cleanEnv;
+}
+
+/**
+ * Kills a child process and its entire sub-process tree.
+ */
+export function killProcessTree(child: ChildProcess): void {
+  if (!child || !child.pid) return;
+  if (process.platform === 'win32') {
+    try {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.on('error', () => {
+        try {
+          child.kill();
+        } catch {}
+      });
+    } catch {
+      try {
+        child.kill();
+      } catch {}
+    }
+  } else {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      try {
+        child.kill('SIGKILL');
+      } catch {}
+    }
+  }
 }
 
 export class OrgFolderTools {
@@ -242,14 +451,22 @@ export class OrgFolderTools {
 
   /**
    * Executes a shell command strictly inside the agent's assigned workspace folder.
-   * Rejects out-of-bounds working directories and dangerous arguments.
+   * Enforces main process approval for risky commands, strips environment secrets,
+   * caps execution duration and output buffers, and logs telemetry.
    */
   public static async runShell(
     command: string,
     cwd: string,
     allowedWorkspace: string,
-    options?: { timeoutMs?: number; requiresApproval?: boolean; onOutput?: (chunk: string) => void }
+    options?: {
+      timeoutMs?: number;
+      approvalToken?: string;
+      requiresApproval?: boolean; // deprecated / ignored as bypass
+      onOutput?: (chunk: string) => void;
+    }
   ): Promise<ShellRunResult> {
+    const startTime = Date.now();
+
     // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
     const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
     const scopeCheck = await assertWithinScope(cwd, effectiveScope);
@@ -257,52 +474,104 @@ export class OrgFolderTools {
       throw new Error(`Access denied: Shell working directory "${cwd}" is outside workspace "${effectiveScope}"`);
     }
 
-    const risk = checkRiskyCommand(command);
-    if (risk.isRisky && options?.requiresApproval !== false) {
-      throw new Error(`Blocked risky command requiring manual approval: ${risk.reason}`);
+    const risk = checkRiskyCommand(command, cwd);
+    if (risk.isRisky) {
+      // requiresApproval is completely removed as a bypass. Only a valid token minted by the main process is accepted.
+      const isApproved = consumeCommandApprovalToken(options?.approvalToken, command, cwd);
+      if (!isApproved) {
+        const err = new Error(`Blocked risky command requiring manual approval: ${risk.reason}`) as any;
+        err.needsApproval = true;
+        err.command = command;
+        err.reason = risk.reason;
+        throw err;
+      }
     }
 
-    const timeout = options?.timeoutMs ?? 60000;
+    // Maximum timeout capped at 5 minutes
+    const MAX_TIMEOUT_MS = 5 * 60 * 1000;
+    const timeout = Math.min(Math.max(1000, options?.timeoutMs ?? 60000), MAX_TIMEOUT_MS);
     const isWin = process.platform === 'win32';
     const shellExe = isWin ? 'powershell.exe' : '/bin/sh';
     const shellArgs = isWin ? ['-NoProfile', '-NonInteractive', '-Command', command] : ['-c', command];
+
+    const minimalEnv = getMinimalEnv(cwd);
+    const MAX_OUTPUT_BYTES = 1024 * 1024; // 1 MB cap
 
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let stdoutTruncated = false;
+      let stderrTruncated = false;
 
       const child = spawn(shellExe, shellArgs, {
         cwd,
-        env: { ...process.env },
+        env: minimalEnv,
       });
 
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill();
+        killProcessTree(child);
       }, timeout);
 
       child.stdout.on('data', (data: Buffer) => {
-        const text = data.toString();
-        stdout += text;
+        const text = data.toString('utf8');
+        if (stdout.length < MAX_OUTPUT_BYTES) {
+          const remaining = MAX_OUTPUT_BYTES - stdout.length;
+          if (text.length > remaining) {
+            stdout += text.slice(0, remaining) + '\n[TRUNCATED: Output exceeded 1 MB limit]';
+            stdoutTruncated = true;
+          } else {
+            stdout += text;
+          }
+        } else if (!stdoutTruncated) {
+          stdout += '\n[TRUNCATED: Output exceeded 1 MB limit]';
+          stdoutTruncated = true;
+        }
         if (options?.onOutput) options.onOutput(text);
       });
 
       child.stderr.on('data', (data: Buffer) => {
-        const text = data.toString();
-        stderr += text;
+        const text = data.toString('utf8');
+        if (stderr.length < MAX_OUTPUT_BYTES) {
+          const remaining = MAX_OUTPUT_BYTES - stderr.length;
+          if (text.length > remaining) {
+            stderr += text.slice(0, remaining) + '\n[TRUNCATED: Output exceeded 1 MB limit]';
+            stderrTruncated = true;
+          } else {
+            stderr += text;
+          }
+        } else if (!stderrTruncated) {
+          stderr += '\n[TRUNCATED: Output exceeded 1 MB limit]';
+          stderrTruncated = true;
+        }
         if (options?.onOutput) options.onOutput(text);
       });
 
       child.on('error', (err) => {
         clearTimeout(timer);
+        recordShellExecution({
+          command,
+          cwd,
+          exitCode: 1,
+          durationMs: Date.now() - startTime,
+          timedOut,
+        });
         reject(err);
       });
 
       child.on('close', (code) => {
         clearTimeout(timer);
+        const exitCode = code ?? (timedOut ? 124 : 1);
+        recordShellExecution({
+          command,
+          cwd,
+          exitCode,
+          durationMs: Date.now() - startTime,
+          timedOut,
+        });
         resolve({
-          exitCode: code ?? (timedOut ? 124 : 1),
+          exitCode,
           stdout,
           stderr,
           timedOut,
