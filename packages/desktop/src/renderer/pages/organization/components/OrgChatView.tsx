@@ -15,6 +15,8 @@ import { useOrgStore } from '../store/useOrgStore';
 import { OrgModelSelector } from './OrgModelSelector';
 import { runAgentTurn, buildAgentSystemContext, type OrgChatTarget } from '../utils/agentTurn';
 import { OrgMasterFolderModal } from './OrgMasterFolderModal';
+import { OrgProposalCard, type StructureProposalData } from './OrgProposalCard';
+import { setupOrgToolBridgeListener, onStructureProposed } from '../store/orgToolExecutor';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import { computeAutoTitle } from '../utils/orgCoherence';
 import type {
@@ -88,9 +90,31 @@ export const OrgChatView: React.FC = () => {
   const [streamingContent, setStreamingContent] = useState<string>('');
   const [errorState, setErrorState] = useState<{ message: string; threadId: string } | null>(null);
   const [draftsByThreadId, setDraftsByThreadId] = useState<Record<string, string>>({});
+  const [activeProposal, setActiveProposal] = useState<StructureProposalData | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    const unsubBridge = setupOrgToolBridgeListener();
+    const unsubProposal = onStructureProposed((proposal) => {
+      setActiveProposal(proposal);
+    });
+    let unsubLive: (() => void) | undefined;
+    try {
+      unsubLive = ipcBridge.org.onLiveStep((data) => {
+        if (data.step) {
+          setLiveStepText(`[${data.tool || 'Org Tool'}] ${data.step}`);
+        }
+      });
+    } catch {}
+
+    return () => {
+      unsubBridge();
+      unsubProposal();
+      unsubLive?.();
+    };
+  }, []);
 
   // Active conversation: selected from sidebar or the latest Root CEO conversation
   const activeConversation = useMemo<OrgConversation | undefined>(() => {
@@ -1196,16 +1220,19 @@ export const OrgChatView: React.FC = () => {
                     >
                       {msg.content}
                       {msg.createdEntities && msg.createdEntities.length > 0 && (
-                        <div className='mt-8px flex flex-col gap-4px'>
+                        <div className='mt-10px flex flex-wrap gap-6px'>
                           {msg.createdEntities.map((ref) => (
                             <button
                               key={`${ref.type}-${ref.id}`}
                               type='button'
                               onClick={() => handleSelectCreatedEntity(ref)}
-                              className='flex items-center gap-4px text-left text-12px text-primary hover:underline'
+                              className='inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary/10 hover:bg-primary/20 border border-primary/25 text-left text-12px text-primary font-medium transition-colors cursor-pointer'
                               aria-label={ref.name}
                             >
-                              <span className='truncate'>{ref.name}</span>
+                              <span className='text-10px font-mono uppercase opacity-75'>
+                                [{ref.type}]
+                              </span>
+                              <span className='truncate max-w-220px'>{ref.name}</span>
                             </button>
                           ))}
                         </div>
@@ -1215,6 +1242,56 @@ export const OrgChatView: React.FC = () => {
                 </div>
               );
             })}
+
+            {/* Active structure proposal card */}
+            {activeProposal && (
+              <div className='flex gap-12px max-w-800px w-full mr-auto'>
+                <div className='size-32px rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center justify-center text-14px shrink-0 mt-2px shadow-sm'>
+                  👑
+                </div>
+                <div className='flex flex-col gap-4px min-w-0 max-w-[90%]'>
+                  <div className='text-11px font-mono text-t-tertiary px-2px'>
+                    Root CEO • Proposed Organization Structure
+                  </div>
+                  <OrgProposalCard
+                    cardData={activeProposal}
+                    onApprove={(createdRefs) => {
+                      setActiveProposal(null);
+                      if (activeConversation && createdRefs.length > 0) {
+                        const entityMsg: OrgConversationMessage = {
+                          id: `msg-${Date.now()}-created`,
+                          sender: 'System',
+                          role: 'system',
+                          content: `${t('team.organization.createdEntities', { defaultValue: 'Created:' })}\nApproved and instantiated ${createdRefs.length} organizational entities.`,
+                          timestamp: Date.now(),
+                          createdEntities: createdRefs,
+                        };
+                        addOrgConversation({
+                          ...activeConversation,
+                          messages: [...activeConversation.messages, entityMsg],
+                        });
+                      }
+                    }}
+                    onReject={() => {
+                      setActiveProposal(null);
+                      if (activeConversation) {
+                        const rejectMsg: OrgConversationMessage = {
+                          id: `msg-${Date.now()}-reject`,
+                          sender: 'System',
+                          role: 'system',
+                          content: 'Organization structure proposal rejected by user.',
+                          timestamp: Date.now(),
+                        };
+                        addOrgConversation({
+                          ...activeConversation,
+                          messages: [...activeConversation.messages, rejectMsg],
+                        });
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Live execution indicator */}
             {isExecuting && (

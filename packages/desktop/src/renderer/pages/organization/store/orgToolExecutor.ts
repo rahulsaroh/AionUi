@@ -435,6 +435,9 @@ export function setupOrgToolBridgeListener(): () => void {
   if (bridgeListenerRegistered) {
     return () => {};
   }
+  if (typeof ipcBridge?.org?.onExecuteToolCall !== 'function') {
+    return () => {};
+  }
   bridgeListenerRegistered = true;
 
   const unsubscribe = ipcBridge.org.onExecuteToolCall(async (payload) => {

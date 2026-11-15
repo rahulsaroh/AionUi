@@ -16,6 +16,7 @@ import {
 } from '@/types/organization';
 import { createDepartmentShell, createTeamShell, createMemberShell } from './orgCoherence';
 import { getDefaultDeptPath, getDefaultTeamPath, getDefaultProjectPath, validateOrgFolder } from './orgPathUtils';
+import { getCeoToolSystemPrompt } from './rootCeoAgent';
 
 export interface DelegationStepLog {
   id: string;
@@ -724,6 +725,7 @@ export class OrgDelegationEngine {
     let finished = false;
     let lastActivity = Date.now();
     let unsubscribe: (() => void) | undefined;
+    let unsubLiveStep: (() => void) | undefined;
     let runError: string | null = null;
 
     try {
@@ -794,12 +796,32 @@ export class OrgDelegationEngine {
       // 3. Resolve or create real conversation session
       let convId = opts.conversationId;
       if (!convId) {
+        let sessionMcpServers: any[] = [];
+        try {
+          const orgRole =
+            opts.agent.role === 'ceo'
+              ? 'ceo'
+              : opts.agent.role === 'department_head'
+                ? 'department_head'
+                : 'project_head';
+          const orgMcp = await ipcBridge.org.getSessionMcpServer({
+            role: orgRole,
+            deptWorkspacePath: opts.workspacePath,
+          });
+          if (orgMcp) {
+            sessionMcpServers.push(orgMcp);
+          }
+        } catch (mcpErr) {
+          console.warn('[OrgDelegationEngine] Failed to resolve session MCP server:', mcpErr);
+        }
+
         const createPayload: Record<string, unknown> = {
           name: `Org: ${opts.agent.name}`,
           assistant: { id: assistantId },
           extra: {
             workspace: effectiveWorkspace,
             custom_workspace: isCustomWorkspace,
+            selected_session_mcp_servers: sessionMcpServers,
           },
         };
         if (resolvedModel) {
@@ -816,6 +838,18 @@ export class OrgDelegationEngine {
         }
       }
       this.lastBackendConversationId = convId;
+
+      try {
+        unsubLiveStep = ipcBridge.org.onLiveStep((data) => {
+          lastActivity = Date.now();
+          if (data.step) {
+            const stepNotice = `\n[Tool: ${data.tool || 'aionui-org'}] ${data.step}\n`;
+            collectedText.push(stepNotice);
+            opts.onStreamUpdate(stepNotice);
+            this.onAgentStream?.(stepNotice);
+          }
+        });
+      } catch {}
 
       unsubscribe = ipcBridge.conversation.responseStream.on((msg: unknown) => {
         const m = msg as { conversation_id?: string; data?: unknown; type?: string; status?: string };
@@ -902,6 +936,7 @@ export class OrgDelegationEngine {
       console.warn('[OrgDelegationEngine] LLM invocation warning:', err);
       runError = err instanceof Error ? err.message : String(err);
     } finally {
+      unsubLiveStep?.();
       unsubscribe?.();
     }
 
@@ -1007,6 +1042,30 @@ export class OrgDelegationEngine {
     };
 
     // Step 1: User -> Root CEO
+    const currentMasterRoot = rootCeo.workspacePath || (await ipcBridge.org.getMasterRoot().catch(() => '')) || '';
+    if (!this.simulationMode && !currentMasterRoot) {
+      const errorMsg =
+        'No organization master root is configured. Please select or configure a master root folder first so I can inspect and organize your workspaces.';
+      addLog({
+        depth: 1,
+        fromName: rootCeo.ceoAgent.name,
+        fromRole: 'Root CEO',
+        toName: 'User / Executive Board',
+        toRole: 'User',
+        message: errorMsg,
+        status: 'working',
+      });
+      return {
+        success: true,
+        directiveId,
+        userPrompt,
+        logs,
+        finalSynthesis: errorMsg,
+        involvedDepartmentIds: [],
+        involvedTeamIds: [],
+      };
+    }
+
     addLog({
       depth: 1,
       fromName: 'User / Executive Board',
@@ -1727,25 +1786,7 @@ export class OrgDelegationEngine {
         .map((d) => `- ${d.name} (id: ${d.id}, teams: ${d.teams.map((t) => t.name).join(', ') || 'none'})`)
         .join('\n');
 
-      const ceoSystemPrompt = `You are the Global Organization CEO (${rootCeo.ceoAgent.name}).
-You have full executive authority to direct strategy and establish or modify the organization's structure.
-
-Current Organization Structure:
-${deptSummary || 'No departments established yet.'}
-Root Workspace: ${rootCeo.workspacePath || 'None configured'}
-
-When the user asks you to create or set up departments, teams, projects, or team members, you MUST execute the action by outputting an \`\`\`org-action code block containing a JSON array of actions:
-\`\`\`org-action
-[
-  { "action": "create_department", "name": "Department Name", "workspacePath": "optional/path", "description": "brief description" },
-  { "action": "create_team", "department": "Department Name", "name": "Team Name", "description": "brief description" },
-  { "action": "create_project", "department": "Department Name", "team": "optional Team Name", "name": "Project Name", "workspacePath": "optional/path" },
-  { "action": "create_member", "team": "Team Name", "name": "Specialist Name", "role": "specialist", "title": "Role Title" }
-]
-\`\`\`
-
-Always provide an executive confirmation message explaining the structure you created or plan to lead.
-Never reply saying you cannot create departments or that you need more info if the user explicitly asked to create one. Output the \`\`\`org-action block and confirm the creation.`;
+      const ceoSystemPrompt = getCeoToolSystemPrompt(rootCeo.workspacePath || '', deptSummary);
 
       let ceoSynthesis = '';
       if (!this.simulationMode) {
