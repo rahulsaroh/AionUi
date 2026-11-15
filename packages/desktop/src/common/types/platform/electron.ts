@@ -356,6 +356,25 @@ export interface ElectronBridgeAPI {
     targetFilePath: string;
   }) => Promise<{ token: string; targetFilePath: string; expiresInMs: number }>;
   orgCheckRiskyCommand?: (params: { command: string }) => Promise<{ isRisky: boolean; reason?: string }>;
+  orgGetSessionMcpServer?: (params?: {
+    role?: 'ceo' | 'department_head' | 'project_head';
+    deptId?: string;
+    projectId?: string;
+    deptWorkspacePath?: string;
+  }) => Promise<any>;
+  orgExecuteTool?: (params: {
+    tool: string;
+    args: Record<string, any>;
+    role?: string;
+    deptId?: string;
+    projectId?: string;
+    deptWorkspacePath?: string;
+  }) => Promise<{ success: boolean; result?: any; error?: string }>;
+  orgSendToolResponse?: (payload: { callId: string; success: boolean; result?: any; error?: string }) => void;
+  onOrgExecuteToolCall?: (
+    callback: (payload: { callId: string; tool: string; args: any; meta: any }) => void
+  ) => () => void;
+  onOrgLiveStep?: (callback: (payload: { step: string; tool?: string; args?: any }) => void) => () => void;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

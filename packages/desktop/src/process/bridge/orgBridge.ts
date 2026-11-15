@@ -16,6 +16,13 @@ import {
   resolveEffectiveScope,
   type SetMasterRootResult,
 } from '../services/org/orgScope';
+import {
+  startOrgBridgeServer,
+  handleOrgToolRequest,
+  type OrgRole,
+} from '../resources/builtinMcp/orgBridgeServer';
+import { BUILTIN_ORG_MCP_NAME, BUILTIN_ORG_SCRIPT } from '../resources/builtinMcp/constants';
+import { getBuiltinMcpScriptPath } from '../utils/initStorage';
 
 export function registerOrgBridge(): void {
   ipcMain.handle(
@@ -426,4 +433,66 @@ export function registerOrgBridge(): void {
     }
     return checkRiskyCommand(params.command);
   });
+
+  ipcMain.handle(
+    'org:getSessionMcpServer',
+    async (
+      _event,
+      params?: {
+        role?: OrgRole;
+        deptId?: string;
+        projectId?: string;
+        deptWorkspacePath?: string;
+      }
+    ) => {
+      try {
+        const { port, token } = await startOrgBridgeServer();
+        const scriptPath = getBuiltinMcpScriptPath(BUILTIN_ORG_SCRIPT);
+        return {
+          id: 'builtin-org',
+          name: BUILTIN_ORG_MCP_NAME,
+          transport: {
+            type: 'stdio',
+            command: 'node',
+            args: [scriptPath],
+            env: {
+              AIONUI_ORG_BRIDGE_PORT: String(port),
+              AIONUI_ORG_BRIDGE_TOKEN: token,
+              AIONUI_ORG_ROLE: params?.role || 'ceo',
+              ...(params?.deptId ? { AIONUI_ORG_DEPT_ID: params.deptId } : {}),
+              ...(params?.projectId ? { AIONUI_ORG_PROJECT_ID: params.projectId } : {}),
+              ...(params?.deptWorkspacePath ? { AIONUI_ORG_DEPT_WORKSPACE: params.deptWorkspacePath } : {}),
+            },
+          },
+        };
+      } catch (err) {
+        console.error('[OrgBridge] getSessionMcpServer failed:', err);
+        throw err;
+      }
+    }
+  );
+
+  ipcMain.handle(
+    'org:executeTool',
+    async (
+      _event,
+      params: {
+        tool: string;
+        args: Record<string, any>;
+        role?: OrgRole;
+        deptId?: string;
+        projectId?: string;
+        deptWorkspacePath?: string;
+      }
+    ) => {
+      try {
+        return await handleOrgToolRequest(params);
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  );
 }

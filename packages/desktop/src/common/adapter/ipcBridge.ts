@@ -2901,4 +2901,47 @@ export const org = {
     }
     return { isRisky: false };
   },
+  getSessionMcpServer: async (params?: {
+    role?: 'ceo' | 'department_head' | 'project_head';
+    deptId?: string;
+    projectId?: string;
+    deptWorkspacePath?: string;
+  }): Promise<ISessionMcpServer | null> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgGetSessionMcpServer) {
+      return window.electronAPI.orgGetSessionMcpServer(params);
+    }
+    return null;
+  },
+  executeTool: async (params: {
+    tool: string;
+    args: Record<string, any>;
+    role?: string;
+    deptId?: string;
+    projectId?: string;
+    deptWorkspacePath?: string;
+  }): Promise<{ success: boolean; result?: any; error?: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgExecuteTool) {
+      return window.electronAPI.orgExecuteTool(params);
+    }
+    return { success: false, error: 'orgExecuteTool is only supported in desktop mode' };
+  },
+  onExecuteToolCall: (
+    callback: (payload: { callId: string; tool: string; args: any; meta: any }) => void
+  ): (() => void) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.onOrgExecuteToolCall) {
+      return window.electronAPI.onOrgExecuteToolCall(callback);
+    }
+    return () => {};
+  },
+  sendToolResponse: (payload: { callId: string; success: boolean; result?: any; error?: string }): void => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgSendToolResponse) {
+      window.electronAPI.orgSendToolResponse(payload);
+    }
+  },
+  onLiveStep: (callback: (payload: { step: string; tool?: string; args?: any }) => void): (() => void) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.onOrgLiveStep) {
+      return window.electronAPI.onOrgLiveStep(callback);
+    }
+    return () => {};
+  },
 };

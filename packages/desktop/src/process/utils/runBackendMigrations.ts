@@ -16,6 +16,7 @@ import {
   type ImageGenerationMcpEnvResolveResult,
 } from '@/common/config/imageGenerationMcpEnv';
 import { BUILTIN_IMAGE_GEN_NAME, type IMcpServer, type IProvider } from '@/common/config/storage';
+import { BUILTIN_ORG_MCP_NAME, BUILTIN_ORG_SCRIPT } from '../resources/builtinMcp/constants';
 import { getBuiltinMcpScriptPath, type ProcessConfig as ProcessConfigType } from './initStorage';
 import { migrateAssistantsToBackend } from './migrateAssistants';
 
@@ -200,6 +201,28 @@ function buildBuiltinBrowserServer(): McpImportServer {
   };
 }
 
+function buildBuiltinOrgServer(): McpImportServer {
+  const scriptPath = getBuiltinMcpScriptPath(BUILTIN_ORG_SCRIPT);
+  const serverConfig = {
+    command: 'node',
+    args: [scriptPath],
+  };
+
+  return {
+    name: BUILTIN_ORG_MCP_NAME,
+    description:
+      'Manage organization departments, projects, members, and task delegation directly with tools.',
+    enabled: true,
+    builtin: true,
+    transport: {
+      type: 'stdio',
+      command: serverConfig.command,
+      args: serverConfig.args,
+    },
+    original_json: JSON.stringify({ mcpServers: { [BUILTIN_ORG_MCP_NAME]: serverConfig } }, null, 2),
+  };
+}
+
 function buildDefaultMcpServers(): McpImportServer[] {
   const chromeConfig = {
     command: 'npx',
@@ -220,6 +243,7 @@ function buildDefaultMcpServers(): McpImportServer[] {
       original_json: JSON.stringify({ mcpServers: { [BUILTIN_CHROME_DEVTOOLS_NAME]: chromeConfig } }, null, 2),
     },
     buildBuiltinBrowserServer(),
+    buildBuiltinOrgServer(),
   ];
 }
 
@@ -434,11 +458,36 @@ async function ensureBootstrapMcpServersInDb(configFile: ConfigFile): Promise<vo
     }
   }
 
+  const existingOrgServer = existing.find((server) => server.name === BUILTIN_ORG_MCP_NAME);
+  let orgServerUpdated = false;
+  if (existingOrgServer) {
+    const desiredOrgServer = buildBuiltinOrgServer();
+    const orgTransportChanged = !isSameStdioTransport(existingOrgServer.transport, desiredOrgServer.transport);
+    const orgJsonChanged = existingOrgServer.original_json !== desiredOrgServer.original_json;
+    if (orgTransportChanged || orgJsonChanged) {
+      console.info(
+        '[Migration] org MCP path drifted, server id: %s, transport changed: %s, json changed: %s',
+        existingOrgServer.id,
+        orgTransportChanged ? 'yes' : 'no',
+        orgJsonChanged ? 'yes' : 'no'
+      );
+      await mcpService.updateServer.invoke({
+        id: existingOrgServer.id,
+        data: {
+          transport: desiredOrgServer.transport,
+          original_json: desiredOrgServer.original_json,
+        },
+      });
+      orgServerUpdated = true;
+    }
+  }
+
   console.info(
-    '[Migration] MCP bootstrap completed, imported %d missing defaults, updated image server: %s, updated browser server: %s, image config source: %s, image enabled: %s',
+    '[Migration] MCP bootstrap completed, imported %d missing defaults, updated image server: %s, updated browser server: %s, updated org server: %s, image config source: %s, image enabled: %s',
     missing.length,
     imageServerUpdated ? 'yes' : 'no',
     browserServerUpdated ? 'yes' : 'no',
+    orgServerUpdated ? 'yes' : 'no',
     imageConfigSource,
     imageConfig?.switch === true ? 'yes' : 'no'
   );

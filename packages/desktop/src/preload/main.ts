@@ -268,6 +268,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
   orgApproveCommand: (params: { command: string; cwd: string }) => ipcRenderer.invoke('org:approveCommand', params),
   orgApproveFileRead: (params: { targetFilePath: string }) => ipcRenderer.invoke('org:approveFileRead', params),
   orgCheckRiskyCommand: (params: { command: string }) => ipcRenderer.invoke('org:checkRiskyCommand', params),
+  orgGetSessionMcpServer: (params?: {
+    role?: 'ceo' | 'department_head' | 'project_head';
+    deptId?: string;
+    projectId?: string;
+    deptWorkspacePath?: string;
+  }) => ipcRenderer.invoke('org:getSessionMcpServer', params),
+  orgExecuteTool: (params: {
+    tool: string;
+    args: Record<string, any>;
+    role?: string;
+    deptId?: string;
+    projectId?: string;
+    deptWorkspacePath?: string;
+  }) => ipcRenderer.invoke('org:executeTool', params),
+  orgSendToolResponse: (payload: { callId: string; success: boolean; result?: any; error?: string }) => {
+    ipcRenderer.send('org:execute-tool-response', payload);
+  },
+  onOrgExecuteToolCall: (callback: (payload: { callId: string; tool: string; args: any; meta: any }) => void) => {
+    const subscription = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('org:execute-tool-call', subscription);
+    return () => {
+      ipcRenderer.removeListener('org:execute-tool-call', subscription);
+    };
+  },
+  onOrgLiveStep: (callback: (payload: { step: string; tool?: string; args?: any }) => void) => {
+    const subscription = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('org:live-step', subscription);
+    return () => {
+      ipcRenderer.removeListener('org:live-step', subscription);
+    };
+  },
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),

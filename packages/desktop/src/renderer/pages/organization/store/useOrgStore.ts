@@ -42,6 +42,7 @@ const STORAGE_KEYS = {
   SCOPE: 'aionui:active-scope',
   HIERARCHY: 'aionui:org-hierarchy',
   PROJECTS: 'aionui:org-projects',
+  MEMBERS: 'aionui:org-members',
   CONVERSATIONS: 'aionui:org-conversations',
   CRON_JOBS: 'aionui:org-cron-jobs',
   VERSION: 'aionui:org-storage-version',
@@ -80,6 +81,7 @@ type OrgStoreState = {
   activeScope: OrgScope;
   hierarchy: OrgHierarchy;
   projects: OrgProject[];
+  members: OrgAgentMember[];
   conversations: OrgConversation[];
   cronJobs: OrgCronJob[];
   nodeStatuses: Record<string, OrgNodeStatus>;
@@ -154,6 +156,7 @@ function createInitialState(): OrgStoreState {
       (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEYS.SCOPE) as OrgScope)) || 'workplace',
     hierarchy: reconciled.hierarchy,
     projects: conversationReconciled.projects,
+    members: loadStored<OrgAgentMember[]>(STORAGE_KEYS.MEMBERS, (): OrgAgentMember[] => []),
     conversations: conversationReconciled.conversations,
     cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
     nodeStatuses: {},
@@ -723,12 +726,23 @@ export function useOrgStore() {
   }, []);
 
   const upsertMember = useCallback((member: OrgAgentMember) => {
-    // Shared members are part of the global pool
-    void ipcBridge.org.saveMembers([member]);
+    const currentMembers = globalState.members || [];
+    const exists = currentMembers.some((m) => m.id === member.id);
+    const nextMembers = exists
+      ? currentMembers.map((m) => (m.id === member.id ? member : m))
+      : [...currentMembers, member];
+    globalState = { ...globalState, members: nextMembers };
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
     notify();
   }, []);
 
-  const deleteMember = useCallback((_memberId: string) => {
+  const deleteMember = useCallback((memberId: string) => {
+    const currentMembers = globalState.members || [];
+    const nextMembers = currentMembers.filter((m) => m.id !== memberId);
+    globalState = { ...globalState, members: nextMembers };
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
     notify();
   }, []);
 
@@ -1068,4 +1082,13 @@ export function useOrgStore() {
     openChat,
     clearOpenChatError,
   };
+}
+
+export function getOrgStoreSnapshot(): OrgStoreState {
+  return globalState;
+}
+
+export function setOrgStoreSnapshot(next: Partial<OrgStoreState>): void {
+  globalState = { ...globalState, ...next };
+  notify();
 }

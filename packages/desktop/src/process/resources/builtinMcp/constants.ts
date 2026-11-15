@@ -29,3 +29,12 @@ export function isBuiltinImageGenTransport(transport?: {
 
   return (transport.args || []).some((arg) => typeof arg === 'string' && arg.includes('builtin-mcp-image-gen.js'));
 }
+
+export const BUILTIN_ORG_MCP_ID = 'builtin-org';
+export const BUILTIN_ORG_MCP_NAME = 'aionui-org';
+export const BUILTIN_ORG_SCRIPT = 'builtin-mcp-org';
+
+export function isBuiltinOrgName(name?: string | null): boolean {
+  if (!name) return false;
+  return name === BUILTIN_ORG_MCP_NAME || name === BUILTIN_ORG_MCP_ID;
+}
