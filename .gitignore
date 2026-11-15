@@ -254,3 +254,13 @@ electron_full_extracted/
 simple-electron.js
 test-electron.js
 \${env.ELECTRON_CACHE}/
+
+# Local browser runtime profiles and history
+browser_history.json
+browser_profiles.json
+chrome-profiles/
+
+# Compiler/diagnostic outputs and local runner scripts
+tsc_output.txt
+run.bat
+
