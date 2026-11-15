@@ -107,6 +107,20 @@ export const ORG_THEME_PALETTE: Record<OrgNodeStatus, OrgThemeConfig> = {
     opacity: 0.52,
     pulse: false,
   },
+  error: {
+    status: 'error',
+    label: 'Error',
+    badgeText: 'Scope Error',
+    borderColor: '#EF4444',
+    borderStyle: 'solid',
+    borderWidth: '1.5px',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    boxShadow: '0 0 14px rgba(239, 68, 68, 0.25)',
+    textColor: '#FCA5A5',
+    accentColor: '#EF4444',
+    opacity: 1,
+    pulse: false,
+  },
 };
 
 export function computeLifecycleStatus(
@@ -118,7 +132,8 @@ export function computeLifecycleStatus(
     currentStatus === 'working' ||
     currentStatus === 'department_standby' ||
     currentStatus === 'queued_next' ||
-    currentStatus === 'recently_finished'
+    currentStatus === 'recently_finished' ||
+    currentStatus === 'error'
   ) {
     return currentStatus;
   }

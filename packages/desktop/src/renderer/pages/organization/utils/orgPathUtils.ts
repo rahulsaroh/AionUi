@@ -92,3 +92,47 @@ export async function validateWithinMaster(
     };
   }
 }
+
+/**
+ * Validates a folder path against its expected parent boundary using the
+ * main-process assertWithinScope guard. Fails closed.
+ * Normalizes and returns the canonical realpath on success to prevent '..' or symlink escapes.
+ */
+export async function validateOrgFolder(
+  folderPath: string,
+  expectedParentRoot: string,
+  entityType = 'folder'
+): Promise<{ valid: boolean; error?: string; resolvedPath?: string }> {
+  if (!expectedParentRoot || !expectedParentRoot.trim()) {
+    return {
+      valid: false,
+      error: `Cannot validate ${entityType}: parent boundary is not configured (fail closed).`,
+    };
+  }
+
+  if (!folderPath || !folderPath.trim()) {
+    return {
+      valid: false,
+      error: `${entityType} folder path cannot be empty.`,
+    };
+  }
+
+  try {
+    const res = await ipcBridge.org.assertWithinScope(folderPath.trim(), expectedParentRoot.trim());
+    if (!res.allowed) {
+      return {
+        valid: false,
+        error: `Folder "${folderPath}" is outside the organization root "${expectedParentRoot}"`,
+      };
+    }
+    return {
+      valid: true,
+      resolvedPath: res.resolved || folderPath.trim(),
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

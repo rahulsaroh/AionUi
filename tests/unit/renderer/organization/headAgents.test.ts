@@ -85,7 +85,11 @@ describe('DepartmentHead & ProjectHead Agents (Commit 4)', () => {
     expect(uiProj!.recommendedMemberIds).toContain('m-designer');
 
     // Create project
-    const created = deptHead.createProject('api-service', apiProj!.folder, apiProj!.recommendedMemberIds);
+    vi.spyOn(ipcBridge.org, 'assertWithinScope').mockResolvedValue({
+      allowed: true,
+      resolved: apiProj!.folder,
+    });
+    const created = await deptHead.createProject('api-service', apiProj!.folder, apiProj!.recommendedMemberIds);
     expect(created.name).toBe('api-service');
     expect(onCreateProject).toHaveBeenCalledWith(created);
   });

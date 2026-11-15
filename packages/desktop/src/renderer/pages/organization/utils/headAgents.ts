@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import type { OrgDepartmentNode, OrgProject, OrgAgentMember } from '@/types/organization';
+import { validateOrgFolder } from './orgPathUtils';
 
 export interface DepartmentHeadCallbacks {
   onLiveStep?: (step: string) => void;
@@ -99,16 +100,26 @@ Mandate:
   }
 
   /**
-   * Creates a project and assigns members.
+   * Creates a project and assigns members after validating the folder boundary.
    */
-  public createProject(name: string, folder: string, memberIds: string[]): OrgProject {
+  public async createProject(name: string, folder: string, memberIds: string[]): Promise<OrgProject> {
+    let finalFolder = folder;
+    if (this.department.workspacePath) {
+      const check = await validateOrgFolder(folder, this.department.workspacePath, 'project');
+      if (!check.valid) {
+        throw new Error(
+          check.error || `Folder "${folder}" is outside the department folder "${this.department.workspacePath}"`
+        );
+      }
+      finalFolder = check.resolvedPath || folder;
+    }
     const proj: OrgProject = {
       id: `proj-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       name,
       departmentId: this.department.id,
       teamIds: [],
       memberIds,
-      workspacePath: folder,
+      workspacePath: finalFolder,
       status: 'active',
     };
     this.callbacks.onCreateProject?.(proj);

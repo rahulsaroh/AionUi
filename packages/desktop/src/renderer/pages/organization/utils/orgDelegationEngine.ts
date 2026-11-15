@@ -14,7 +14,7 @@ import type {
   OrgProject,
 } from '@/types/organization';
 import { createDepartmentShell, createTeamShell, createMemberShell } from './orgCoherence';
-import { getDefaultDeptPath, getDefaultTeamPath, getDefaultProjectPath } from './orgPathUtils';
+import { getDefaultDeptPath, getDefaultTeamPath, getDefaultProjectPath, validateOrgFolder } from './orgPathUtils';
 
 export interface DelegationStepLog {
   id: string;
@@ -671,6 +671,9 @@ export class OrgDelegationEngine {
    * Runs inside the agent's bound `workspacePath` as the working directory.
    */
   private async runOrgAgentStep(opts: AgentExecutionOptions): Promise<string> {
+    if (opts.agent.status === 'error') {
+      throw new Error(`Cannot run agent "${opts.agent.name}": agent has error status due to out-of-scope workspace.`);
+    }
     const rawWorkspace = opts.workspacePath || this.hierarchy.rootCeo.workspacePath;
     let effectiveWorkspace = rawWorkspace && rawWorkspace !== 'workspace' ? rawWorkspace : '';
 
@@ -1706,7 +1709,24 @@ Never reply saying you cannot create departments or that you need more info if t
           if (!existing) {
             const newDept = createDepartmentShell(deptName);
             if (action.workspacePath) {
-              newDept.workspacePath = action.workspacePath;
+              if (rootCeo.workspacePath) {
+                const check = await validateOrgFolder(action.workspacePath, rootCeo.workspacePath, 'department');
+                if (!check.valid) {
+                  addLog({
+                    depth: 1,
+                    fromName: rootCeo.ceoAgent.name,
+                    fromRole: 'Root CEO',
+                    toName: 'Security Guard',
+                    toRole: 'Security',
+                    message: `Security rejection: folder "${action.workspacePath}" is outside organization root "${rootCeo.workspacePath}".`,
+                    status: 'error',
+                  });
+                  continue;
+                }
+                newDept.workspacePath = check.resolvedPath || action.workspacePath;
+              } else {
+                continue;
+              }
             } else if (rootCeo.workspacePath) {
               newDept.workspacePath = getDefaultDeptPath(rootCeo.workspacePath, deptName);
             }
@@ -1752,8 +1772,26 @@ Never reply saying you cannot create departments or that you need more info if t
 
           if (targetDeptCandidate) {
             const newTeam = createTeamShell(targetDeptCandidate.id, teamName);
+            const parentScope = targetDeptCandidate.workspacePath || rootCeo.workspacePath;
             if (action.workspacePath) {
-              newTeam.workspacePath = action.workspacePath;
+              if (parentScope) {
+                const check = await validateOrgFolder(action.workspacePath, parentScope, 'team');
+                if (!check.valid) {
+                  addLog({
+                    depth: 1,
+                    fromName: rootCeo.ceoAgent.name,
+                    fromRole: 'Root CEO',
+                    toName: 'Security Guard',
+                    toRole: 'Security',
+                    message: `Security rejection: folder "${action.workspacePath}" is outside parent scope "${parentScope}".`,
+                    status: 'error',
+                  });
+                  continue;
+                }
+                newTeam.workspacePath = check.resolvedPath || action.workspacePath;
+              } else {
+                continue;
+              }
             } else if (rootCeo.workspacePath) {
               newTeam.workspacePath = getDefaultTeamPath(rootCeo.workspacePath, targetDeptCandidate.name, teamName);
             }
@@ -1793,9 +1831,30 @@ Never reply saying you cannot create departments or that you need more info if t
               : undefined);
 
           if (targetDeptCandidate) {
-            const newProjPath =
-              action.workspacePath ||
-              (rootCeo.workspacePath ? getDefaultProjectPath(rootCeo.workspacePath, projName) : undefined);
+            const parentScope = targetDeptCandidate.workspacePath || rootCeo.workspacePath;
+            let newProjPath: string | undefined = undefined;
+            if (action.workspacePath) {
+              if (parentScope) {
+                const check = await validateOrgFolder(action.workspacePath, parentScope, 'project');
+                if (!check.valid) {
+                  addLog({
+                    depth: 1,
+                    fromName: rootCeo.ceoAgent.name,
+                    fromRole: 'Root CEO',
+                    toName: 'Security Guard',
+                    toRole: 'Security',
+                    message: `Security rejection: folder "${action.workspacePath}" is outside department scope "${parentScope}".`,
+                    status: 'error',
+                  });
+                  continue;
+                }
+                newProjPath = check.resolvedPath || action.workspacePath;
+              } else {
+                continue;
+              }
+            } else if (rootCeo.workspacePath) {
+              newProjPath = getDefaultProjectPath(rootCeo.workspacePath, projName);
+            }
             const newProj: OrgProject = {
               id: `proj-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
               name: projName,

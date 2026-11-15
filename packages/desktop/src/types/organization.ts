@@ -6,7 +6,14 @@
 
 export type OrgScope = 'workplace' | 'organization';
 
-export type OrgNodeStatus = 'working' | 'department_standby' | 'queued_next' | 'recently_finished' | 'idle' | 'dormant';
+export type OrgNodeStatus =
+  | 'working'
+  | 'department_standby'
+  | 'queued_next'
+  | 'recently_finished'
+  | 'idle'
+  | 'dormant'
+  | 'error';
 
 export type OrgAgentRole =
   | 'ceo'

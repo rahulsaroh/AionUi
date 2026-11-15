@@ -34,6 +34,7 @@ import {
 import { migrateOrgStorageV2, reconcileConversationsWithProjects, ORG_STORAGE_VERSION } from '../utils/orgMigration';
 import { ipcBridge } from '@/common';
 import { resolveOrgChatTarget } from '../utils/openOrgChat';
+import { validateOrgFolder } from '../utils/orgPathUtils';
 import type { OrgChatTarget } from '../utils/agentTurn';
 import i18n from '@/renderer/services/i18n';
 
@@ -175,6 +176,63 @@ function notify() {
 function persistHierarchyAndProjects(next: Pick<OrgStoreState, 'hierarchy' | 'projects'>) {
   saveStored(STORAGE_KEYS.HIERARCHY, next.hierarchy);
   saveStored(STORAGE_KEYS.PROJECTS, next.projects);
+}
+
+/**
+ * Re-validates stored department and project workspace paths against their
+ * allowed parent roots. Any path outside its boundary is flagged with status 'error'
+ * or 'dormant'.
+ */
+export async function revalidateStoredPaths(
+  hierarchy: OrgHierarchy,
+  projects: OrgProject[]
+): Promise<{ hierarchy: OrgHierarchy; projects: OrgProject[]; changed: boolean }> {
+  const masterRoot = hierarchy.rootCeo.workspacePath;
+  let changed = false;
+
+  for (const dept of hierarchy.departments) {
+    if (dept.workspacePath) {
+      if (!masterRoot) {
+        dept.status = 'error';
+        dept.departmentCeoAgent.status = 'error';
+        changed = true;
+      } else {
+        const check = await validateOrgFolder(dept.workspacePath, masterRoot, 'department');
+        if (!check.valid) {
+          dept.status = 'error';
+          dept.departmentCeoAgent.status = 'error';
+          changed = true;
+        } else if (check.resolvedPath && check.resolvedPath !== dept.workspacePath) {
+          dept.workspacePath = check.resolvedPath;
+          dept.departmentCeoAgent.workspacePath = check.resolvedPath;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  for (const proj of projects) {
+    if (proj.workspacePath) {
+      const dept = hierarchy.departments.find((d) => d.id === proj.departmentId);
+      const parentRoot = dept?.workspacePath || masterRoot;
+      if (!parentRoot) {
+        proj.status = 'dormant';
+        changed = true;
+      } else {
+        const check = await validateOrgFolder(proj.workspacePath, parentRoot, 'project');
+        if (!check.valid) {
+          proj.status = 'dormant';
+          changed = true;
+        } else if (check.resolvedPath && check.resolvedPath !== proj.workspacePath) {
+          proj.workspacePath = check.resolvedPath;
+          proj.path = check.resolvedPath;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return { hierarchy, projects, changed };
 }
 
 export function useOrgStore() {
@@ -350,11 +408,25 @@ export function useOrgStore() {
     notify();
   }, []);
 
-  const addDepartment = useCallback((dept: OrgDepartmentNode) => {
+  const addDepartment = useCallback(async (dept: OrgDepartmentNode) => {
+    let finalDept = dept;
+    const masterRoot = globalState.hierarchy.rootCeo.workspacePath;
+    if (dept.workspacePath && masterRoot) {
+      const check = await validateOrgFolder(dept.workspacePath, masterRoot, 'department');
+      if (!check.valid) {
+        finalDept = { ...dept, status: 'error', departmentCeoAgent: { ...dept.departmentCeoAgent, status: 'error' } };
+      } else if (check.resolvedPath) {
+        finalDept = {
+          ...dept,
+          workspacePath: check.resolvedPath,
+          departmentCeoAgent: { ...dept.departmentCeoAgent, workspacePath: check.resolvedPath },
+        };
+      }
+    }
     const nextHierarchy = syncHierarchyProjectReferences(
       {
         ...globalState.hierarchy,
-        departments: [...globalState.hierarchy.departments, { ...dept, linkedProjects: dept.linkedProjects ?? [] }],
+        departments: [...globalState.hierarchy.departments, { ...finalDept, linkedProjects: finalDept.linkedProjects ?? [] }],
         lastUpdated: Date.now(),
       },
       globalState.projects
@@ -391,9 +463,19 @@ export function useOrgStore() {
     [removeDepartment]
   );
 
-  const updateDepartment = useCallback((departmentId: string, patch: Partial<OrgDepartmentNode>) => {
+  const updateDepartment = useCallback(async (departmentId: string, patch: Partial<OrgDepartmentNode>) => {
+    let finalPatch = patch;
+    const masterRoot = globalState.hierarchy.rootCeo.workspacePath;
+    if (patch.workspacePath && masterRoot) {
+      const check = await validateOrgFolder(patch.workspacePath, masterRoot, 'department');
+      if (!check.valid) {
+        finalPatch = { ...patch, status: 'error' };
+      } else if (check.resolvedPath) {
+        finalPatch = { ...patch, workspacePath: check.resolvedPath };
+      }
+    }
     const nextHierarchy = syncHierarchyProjectReferences(
-      updateDepartmentInHierarchy(globalState.hierarchy, departmentId, patch),
+      updateDepartmentInHierarchy(globalState.hierarchy, departmentId, finalPatch),
       globalState.projects
     );
     globalState = { ...globalState, hierarchy: nextHierarchy };
@@ -544,15 +626,39 @@ export function useOrgStore() {
     notify();
   }, []);
 
-  const upsertOrgProject = useCallback((project: OrgProject) => {
-    const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(project));
+  const upsertOrgProject = useCallback(async (project: OrgProject) => {
+    let finalProj = project;
+    const masterRoot = globalState.hierarchy.rootCeo.workspacePath;
+    const dept = globalState.hierarchy.departments.find((d) => d.id === project.departmentId);
+    const parentRoot = dept?.workspacePath || masterRoot;
+    if (project.workspacePath && parentRoot) {
+      const check = await validateOrgFolder(project.workspacePath, parentRoot, 'project');
+      if (!check.valid) {
+        finalProj = { ...project, status: 'dormant' };
+      } else if (check.resolvedPath) {
+        finalProj = { ...project, workspacePath: check.resolvedPath, path: check.resolvedPath };
+      }
+    }
+    const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(finalProj));
     globalState = { ...globalState, ...next };
     persistHierarchyAndProjects(next);
     notify();
   }, []);
 
-  const addOrgProject = useCallback((project: OrgProject) => {
-    const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(project));
+  const addOrgProject = useCallback(async (project: OrgProject) => {
+    let finalProj = project;
+    const masterRoot = globalState.hierarchy.rootCeo.workspacePath;
+    const dept = globalState.hierarchy.departments.find((d) => d.id === project.departmentId);
+    const parentRoot = dept?.workspacePath || masterRoot;
+    if (project.workspacePath && parentRoot) {
+      const check = await validateOrgFolder(project.workspacePath, parentRoot, 'project');
+      if (!check.valid) {
+        finalProj = { ...project, status: 'dormant' };
+      } else if (check.resolvedPath) {
+        finalProj = { ...project, workspacePath: check.resolvedPath, path: check.resolvedPath };
+      }
+    }
+    const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(finalProj));
     globalState = { ...globalState, ...next };
     persistHierarchyAndProjects(next);
     notify();

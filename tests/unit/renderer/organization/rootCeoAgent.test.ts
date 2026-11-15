@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RootCeoAgent, ROOT_CEO_TOOLS, type ProposalCardData } from '@/renderer/pages/organization/utils/rootCeoAgent';
+import { ipcBridge } from '@/common';
 import type { OrgHierarchy, OrgProject, OrgAgentMember } from '@/types/organization';
 
 describe('RootCeoAgent & Tool Integration (Commit 3)', () => {
@@ -75,6 +76,13 @@ describe('RootCeoAgent & Tool Integration (Commit 3)', () => {
       status: 'idle',
     },
   ];
+
+  beforeEach(() => {
+    vi.spyOn(ipcBridge.org, 'assertWithinScope').mockImplementation(async (targetPath: string) => ({
+      allowed: true,
+      resolved: targetPath,
+    }));
+  });
 
   it('exposes standard tool definitions without regex routers', () => {
     const toolNames = ROOT_CEO_TOOLS.map((t) => t.name);

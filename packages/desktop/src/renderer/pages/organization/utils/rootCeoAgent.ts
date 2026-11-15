@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import type { OrgHierarchy, OrgDepartmentNode, OrgProject, OrgAgentMember } from '@/types/organization';
+import { validateOrgFolder } from './orgPathUtils';
 
 export interface CeoToolDefinition {
   name: string;
@@ -177,7 +178,7 @@ Always inspect your tools before responding. When a tool call is needed, invoke 
   public async executeTool(
     name: string,
     args: Record<string, any>
-  ): Promise<{ result: unknown; formattedSummary: string }> {
+  ): Promise<{ result?: unknown; error?: string; formattedSummary: string }> {
     this.callbacks.onLiveStep?.(`Root CEO executing tool: ${name}`);
 
     switch (name) {
@@ -201,11 +202,26 @@ Always inspect your tools before responding. When a tool call is needed, invoke 
       }
 
       case 'create_department': {
+        const masterRoot = this.hierarchy.rootCeo.workspacePath;
+        if (!masterRoot) {
+          return {
+            error: 'No organization master root is configured.',
+            formattedSummary: 'Error: No organization master root is configured.',
+          };
+        }
+        const val = await validateOrgFolder(args.folder, masterRoot, 'department');
+        if (!val.valid) {
+          return {
+            error: `folder ${args.folder} is outside the organization root ${masterRoot}`,
+            formattedSummary: `Error: folder ${args.folder} is outside the organization root ${masterRoot}`,
+          };
+        }
+        const resolvedFolder = val.resolvedPath || args.folder;
         const deptId = `dept-${Date.now()}`;
         const newDept: OrgDepartmentNode = {
           id: deptId,
           name: args.name,
-          workspacePath: args.folder,
+          workspacePath: resolvedFolder,
           description: args.description || '',
           parentDepartmentId: null,
           departmentCeoAgent: {
@@ -214,11 +230,11 @@ Always inspect your tools before responding. When a tool call is needed, invoke 
             name: `${args.name} Department Head`,
             role: 'department_head',
             title: `Head of ${args.name}`,
-            workspacePath: args.folder,
+            workspacePath: resolvedFolder,
             assignedTeamIds: [],
             lastActiveAt: Date.now(),
             status: 'idle',
-            systemPrompt: `You are the Department Head for ${args.name}. Analyze your workspace (${args.folder}) and manage projects and team execution.`,
+            systemPrompt: `You are the Department Head for ${args.name}. Analyze your workspace (${resolvedFolder}) and manage projects and team execution.`,
           },
           teams: [],
           linkedProjects: [],
@@ -233,13 +249,37 @@ Always inspect your tools before responding. When a tool call is needed, invoke 
       }
 
       case 'create_project': {
+        const masterRoot = this.hierarchy.rootCeo.workspacePath;
+        if (!masterRoot) {
+          return {
+            error: 'No organization master root is configured.',
+            formattedSummary: 'Error: No organization master root is configured.',
+          };
+        }
+        const dept = this.hierarchy.departments.find((d) => d.id === args.departmentId);
+        if (!dept) {
+          return {
+            error: `Department "${args.departmentId}" not found.`,
+            formattedSummary: `Error: Department "${args.departmentId}" not found.`,
+          };
+        }
+        // Project folder must be inside its department's folder (or masterRoot if dept has no folder)
+        const parentFolder = dept.workspacePath || masterRoot;
+        const val = await validateOrgFolder(args.folder, parentFolder, 'project');
+        if (!val.valid) {
+          return {
+            error: `folder ${args.folder} is outside the department root ${parentFolder}`,
+            formattedSummary: `Error: folder ${args.folder} is outside the department root ${parentFolder}`,
+          };
+        }
+        const resolvedFolder = val.resolvedPath || args.folder;
         const projId = `proj-${Date.now()}`;
         const newProj: OrgProject = {
           id: projId,
           name: args.name,
           departmentId: args.departmentId,
           teamIds: [],
-          workspacePath: args.folder,
+          workspacePath: resolvedFolder,
           goal: args.goal || '',
           memberIds: args.memberIds || [],
           status: 'active',
@@ -281,10 +321,25 @@ Always inspect your tools before responding. When a tool call is needed, invoke 
 
       case 'propose_bulk_projects': {
         const dept = this.hierarchy.departments.find((d) => d.id === args.departmentId);
+        const masterRoot = this.hierarchy.rootCeo.workspacePath;
+        const parentFolder = dept?.workspacePath || masterRoot;
+        const validatedProposals = [];
+        if (parentFolder) {
+          for (const p of args.proposals || []) {
+            if (p.folder) {
+              const check = await validateOrgFolder(p.folder, parentFolder, 'project');
+              if (check.valid) {
+                validatedProposals.push({ ...p, folder: check.resolvedPath || p.folder });
+              }
+            } else {
+              validatedProposals.push(p);
+            }
+          }
+        }
         const card: ProposalCardData = {
           departmentId: args.departmentId,
           departmentName: dept?.name || 'Department',
-          projects: args.proposals || [],
+          projects: validatedProposals,
         };
         this.callbacks.onProposalCard?.(card);
         return {
