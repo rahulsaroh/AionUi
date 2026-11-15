@@ -308,9 +308,13 @@ export interface ElectronBridgeAPI {
   onGatewayLogAdded?: (callback: (log: import('../gateway/gatewayTypes').GatewayTelemetryLog) => void) => () => void;
   onGatewayQuotaUpdated?: (callback: (account: import('../gateway/gatewayTypes').GatewayAccount) => void) => () => void;
   // Org Mode APIs
+  orgSetMasterRoot?: (params: {
+    masterRoot: string;
+  }) => Promise<{ success: boolean; error?: string; masterRoot?: string }>;
+  orgGetMasterRoot?: () => Promise<string | null>;
   orgAssertWithinScope?: (params: {
     targetPath: string;
-    allowedRoot: string;
+    allowedRoot?: string;
   }) => Promise<{ allowed: boolean; reason?: string; resolved: string }>;
   orgDiscoverProjects?: (params: {
     folderPath: string;

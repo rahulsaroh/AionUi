@@ -2742,17 +2742,32 @@ export const knowledgeRepo = {
 };
 
 export const org = {
-  assertWithinScope: async (targetPath: string, allowedRoot: string) => {
+  setMasterRoot: async (masterRoot: string): Promise<{ success: boolean; error?: string; masterRoot?: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgSetMasterRoot) {
+      return window.electronAPI.orgSetMasterRoot({ masterRoot });
+    }
+    return {
+      success: false,
+      error: 'setMasterRoot is only supported in desktop mode (fail closed)',
+    };
+  },
+  getMasterRoot: async (): Promise<string | null> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgGetMasterRoot) {
+      return window.electronAPI.orgGetMasterRoot();
+    }
+    return null;
+  },
+  assertWithinScope: async (targetPath: string, allowedRoot?: string) => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgAssertWithinScope) {
       return window.electronAPI.orgAssertWithinScope({ targetPath, allowedRoot });
     }
-    if (!allowedRoot) return { allowed: true, resolved: targetPath };
     if (!targetPath) return { allowed: false, reason: 'empty target path', resolved: targetPath };
     // Renderer fallback has no filesystem/realpath access, so scope cannot be
     // verified properly (no symlink resolution, no canonicalization). Fail closed.
     return {
       allowed: false,
-      reason: 'Path scope check unavailable in this environment; refusing to allow access without native verification',
+      reason:
+        'Path scope check unavailable in this environment; refusing to allow access without native verification (fail closed)',
       resolved: targetPath,
     };
   },

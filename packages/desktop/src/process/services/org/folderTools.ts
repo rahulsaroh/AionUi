@@ -8,6 +8,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { assertWithinScope } from './pathGuard';
+import { resolveEffectiveScope } from './orgScope';
 
 export interface FolderScanEntry {
   name: string;
@@ -67,10 +68,13 @@ export class OrgFolderTools {
     allowedWorkspace: string,
     options?: { depth?: number; maxEntries?: number }
   ): Promise<FolderScanResult> {
-    const scopeCheck = await assertWithinScope(targetDir, allowedWorkspace);
+    // Enforce main-process master root. The allowedWorkspace parameter is kept for
+    // backward compatibility, but cannot widen scope; if valid, it may only narrow it.
+    const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
+    const scopeCheck = await assertWithinScope(targetDir, effectiveScope);
     if (!scopeCheck.allowed) {
       throw new Error(
-        `Access denied: Target folder "${targetDir}" is outside workspace "${allowedWorkspace}" (${scopeCheck.reason})`
+        `Access denied: Target folder "${targetDir}" is outside workspace "${effectiveScope}" (${scopeCheck.reason})`
       );
     }
 
@@ -173,9 +177,11 @@ export class OrgFolderTools {
     allowedWorkspace: string,
     maxBytes = 256 * 1024
   ): Promise<FileReadResult> {
-    const scopeCheck = await assertWithinScope(targetFilePath, allowedWorkspace);
+    // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
+    const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
+    const scopeCheck = await assertWithinScope(targetFilePath, effectiveScope);
     if (!scopeCheck.allowed) {
-      throw new Error(`Access denied: File "${targetFilePath}" is outside workspace "${allowedWorkspace}"`);
+      throw new Error(`Access denied: File "${targetFilePath}" is outside workspace "${effectiveScope}"`);
     }
 
     if (!fs.existsSync(targetFilePath)) {
@@ -210,9 +216,11 @@ export class OrgFolderTools {
    * Writes content to a file with boundary validation and recursive directory creation.
    */
   public static async writeFile(targetFilePath: string, content: string, allowedWorkspace: string): Promise<boolean> {
-    const scopeCheck = await assertWithinScope(targetFilePath, allowedWorkspace);
+    // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
+    const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
+    const scopeCheck = await assertWithinScope(targetFilePath, effectiveScope);
     if (!scopeCheck.allowed) {
-      throw new Error(`Access denied: Target file "${targetFilePath}" is outside workspace "${allowedWorkspace}"`);
+      throw new Error(`Access denied: Target file "${targetFilePath}" is outside workspace "${effectiveScope}"`);
     }
 
     const dir = path.dirname(targetFilePath);
@@ -242,9 +250,11 @@ export class OrgFolderTools {
     allowedWorkspace: string,
     options?: { timeoutMs?: number; requiresApproval?: boolean; onOutput?: (chunk: string) => void }
   ): Promise<ShellRunResult> {
-    const scopeCheck = await assertWithinScope(cwd, allowedWorkspace);
+    // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
+    const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
+    const scopeCheck = await assertWithinScope(cwd, effectiveScope);
     if (!scopeCheck.allowed) {
-      throw new Error(`Access denied: Shell working directory "${cwd}" is outside workspace "${allowedWorkspace}"`);
+      throw new Error(`Access denied: Shell working directory "${cwd}" is outside workspace "${effectiveScope}"`);
     }
 
     const risk = checkRiskyCommand(command);

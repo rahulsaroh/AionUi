@@ -22,6 +22,7 @@ import {
   Remind,
 } from '@icon-park/react';
 import { useOrgStore } from '../store/useOrgStore';
+import { ipcBridge } from '@/common';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { validateWithinMaster } from '../utils/orgPathUtils';
@@ -347,8 +348,14 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       if (!chosenPath) return;
 
       if (selectedNodeType === 'ceo' || selectedNodeId === 'root-ceo') {
-        updateRootCeo({ workspacePath: chosenPath });
-        Message.success(`Master organization workspace folder set to: ${chosenPath}`);
+        const res = await ipcBridge.org.setMasterRoot(chosenPath);
+        if (!res.success) {
+          Message.error(res.error || 'Failed to set master folder: access denied or invalid directory');
+          return;
+        }
+        const verifiedPath = res.masterRoot || chosenPath;
+        updateRootCeo({ workspacePath: verifiedPath });
+        Message.success(`Master organization workspace folder set to: ${verifiedPath}`);
         return;
       }
 

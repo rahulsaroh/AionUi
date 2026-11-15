@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { OrgFolderTools, checkRiskyCommand } from '@/process/services/org/folderTools';
+import { setMasterRootForTesting, resetMasterRoot } from '@/process/services/org/orgScope';
 
 describe('OrgFolderTools & Boundary Enforcement (Commit 2)', () => {
   let tempRoot: string;
@@ -22,9 +23,13 @@ describe('OrgFolderTools & Boundary Enforcement (Commit 2)', () => {
 
     fs.mkdirSync(workspaceDir, { recursive: true });
     fs.mkdirSync(outsideDir, { recursive: true });
+
+    // Set master root for tests
+    setMasterRootForTesting(workspaceDir);
   });
 
   afterEach(() => {
+    resetMasterRoot();
     try {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     } catch {}
@@ -95,5 +100,73 @@ describe('OrgFolderTools & Boundary Enforcement (Commit 2)', () => {
     await expect(
       OrgFolderTools.runShell('rm -rf test', workspaceDir, workspaceDir, { requiresApproval: true })
     ).rejects.toThrow(/Blocked risky command requiring manual approval/);
+  });
+
+  describe('Phase 1: Main Process Master Root Enforcement', () => {
+    it('refuses all file and shell tools when no master root is configured (fails closed)', async () => {
+      resetMasterRoot();
+
+      await expect(OrgFolderTools.scanFolder(workspaceDir, workspaceDir)).rejects.toThrow(
+        /No organization master root is configured \(fail closed\)/
+      );
+      await expect(OrgFolderTools.readFile(path.join(workspaceDir, 'any.txt'), workspaceDir)).rejects.toThrow(
+        /No organization master root is configured \(fail closed\)/
+      );
+      await expect(
+        OrgFolderTools.writeFile(path.join(workspaceDir, 'any.txt'), 'content', workspaceDir)
+      ).rejects.toThrow(/No organization master root is configured \(fail closed\)/);
+      await expect(OrgFolderTools.listDir(workspaceDir, workspaceDir)).rejects.toThrow(
+        /No organization master root is configured \(fail closed\)/
+      );
+      await expect(OrgFolderTools.runShell('echo 1', workspaceDir, workspaceDir)).rejects.toThrow(
+        /No organization master root is configured \(fail closed\)/
+      );
+    });
+
+    it('malicious caller: renderer passes allowedWorkspace="/" or root -> still refused for outside targets', async () => {
+      const escapeFile = path.join(outsideDir, 'secret.txt');
+      fs.writeFileSync(escapeFile, 'confidential');
+
+      const evilWorkspace = process.platform === 'win32' ? 'C:\\' : '/';
+
+      // scanFolder
+      await expect(OrgFolderTools.scanFolder(outsideDir, evilWorkspace)).rejects.toThrow(/Access denied/);
+
+      // readFile
+      await expect(OrgFolderTools.readFile(escapeFile, evilWorkspace)).rejects.toThrow(/Access denied/);
+
+      // writeFile
+      await expect(OrgFolderTools.writeFile(escapeFile, 'malicious payload', evilWorkspace)).rejects.toThrow(
+        /Access denied/
+      );
+
+      // runShell
+      const cmd = process.platform === 'win32' ? 'Write-Output "escape"' : 'echo "escape"';
+      await expect(OrgFolderTools.runShell(cmd, outsideDir, evilWorkspace)).rejects.toThrow(/Access denied/);
+    });
+
+    it('accepts narrower sub-path as an additional restriction without widening', async () => {
+      const subDeptA = path.join(workspaceDir, 'deptA');
+      const subDeptB = path.join(workspaceDir, 'deptB');
+      fs.mkdirSync(subDeptA, { recursive: true });
+      fs.mkdirSync(subDeptB, { recursive: true });
+
+      const fileA = path.join(subDeptA, 'workA.txt');
+      const fileB = path.join(subDeptB, 'workB.txt');
+      fs.writeFileSync(fileA, 'data A');
+      fs.writeFileSync(fileB, 'data B');
+
+      // Target inside deptA with allowedWorkspace=deptA is allowed
+      const readA = await OrgFolderTools.readFile(fileA, subDeptA);
+      expect(readA.content).toBe('data A');
+
+      // Target inside deptB with allowedWorkspace=deptA is rejected (narrowed boundary enforced)
+      await expect(OrgFolderTools.readFile(fileB, subDeptA)).rejects.toThrow(/Access denied/);
+
+      // Writing to deptB with allowedWorkspace=deptA is rejected
+      await expect(OrgFolderTools.writeFile(path.join(subDeptB, 'new.txt'), 'content', subDeptA)).rejects.toThrow(
+        /Access denied/
+      );
+    });
   });
 });

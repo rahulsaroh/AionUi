@@ -54,17 +54,30 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const trimmed = selectedPath.trim();
     if (!trimmed) {
       Message.warning('Please select a master folder for the organization.');
       return;
     }
 
-    updateRootCeo({ workspacePath: trimmed });
-    addRecentWorkspace(trimmed);
-    Message.success(`Master organization folder set to: ${trimmed}`);
-    onClose();
+    try {
+      setLoading(true);
+      const res = await ipcBridge.org.setMasterRoot(trimmed);
+      if (!res.success) {
+        Message.error(res.error || 'Failed to set master folder: access denied or invalid directory');
+        return;
+      }
+      const verifiedPath = res.masterRoot || trimmed;
+      updateRootCeo({ workspacePath: verifiedPath });
+      addRecentWorkspace(verifiedPath);
+      Message.success(`Master organization folder set to: ${verifiedPath}`);
+      onClose();
+    } catch (err) {
+      Message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

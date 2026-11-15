@@ -230,7 +230,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   // Org Mode APIs
-  orgAssertWithinScope: (params: { targetPath: string; allowedRoot: string }) =>
+  orgSetMasterRoot: (params: { masterRoot: string }) => ipcRenderer.invoke('org:setMasterRoot', params),
+  orgGetMasterRoot: () => ipcRenderer.invoke('org:getMasterRoot'),
+  orgAssertWithinScope: (params: { targetPath: string; allowedRoot?: string }) =>
     ipcRenderer.invoke('org:assertWithinScope', params),
   orgDiscoverProjects: (params: { folderPath: string; allowedRoot?: string }) =>
     ipcRenderer.invoke('org:discoverProjects', params),

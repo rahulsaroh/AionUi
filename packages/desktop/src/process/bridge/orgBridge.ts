@@ -9,22 +9,53 @@ import { assertWithinScope, type ScopeCheckResult } from '../services/org/pathGu
 import { orgStorageService } from '../services/org/orgStorageService';
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
+import {
+  setMasterRoot,
+  getMasterRoot,
+  resolveEffectiveScope,
+  type SetMasterRootResult,
+} from '../services/org/orgScope';
 
 export function registerOrgBridge(): void {
   ipcMain.handle(
     'org:assertWithinScope',
-    async (_event, params: { targetPath: string; allowedRoot: string }): Promise<ScopeCheckResult> => {
+    async (_event, params: { targetPath: string; allowedRoot?: string }): Promise<ScopeCheckResult> => {
       try {
-        return await assertWithinScope(params.targetPath, params.allowedRoot);
+        if (!params?.targetPath) {
+          return { allowed: false, reason: 'empty path', resolved: params?.targetPath || '' };
+        }
+        // Enforce main-process master root. The allowedRoot parameter is kept for backward
+        // compatibility but cannot widen scope; if valid, it may only narrow it.
+        const effectiveRoot = await resolveEffectiveScope(params.allowedRoot);
+        return await assertWithinScope(params.targetPath, effectiveRoot);
       } catch (err) {
         return {
           allowed: false,
           reason: err instanceof Error ? err.message : String(err),
-          resolved: params.targetPath,
+          resolved: params?.targetPath || '',
         };
       }
     }
   );
+
+  ipcMain.handle('org:setMasterRoot', async (_event, params: { masterRoot: string }): Promise<SetMasterRootResult> => {
+    try {
+      return await setMasterRoot(params.masterRoot);
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+
+  ipcMain.handle('org:getMasterRoot', async (): Promise<string | null> => {
+    try {
+      return await getMasterRoot();
+    } catch {
+      return null;
+    }
+  });
 
   ipcMain.handle(
     'org:discoverProjects',

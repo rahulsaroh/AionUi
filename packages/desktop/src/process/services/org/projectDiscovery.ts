@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertWithinScope } from './pathGuard';
+import { resolveEffectiveScope } from './orgScope';
 
 export type DiscoveredProject = {
   name: string;
@@ -49,11 +50,16 @@ const PROJECT_MARKERS: Array<{ file: string; type: string }> = [
 export async function discoverProjectsInFolder(targetPath: string, allowedRoot?: string): Promise<DiscoveredProject[]> {
   if (!targetPath) return [];
 
-  if (allowedRoot) {
-    const scopeCheck = await assertWithinScope(targetPath, allowedRoot);
+  // Enforce main-process master root. allowedRoot can only narrow, never widen.
+  try {
+    const effectiveScope = await resolveEffectiveScope(allowedRoot);
+    const scopeCheck = await assertWithinScope(targetPath, effectiveScope);
     if (!scopeCheck.allowed) {
       return [];
     }
+  } catch {
+    // If no master root is configured or scope check fails, fail closed.
+    return [];
   }
 
   let resolvedPath = path.resolve(targetPath);
