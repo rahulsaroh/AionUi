@@ -6,7 +6,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { areTeamPropsEqual, type TeamNodeData } from '@/renderer/pages/organization/components/TeamNode';
-import { areDepartmentPropsEqual, type DepartmentNodeData } from '@/renderer/pages/organization/components/DepartmentNode';
+import {
+  areDepartmentPropsEqual,
+  type DepartmentNodeData,
+} from '@/renderer/pages/organization/components/DepartmentNode';
 import type { OrgTeamNode, OrgDepartmentNode } from '@/types/organization';
 
 describe('Org Chart Render Count & Memoization Verification', () => {
@@ -89,18 +92,12 @@ describe('Org Chart Render Count & Memoization Verification', () => {
 
     // Idle department props equality: true (skips re-render)
     expect(
-      areDepartmentPropsEqual(
-        { data: initialDept2Data },
-        { data: { ...initialDept2Data, isDescendantWorking: false } }
-      )
+      areDepartmentPropsEqual({ data: initialDept2Data }, { data: { ...initialDept2Data, isDescendantWorking: false } })
     ).toBe(true);
 
     // Active department props equality: false (triggers re-render)
     expect(
-      areDepartmentPropsEqual(
-        { data: initialDept1Data },
-        { data: { ...initialDept1Data, isDescendantWorking: true } }
-      )
+      areDepartmentPropsEqual({ data: initialDept1Data }, { data: { ...initialDept1Data, isDescendantWorking: true } })
     ).toBe(false);
   });
 });

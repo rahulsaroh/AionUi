@@ -82,9 +82,13 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     selectedConversationId,
     setSelectedConversationId,
     openChat,
+    activeFilter: storeActiveFilter,
+    setActiveFilter: storeSetActiveFilter,
   } = useOrgStore();
 
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'dormant' | 'shared'>('all');
+  const activeFilter = storeActiveFilter || 'all';
+  const setActiveFilter = storeSetActiveFilter || (() => {});
+
   const [deptSubTabs, setDeptSubTabs] = useState<Record<string, 'teams' | 'projects'>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());

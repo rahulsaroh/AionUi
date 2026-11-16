@@ -170,6 +170,8 @@ describe('OrganizationSiderContent openChat wiring', () => {
       selectedConversationId: null,
       setSelectedConversationId: vi.fn(),
       openChat: openChatMock,
+      activeFilter: 'all',
+      setActiveFilter: vi.fn(),
     };
   });
 

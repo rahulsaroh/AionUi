@@ -11,6 +11,7 @@ import { LinkOne } from '@icon-park/react';
 import type { OrgAgentMember, OrgNodeStatus } from '@/types/organization';
 import { ORG_THEME_PALETTE, computeLifecycleStatus, getMemberAccentColor } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
+import { useOrgTelemetryStore } from '../store/useOrgTelemetryStore';
 import { RobotAvatar } from './RobotAvatar';
 
 export interface AgentMemberPillProps {
@@ -34,7 +35,9 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
   onHover,
   onClick,
 }) => {
-  const { nodeStatuses, hoveredCanonicalAgentId, selectedCanonicalAgentId } = useOrgStore();
+  const { nodeStatuses, hoveredCanonicalAgentId, selectedCanonicalAgentId, isSimulating, simulationMessage } =
+    useOrgStore();
+  const { activityTicker } = useOrgTelemetryStore();
 
   const isShared = sharedCount > 1 || departmentsServed.length > 1;
   const isHighlighted =
@@ -62,15 +65,31 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
     currentDepartmentName &&
     member.busyInDepartmentName !== currentDepartmentName;
 
+  const currentActivity = activityTicker[member.id] || activityTicker[member.canonicalAgentId];
+  const activeDirective =
+    currentActivity?.message || (isSimulating ? simulationMessage : null) || 'Executing autonomous specialist turn';
+
   const tooltipContent = (
-    <div className='flex flex-col gap-3px text-11px max-w-220px'>
+    <div className='flex flex-col gap-4px text-11px max-w-240px'>
       <div className='flex items-center gap-6px'>
-        <span className='font-bold text-t-primary'>{member.name}</span>
-        <Tag size='small' className='text-9px px-4px py-0 rounded'>
+        <span className='font-bold text-slate-100 text-12px'>{member.name}</span>
+        <Tag size='small' className='text-9px px-4px py-0 rounded font-mono font-semibold'>
           {member.role || 'Specialist'}
         </Tag>
       </div>
-      <span className='text-t-secondary text-10px'>{member.title || 'Team Specialist'}</span>
+      <span className='text-slate-400 text-10px'>{member.title || 'Team Specialist'}</span>
+
+      {/* Live Active Task / Directive when working */}
+      {isWorking && (
+        <div className='p-6px rounded bg-emerald-950/50 border border-emerald-500/30 text-emerald-300 text-10px flex flex-col gap-2px my-2px'>
+          <div className='flex items-center gap-4px text-9px font-mono text-emerald-400 font-semibold uppercase'>
+            <span className='size-5px rounded-full bg-emerald-400 animate-ping' />
+            <span>Active Directive</span>
+          </div>
+          <span className='text-emerald-100 line-clamp-2 leading-tight font-sans'>{activeDirective}</span>
+        </div>
+      )}
+
       {departmentsServed.length > 0 && (
         <div className='text-indigo-300 font-mono text-10px flex items-center gap-4px flex-wrap'>
           <span>Served:</span>
@@ -91,7 +110,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
           Busy working in [{member.busyInDepartmentName}]
         </span>
       )}
-      <div className='flex items-center gap-4px text-10px text-t-tertiary mt-2px'>
+      <div className='flex items-center gap-4px text-10px text-slate-400 mt-2px'>
         <span
           className='size-6px rounded-full'
           style={{
@@ -106,7 +125,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
                     : theme.borderColor,
           }}
         />
-        <span className='capitalize'>Status: {isWorking ? 'Working' : theme.label}</span>
+        <span className='capitalize font-medium text-slate-300'>Status: {isWorking ? 'Working' : theme.label}</span>
       </div>
     </div>
   );
@@ -120,7 +139,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
     else if (isFinished) glowClass = 'org-glow-finished';
 
     return (
-      <Tooltip content={tooltipContent} position='top'>
+      <Tooltip content={tooltipContent} position='top' triggerProps={{ mouseEnterDelay: 200, mouseLeaveDelay: 100 }}>
         <div
           onMouseEnter={() => onHover?.(member.canonicalAgentId)}
           onMouseLeave={() => onHover?.(null)}
@@ -233,7 +252,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
   else if (isFinished) chipGlowClass = 'org-glow-finished';
 
   return (
-    <Tooltip content={tooltipContent} position='top'>
+    <Tooltip content={tooltipContent} position='top' triggerProps={{ mouseEnterDelay: 200, mouseLeaveDelay: 100 }}>
       <div
         onMouseEnter={() => {
           if (isShared) onHover?.(member.canonicalAgentId);

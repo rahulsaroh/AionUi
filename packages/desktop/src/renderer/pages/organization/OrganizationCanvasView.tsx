@@ -45,6 +45,7 @@ import { generateSharedMemberTethers } from './utils/orgTethers';
 import { createDepartmentShell, createTeamShell } from './utils/orgCoherence';
 import './orgGlow.css';
 import { computeOrgStatusPropagation } from './utils/orgStatusPropagation';
+import { computeLifecycleStatus } from './utils/orgTheme';
 import { useOrgStore } from './store/useOrgStore';
 import type { OrgProject, RootCEO, OrgAgentMember } from '@/types/organization';
 
@@ -69,6 +70,7 @@ const CanvasInner: React.FC = () => {
     hoveredCanonicalAgentId,
     setHoveredCanonicalAgentId,
     selectedCanonicalAgentId,
+    setSelectedCanonicalAgentId,
     selectedDepartmentId,
     selectedTeamId,
     selectedProjectId,
@@ -83,6 +85,7 @@ const CanvasInner: React.FC = () => {
     updateTeamNode,
     projects,
     nodeStatuses,
+    activeFilter,
     setOrgViewMode,
     setSelectedConversationId,
   } = useOrgStore();
@@ -560,6 +563,75 @@ const CanvasInner: React.FC = () => {
     });
   }, [edges, highlightedEdgeIdSet, hoveredNodeId, activeSharedAgentId, propagation]);
 
+  // Compute matching nodes based on activeFilter (All / Active / Dormant / Shared)
+  const matchingNodeIdSet = useMemo(() => {
+    if (activeFilter === 'all') return null;
+
+    const matched = new Set<string>();
+
+    if (activeFilter === 'active') {
+      // Active = any node directly working or with a working descendant
+      propagation.workingNodeIds.forEach((id) => matched.add(id));
+    } else if (activeFilter === 'dormant') {
+      // Dormant = nodes with dormant lifecycle status
+      hierarchy.departments.forEach((dept) => {
+        if (computeLifecycleStatus(dept.lastActiveAt, nodeStatuses[dept.id] || dept.status) === 'dormant') {
+          matched.add(dept.id);
+        }
+        dept.teams.forEach((team) => {
+          if (computeLifecycleStatus(team.lastActiveAt, nodeStatuses[team.id] || team.status) === 'dormant') {
+            matched.add(team.id);
+          }
+        });
+      });
+    } else if (activeFilter === 'shared') {
+      // Shared = shared-pool members, their strip cards, header, and teams containing shared members
+      matched.add('shared-member-header');
+      sharedPoolMembers.forEach((item) => {
+        matched.add(`shared-${item.canonicalId}`);
+        const appearances = agentLocationMap[item.canonicalId] || [];
+        appearances.forEach((teamId) => matched.add(teamId));
+      });
+    }
+
+    return matched;
+  }, [activeFilter, propagation.workingNodeIds, hierarchy, nodeStatuses, sharedPoolMembers, agentLocationMap]);
+
+  // Display nodes with filter dimming applied: non-matching nodes are dimmed while structure remains visible
+  const displayNodes = useMemo(() => {
+    if (!matchingNodeIdSet) return nodes;
+    return nodes.map((node) => {
+      const isDimmed = !matchingNodeIdSet.has(node.id);
+      return {
+        ...node,
+        style: {
+          ...node.style,
+          opacity: isDimmed ? 0.22 : 1,
+          transition: 'opacity 0.3s ease, filter 0.3s ease',
+          filter: isDimmed ? 'grayscale(0.7)' : undefined,
+          pointerEvents: isDimmed ? 'none' : 'auto',
+        } as React.CSSProperties,
+      };
+    });
+  }, [nodes, matchingNodeIdSet]);
+
+  // Escape key clears selection and hover highlights
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedNodeId(null);
+        setSelectedNodeType(null);
+        setHoveredNodeId(null);
+        setHoveredCanonicalAgentId(null);
+        setSelectedCanonicalAgentId(null);
+        clearOrgSelection();
+        setIsInspectorOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clearOrgSelection, setHoveredCanonicalAgentId, setSelectedCanonicalAgentId]);
+
   // Center canvas on the focused node when sidebar-driven selection changes
   useEffect(() => {
     if (!focusedNodeId) return;
@@ -608,7 +680,7 @@ const CanvasInner: React.FC = () => {
       />
 
       <ReactFlow
-        nodes={nodes}
+        nodes={displayNodes}
         edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}

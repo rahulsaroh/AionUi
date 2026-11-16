@@ -53,6 +53,8 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
     simulationMessage,
     resetToDefault,
     setOrgViewMode,
+    activeFilter,
+    setActiveFilter,
   } = useOrgStore();
 
   const handleSimulateStatus = useCallback(
@@ -197,6 +199,29 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               {isAllExpanded ? 'Collapse All' : 'Expand All'}
             </Button>
           </Tooltip>
+        </div>
+
+        <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
+
+        {/* Canvas Filter Chips: All / Active / Dormant / Shared */}
+        <div className='flex items-center gap-2px bg-fill-2 p-2px rounded-8px border border-[var(--color-border-2)]'>
+          {(['all', 'active', 'dormant', 'shared'] as const).map((filterKey) => {
+            const isSelected = activeFilter === filterKey;
+            return (
+              <button
+                key={filterKey}
+                type='button'
+                onClick={() => setActiveFilter(filterKey)}
+                className={`px-8px py-3px rounded-6px text-11px font-medium capitalize transition-all border-none cursor-pointer select-none ${
+                  isSelected
+                    ? '!bg-primary !text-white shadow-xs font-semibold'
+                    : '!bg-transparent !text-t-secondary hover:!text-t-primary hover:!bg-fill-3'
+                }`}
+              >
+                {filterKey}
+              </button>
+            );
+          })}
         </div>
 
         <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />

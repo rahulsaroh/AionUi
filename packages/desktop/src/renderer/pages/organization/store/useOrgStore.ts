@@ -115,6 +115,7 @@ type OrgStoreState = {
   simulationStep: number;
   simulationMessage: string;
   orgViewMode: 'chat' | 'canvas';
+  activeFilter: 'all' | 'active' | 'dormant' | 'shared';
   selectedConversationId: string | null;
   openChatError: string | null;
 };
@@ -237,6 +238,7 @@ function createInitialState(): OrgStoreState {
     simulationStep: 0,
     simulationMessage: '',
     orgViewMode: 'chat',
+    activeFilter: 'all',
     selectedConversationId: null,
     openChatError: null,
   };
@@ -476,23 +478,26 @@ export function useOrgStore() {
 
     // Stale-state crash protection: if a node remains 'working' for over 5 minutes, reset to 'idle'
     if (status === 'working') {
-      setTimeout(() => {
-        let needsReset = false;
-        const resetStatuses = { ...globalState.nodeStatuses };
-        idsToUpdate.forEach((id) => {
-          if (resetStatuses[id] === 'working') {
-            resetStatuses[id] = 'idle';
-            needsReset = true;
+      setTimeout(
+        () => {
+          let needsReset = false;
+          const resetStatuses = { ...globalState.nodeStatuses };
+          idsToUpdate.forEach((id) => {
+            if (resetStatuses[id] === 'working') {
+              resetStatuses[id] = 'idle';
+              needsReset = true;
+            }
+          });
+          if (needsReset) {
+            globalState = {
+              ...globalState,
+              nodeStatuses: resetStatuses,
+            };
+            notify();
           }
-        });
-        if (needsReset) {
-          globalState = {
-            ...globalState,
-            nodeStatuses: resetStatuses,
-          };
-          notify();
-        }
-      }, 5 * 60 * 1000);
+        },
+        5 * 60 * 1000
+      );
     }
   }, []);
 
@@ -1259,8 +1264,15 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const setActiveFilter = useCallback((filter: 'all' | 'active' | 'dormant' | 'shared') => {
+    if (globalState.activeFilter === filter) return;
+    globalState = { ...globalState, activeFilter: filter };
+    notify();
+  }, []);
+
   return {
     ...state,
+    setActiveFilter,
     recordApprovedLineup,
     setAutoApprovePermissions,
     setActiveScope,
