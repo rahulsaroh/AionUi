@@ -168,3 +168,78 @@ export function getOrgNodeStyle(status: OrgNodeStatus): CSSProperties {
     transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
   };
 }
+
+export interface DepartmentAccent {
+  name: string;
+  border: string;
+  glow: string;
+  bg: string;
+  text: string;
+}
+
+export const DEPARTMENT_PALETTE: DepartmentAccent[] = [
+  { name: 'blue', border: '#38BDF8', glow: 'rgba(56, 189, 248, 0.35)', bg: 'rgba(14, 165, 233, 0.08)', text: '#7DD3FC' },
+  { name: 'teal', border: '#2DD4BF', glow: 'rgba(45, 212, 191, 0.35)', bg: 'rgba(20, 184, 166, 0.08)', text: '#5EEAD4' },
+  { name: 'purple', border: '#A855F7', glow: 'rgba(168, 85, 247, 0.35)', bg: 'rgba(168, 85, 247, 0.08)', text: '#D8B4FE' },
+  { name: 'emerald', border: '#34D399', glow: 'rgba(52, 211, 153, 0.35)', bg: 'rgba(16, 185, 129, 0.08)', text: '#6EE7B7' },
+  { name: 'amber', border: '#FBBF24', glow: 'rgba(251, 191, 36, 0.35)', bg: 'rgba(245, 158, 11, 0.08)', text: '#FDE68A' },
+  { name: 'rose', border: '#FB7185', glow: 'rgba(251, 113, 133, 0.35)', bg: 'rgba(244, 63, 94, 0.08)', text: '#FDA4AF' },
+  { name: 'indigo', border: '#818CF8', glow: 'rgba(129, 140, 248, 0.35)', bg: 'rgba(99, 102, 241, 0.08)', text: '#C7D2FE' },
+  { name: 'cyan', border: '#22D3EE', glow: 'rgba(34, 211, 238, 0.35)', bg: 'rgba(6, 182, 212, 0.08)', text: '#67E8F9' },
+];
+
+export function getDepartmentAccent(index: number, customColor?: string): DepartmentAccent {
+  if (customColor) {
+    return {
+      name: 'custom',
+      border: customColor,
+      glow: `${customColor}59`,
+      bg: `${customColor}14`,
+      text: customColor,
+    };
+  }
+  return DEPARTMENT_PALETTE[index % DEPARTMENT_PALETTE.length];
+}
+
+export const MEMBER_ACCENT_PALETTE = [
+  '#38BDF8', // sky
+  '#A855F7', // purple
+  '#34D399', // emerald
+  '#F472B6', // pink
+  '#FBBF24', // amber
+  '#2DD4BF', // teal
+  '#818CF8', // indigo
+  '#FB923C', // orange
+];
+
+export function getMemberAccentColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash << 5) - hash + id.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % MEMBER_ACCENT_PALETTE.length;
+  return MEMBER_ACCENT_PALETTE[idx];
+}
+
+export const TIER_NEON_THEMES = {
+  ceo: {
+    border: '#06B6D4',
+    glow: 'rgba(6, 182, 212, 0.40)',
+    bg: 'rgba(6, 182, 212, 0.06)',
+    text: '#67E8F9',
+  },
+  project: {
+    border: '#A855F7',
+    glow: 'rgba(168, 85, 247, 0.35)',
+    bg: 'rgba(168, 85, 247, 0.06)',
+    text: '#D8B4FE',
+  },
+  team: {
+    border: '#10B981',
+    glow: 'rgba(16, 185, 129, 0.35)',
+    bg: 'rgba(16, 185, 129, 0.06)',
+    text: '#6EE7B7',
+  },
+};
+

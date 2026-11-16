@@ -36,8 +36,8 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
     useOrgStore();
 
   return (
-    <div className='absolute top-16px left-16px z-20 flex flex-col gap-8px select-none pointer-events-auto'>
-      <div className='flex flex-wrap items-center gap-6px bg-[var(--color-bg-2)]/95 backdrop-blur-md px-12px py-8px rounded-12px border border-solid border-[var(--color-border-2)] shadow-xl max-w-[calc(100vw-260px)]'>
+    <div className='absolute bottom-20px left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-8px select-none pointer-events-auto'>
+      <div className='flex flex-wrap items-center gap-6px bg-[var(--color-bg-2)]/95 backdrop-blur-md px-12px py-8px rounded-12px border border-solid border-[var(--color-border-2)] shadow-2xl max-w-[calc(100vw-260px)]'>
         {/* Back to Chat button */}
         <Button
           size='small'

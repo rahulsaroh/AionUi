@@ -36,16 +36,22 @@ import OrgDepartmentModal from './components/OrgDepartmentModal';
 import OrgEntityEditModal from './components/OrgEntityEditModal';
 import { OrgMasterFolderModal } from './components/OrgMasterFolderModal';
 import ProjectNode from './components/ProjectNode';
+import SharedMemberNode from './components/SharedMemberNode';
+import SharedMemberHeaderNode from './components/SharedMemberHeaderNode';
+import OrgCanvasTitleBlock from './components/OrgCanvasTitleBlock';
+import OrgCanvasLegend from './components/OrgCanvasLegend';
 import { layoutOrgChart } from './utils/layoutOrgChart';
 import { createDepartmentShell, createTeamShell } from './utils/orgCoherence';
 import { useOrgStore } from './store/useOrgStore';
-import type { OrgProject, RootCEO } from '@/types/organization';
+import type { OrgProject, RootCEO, OrgAgentMember } from '@/types/organization';
 
 const nodeTypes: NodeTypes = {
   rootCeo: RootCeoNode,
   department: DepartmentNode,
   team: TeamNode,
   project: ProjectNode,
+  sharedMember: SharedMemberNode,
+  sharedMemberHeader: SharedMemberHeaderNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -58,6 +64,7 @@ const CanvasInner: React.FC = () => {
   const {
     hierarchy,
     hoveredCanonicalAgentId,
+    setHoveredCanonicalAgentId,
     selectedCanonicalAgentId,
     selectedDepartmentId,
     selectedTeamId,
@@ -106,19 +113,36 @@ const CanvasInner: React.FC = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  const { sharedCountsMap, agentLocationMap } = useMemo(() => {
+  const { sharedCountsMap, agentLocationMap, sharedPoolMembers } = useMemo(() => {
     const counts: Record<string, number> = {};
     const locations: Record<string, string[]> = {};
+    const deptsMap: Record<string, Set<string>> = {};
+    const memberObjMap: Record<string, OrgAgentMember> = {};
+
     hierarchy.departments.forEach((dept) => {
       dept.teams.forEach((team) => {
         team.specialistMembers.forEach((spec) => {
           counts[spec.canonicalAgentId] = (counts[spec.canonicalAgentId] || 0) + 1;
           if (!locations[spec.canonicalAgentId]) locations[spec.canonicalAgentId] = [];
           if (!locations[spec.canonicalAgentId].includes(team.id)) locations[spec.canonicalAgentId].push(team.id);
+          if (!deptsMap[spec.canonicalAgentId]) deptsMap[spec.canonicalAgentId] = new Set();
+          deptsMap[spec.canonicalAgentId].add(dept.name);
+          memberObjMap[spec.canonicalAgentId] = spec;
         });
       });
     });
-    return { sharedCountsMap: counts, agentLocationMap: locations };
+
+    const pool = Object.entries(counts)
+      .filter(([id, cnt]) => cnt > 1 || (deptsMap[id] && deptsMap[id].size > 1))
+      .map(([id, cnt]) => ({
+        canonicalId: id,
+        member: memberObjMap[id],
+        count: cnt,
+        departments: Array.from(deptsMap[id] || []),
+        teamIds: locations[id] || [],
+      }));
+
+    return { sharedCountsMap: counts, agentLocationMap: locations, sharedPoolMembers: pool };
   }, [hierarchy]);
 
   const handleToggleCollapse = useCallback((deptId: string) => {
@@ -232,13 +256,14 @@ const CanvasInner: React.FC = () => {
           : undefined,
     });
 
-    hierarchy.departments.forEach((dept) => {
+    hierarchy.departments.forEach((dept, deptIdx) => {
       const isDeptCollapsed = collapsedBranchIds.has(dept.id);
       rawNodes.push({
         id: dept.id,
         type: 'department',
         data: {
           department: dept,
+          deptIndex: deptIdx,
           isCollapsed: isDeptCollapsed,
           orientation: direction,
           onToggleCollapse: handleToggleCollapse,
@@ -269,7 +294,7 @@ const CanvasInner: React.FC = () => {
         },
         position: { x: 0, y: 0 },
         className:
-          focusedNodeId === dept.id ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]' : undefined,
+          focusedNodeId === dept.id ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-slate-950' : undefined,
       });
 
       rawEdges.push({
@@ -277,10 +302,92 @@ const CanvasInner: React.FC = () => {
         source: hierarchy.rootCeo.id,
         target: dept.id,
         type: 'delegation',
+        data: { deptIndex: deptIdx, deptColor: dept.color },
       });
 
       if (!isDeptCollapsed) {
-        dept.teams.forEach((team) => {
+        const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+        const placedTeamIds = new Set<string>();
+
+        // Tier 3: Project node(s) under department
+        deptProjects.forEach((proj) => {
+          rawNodes.push({
+            id: `project-${proj.id}`,
+            type: 'project',
+            data: {
+              project: proj,
+              department: dept,
+              orientation: direction,
+              onSelectNode: (id: string, _type: 'project') => {
+                const cleanId = id.replace(/^project-/, '');
+                handleSelectNode(cleanId, 'project');
+              },
+              onEditProject: () => openProjectModal(dept.id, undefined, proj),
+              onSetFolder: () => handleSetFolder(proj.id, 'project'),
+            },
+            position: { x: 0, y: 0 },
+            className:
+              focusedNodeId === `project-${proj.id}`
+                ? 'ring-2 ring-purple-400 ring-offset-2 ring-offset-slate-950'
+                : undefined,
+          });
+
+          rawEdges.push({
+            id: `edge-${dept.id}->project-${proj.id}`,
+            source: dept.id,
+            target: `project-${proj.id}`,
+            type: 'delegation',
+            data: { deptIndex: deptIdx, deptColor: dept.color },
+          });
+
+          // Tier 4: Team node(s) under this project
+          const projectTeams = dept.teams.filter(
+            (t) => proj.teamIds?.includes(t.id) || t.linkedProjectId === proj.id
+          );
+
+          projectTeams.forEach((team) => {
+            placedTeamIds.add(team.id);
+            rawNodes.push({
+              id: team.id,
+              type: 'team',
+              data: {
+                team,
+                departmentName: dept.name,
+                orientation: direction,
+                sharedCountsMap,
+                onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
+                onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
+                onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'team'),
+                onEditMember: (memberId: string) => {
+                  const member = team.specialistMembers.find((m) => m.id === memberId);
+                  setEditEntity({
+                    type: 'member',
+                    data: member ?? null,
+                    context: { departmentId: dept.id, teamId: team.id },
+                  });
+                  setIsInspectorOpen(false);
+                },
+              },
+              position: { x: 0, y: 0 },
+              className:
+                focusedNodeId === team.id
+                  ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
+                  : undefined,
+            });
+
+            rawEdges.push({
+              id: `edge-project-${proj.id}->${team.id}`,
+              source: `project-${proj.id}`,
+              target: team.id,
+              type: 'delegation',
+              data: { deptIndex: deptIdx, deptColor: dept.color },
+            });
+          });
+        });
+
+        // Any remaining teams in this department not linked to a project
+        const remainingTeams = dept.teams.filter((t) => !placedTeamIds.has(t.id));
+        remainingTeams.forEach((team) => {
           rawNodes.push({
             id: team.id,
             type: 'team',
@@ -305,93 +412,57 @@ const CanvasInner: React.FC = () => {
             position: { x: 0, y: 0 },
             className:
               focusedNodeId === team.id
-                ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
+                ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
                 : undefined,
           });
-          rawEdges.push({ id: `edge-${dept.id}->${team.id}`, source: dept.id, target: team.id, type: 'delegation' });
 
-          // Level 4: Project node(s) docked below the team
-          const teamProjects = projects.filter((p) => p.teamIds.includes(team.id));
-          teamProjects.forEach((proj) => {
-            rawNodes.push({
-              id: `project-${proj.id}`,
-              type: 'project',
-              data: {
-                project: proj,
-                team,
-                department: dept,
-                orientation: direction,
-                onSelectNode: (id: string, _type: 'project') => {
-                  const cleanId = id.replace(/^project-/, '');
-                  handleSelectNode(cleanId, 'project');
-                },
-                onEditProject: () => openProjectModal(dept.id, team.id, proj),
-                onSetFolder: () => handleSetFolder(proj.id, 'project'),
-              },
-              position: { x: 0, y: 0 },
-              className:
-                focusedNodeId === `project-${proj.id}`
-                  ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
-                  : undefined,
-            });
-            rawEdges.push({
-              id: `edge-${team.id}->project-${proj.id}`,
-              source: team.id,
-              target: `project-${proj.id}`,
-              type: 'delegation',
-            });
-          });
-        });
-
-        // Direct department projects (docked directly under department if not docked below a team in this department)
-        const directDeptProjects = projects.filter(
-          (p) => p.departmentId === dept.id && !dept.teams.some((team) => p.teamIds?.includes(team.id))
-        );
-        directDeptProjects.forEach((proj) => {
-          rawNodes.push({
-            id: `project-${proj.id}`,
-            type: 'project',
-            data: {
-              project: proj,
-              department: dept,
-              orientation: direction,
-              onSelectNode: (id: string, _type: 'project') => {
-                const cleanId = id.replace(/^project-/, '');
-                handleSelectNode(cleanId, 'project');
-              },
-              onEditProject: () => openProjectModal(dept.id, undefined, proj),
-              onSetFolder: () => handleSetFolder(proj.id, 'project'),
-            },
-            position: { x: 0, y: 0 },
-            className:
-              focusedNodeId === `project-${proj.id}`
-                ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]'
-                : undefined,
-          });
           rawEdges.push({
-            id: `edge-${dept.id}->project-${proj.id}`,
+            id: `edge-${dept.id}->${team.id}`,
             source: dept.id,
-            target: `project-${proj.id}`,
+            target: team.id,
             type: 'delegation',
+            data: { deptIndex: deptIdx, deptColor: dept.color },
           });
         });
       }
     });
 
-    const activeSharedAgentId = hoveredCanonicalAgentId || selectedCanonicalAgentId;
-    if (activeSharedAgentId && agentLocationMap[activeSharedAgentId]) {
-      const targetNodeIds = agentLocationMap[activeSharedAgentId].filter((id) => rawNodes.some((n) => n.id === id));
-      for (let i = 0; i < targetNodeIds.length - 1; i++) {
-        for (let j = i + 1; j < targetNodeIds.length; j++) {
-          rawEdges.push({
-            id: `tether-${activeSharedAgentId}-${targetNodeIds[i]}<->${targetNodeIds[j]}`,
-            source: targetNodeIds[i],
-            target: targetNodeIds[j],
-            type: 'tether',
-            animated: true,
-          });
-        }
-      }
+    // Tier 5: Shared Members Bottom Strip
+    if (sharedPoolMembers.length > 0) {
+      rawNodes.push({
+        id: 'shared-member-header',
+        type: 'sharedMemberHeader',
+        data: {},
+        position: { x: 0, y: 0 },
+      });
+
+      sharedPoolMembers.forEach((sharedItem) => {
+        rawNodes.push({
+          id: `shared-${sharedItem.canonicalId}`,
+          type: 'sharedMember',
+          data: {
+            member: sharedItem.member,
+            departmentsServed: sharedItem.departments,
+            sharedCount: sharedItem.count,
+            onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
+            onHoverMember: (canonicalId: string | null) => setHoveredCanonicalAgentId(canonicalId),
+          },
+          position: { x: 0, y: 0 },
+        });
+
+        // Tether lines from bottom-strip shared member up to every team where they work
+        sharedItem.teamIds.forEach((targetTeamId) => {
+          if (rawNodes.some((n) => n.id === targetTeamId)) {
+            rawEdges.push({
+              id: `tether-${sharedItem.canonicalId}->${targetTeamId}`,
+              source: `shared-${sharedItem.canonicalId}`,
+              target: targetTeamId,
+              type: 'tether',
+              data: { canonicalId: sharedItem.canonicalId },
+            });
+          }
+        });
+      });
     }
 
     const layouted = layoutOrgChart(rawNodes, rawEdges, direction);
@@ -403,9 +474,11 @@ const CanvasInner: React.FC = () => {
     collapsedBranchIds,
     direction,
     hoveredCanonicalAgentId,
+    setHoveredCanonicalAgentId,
     selectedCanonicalAgentId,
     sharedCountsMap,
     agentLocationMap,
+    sharedPoolMembers,
     handleToggleCollapse,
     handleSelectNode,
     handleDispatchToCeo,
@@ -441,7 +514,20 @@ const CanvasInner: React.FC = () => {
     : null;
 
   return (
-    <div ref={canvasContainerRef} className='relative size-full overflow-hidden bg-[var(--color-bg-1)]'>
+    <div
+      ref={canvasContainerRef}
+      className='relative size-full overflow-hidden'
+      style={{
+        background: 'radial-gradient(ellipse at 50% 15%, #0d1a38 0%, #070c1a 60%, #030712 100%)',
+      }}
+    >
+      {/* Top Left Title Block */}
+      <OrgCanvasTitleBlock />
+
+      {/* Top Right Legend Box */}
+      <OrgCanvasLegend />
+
+      {/* Bottom Floating Canvas Toolbar */}
       <OrgCanvasToolbar
         direction={direction}
         onToggleDirection={() => setDirection((d) => (d === 'TB' ? 'LR' : 'TB'))}
@@ -466,17 +552,19 @@ const CanvasInner: React.FC = () => {
         fitViewOptions={{ padding: 0.25 }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color='var(--color-border-3, #475569)' gap={24} size={1} />
-        <Controls className='!bg-[var(--color-bg-2)] !border-[var(--color-border-2)] !rounded-10px shadow-lg' />
+        <Background color='rgba(99, 102, 241, 0.15)' gap={24} size={1} />
+        <Controls className='!bg-slate-900/90 !border-slate-700 !rounded-10px shadow-lg text-slate-200' />
         <MiniMap
           nodeStrokeWidth={3}
           nodeColor={(n) => {
-            if (n.type === 'rootCeo') return '#F59E0B';
-            if (n.type === 'department') return '#3B82F6';
+            if (n.type === 'rootCeo') return '#06B6D4';
+            if (n.type === 'department') return '#38BDF8';
+            if (n.type === 'project') return '#A855F7';
             if (n.type === 'team') return '#10B981';
-            return '#FBBF24';
+            if (n.type === 'sharedMember') return '#818CF8';
+            return '#64748B';
           }}
-          className='!bg-[var(--color-bg-2)] !border-[var(--color-border-2)] !rounded-10px shadow-lg'
+          className='!bg-slate-900/90 !border-slate-700 !rounded-10px shadow-lg'
         />
       </ReactFlow>
 

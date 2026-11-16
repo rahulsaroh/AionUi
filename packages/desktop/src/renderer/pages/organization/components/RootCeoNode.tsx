@@ -7,15 +7,18 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Tag, Tooltip, Button, Message } from '@arco-design/web-react';
-import { Play, Peoples, Send, FolderClose, Edit } from '@icon-park/react';
+import { Send, FolderClose, Edit, Lightning } from '@icon-park/react';
+import { useTranslation } from 'react-i18next';
 import type { RootCEO, OrgNodeStatus } from '@/types/organization';
-import { getOrgNodeStyle, ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
+import { ORG_THEME_PALETTE, computeLifecycleStatus, TIER_NEON_THEMES } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
 import { OrgModelSelector } from './OrgModelSelector';
+import { RobotAvatar } from './RobotAvatar';
 
 export interface RootCeoNodeData {
   rootCeo: RootCEO;
   orientation?: 'TB' | 'LR';
+  isDescendantWorking?: boolean;
   onDispatchToCeo?: (rootCeo: RootCEO) => void;
   onSelectNode?: (nodeId: string, nodeType: 'ceo') => void;
   onSelectMember?: (memberId: string) => void;
@@ -24,43 +27,84 @@ export interface RootCeoNodeData {
 }
 
 export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({ data, selected = false }) => {
-  const { rootCeo, orientation = 'TB', onDispatchToCeo, onSelectNode, onSelectMember, onSetFolder, onEditCeo } = data;
+  const { t } = useTranslation();
+  const { rootCeo, orientation = 'TB', isDescendantWorking, onDispatchToCeo, onSelectNode, onSetFolder, onEditCeo } = data;
   const { nodeStatuses, isSimulating, updateAgentModel } = useOrgStore();
 
-  const currentStatus = nodeStatuses[rootCeo.id] || rootCeo.status || 'idle';
+  const currentStatus: OrgNodeStatus = nodeStatuses[rootCeo.id] || rootCeo.status || 'idle';
   const effectiveStatus = computeLifecycleStatus(rootCeo.lastActiveAt, currentStatus);
   const theme = ORG_THEME_PALETTE[effectiveStatus];
-  const nodeStyle = getOrgNodeStyle(effectiveStatus);
-
+  const isWorking = effectiveStatus === 'working' || isDescendantWorking;
   const sourceHandlePos = orientation === 'LR' ? Position.Right : Position.Bottom;
+
+  const cyanBorder = TIER_NEON_THEMES.ceo.border;
+  const cyanGlow = isWorking
+    ? '0 0 24px rgba(6, 182, 212, 0.65), 0 0 4px #06B6D4'
+    : '0 0 16px rgba(6, 182, 212, 0.35)';
 
   return (
     <div
       onClick={() => onSelectNode?.(rootCeo.id, 'ceo')}
-      style={nodeStyle}
-      className={`group/ceo relative w-360px rounded-16px cursor-pointer text-t-primary shadow-xl flex flex-col overflow-hidden transition-all duration-300 ${
-        selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-[var(--color-bg-1)]' : ''
+      style={{
+        borderColor: cyanBorder,
+        boxShadow: selected ? `0 0 0 2px #06B6D4, ${cyanGlow}` : cyanGlow,
+        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+      }}
+      className={`group/ceo relative w-360px rounded-16px cursor-pointer text-slate-100 backdrop-blur-md border border-solid flex flex-col overflow-hidden transition-all duration-300 ${
+        isWorking ? 'working-pulse' : ''
       }`}
     >
-      {/* Top Banner Ribbon */}
-      <div className='px-16px py-10px bg-gradient-to-r from-amber-500/20 via-primary/15 to-emerald-500/20 border-b border-[var(--color-border-2)] flex items-center justify-between'>
-        <div className='flex items-center gap-8px'>
-          <span className='size-32px rounded-10px bg-amber-500/20 text-amber-400 flex items-center justify-center text-18px shadow-sm'>
-            👑
-          </span>
-          <div className='flex flex-col'>
-            <span className='font-bold text-15px leading-tight tracking-wide text-amber-200'>Root Executive HQ</span>
-            <span className='text-11px text-t-tertiary font-mono'>Chief Executive Command</span>
+      {/* Top Banner with Robot Avatar, CEO Title, User Name, Tagline */}
+      <div className='p-14px pb-10px flex items-center justify-between border-b border-cyan-500/20 bg-gradient-to-r from-cyan-950/40 via-slate-900/40 to-cyan-950/20'>
+        <div className='flex items-center gap-12px min-w-0'>
+          {/* Cyan Glow Robot Avatar */}
+          <div
+            className='relative rounded-full p-2px transition-all duration-300'
+            style={{
+              border: `2px solid ${cyanBorder}`,
+              boxShadow: isWorking ? '0 0 14px #06B6D4' : '0 0 8px rgba(6, 182, 212, 0.4)',
+            }}
+          >
+            <RobotAvatar
+              name={rootCeo.ceoAgent.name}
+              icon={rootCeo.ceoAgent.icon}
+              size={36}
+              accentColor={cyanBorder}
+              isWorking={isWorking}
+            />
+          </div>
+
+          <div className='flex flex-col min-w-0'>
+            <div className='flex items-center gap-6px'>
+              <Tag
+                size='small'
+                style={{
+                  borderColor: cyanBorder,
+                  color: '#67E8F9',
+                  backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                }}
+                className='font-bold text-10px px-5px py-0 rounded font-mono'
+              >
+                {t('team.organization.ceoTitle', { defaultValue: 'CEO' })}
+              </Tag>
+              <span className='font-bold text-14px leading-tight tracking-wide text-slate-100 truncate'>
+                {rootCeo.ceoAgent.name || rootCeo.name}
+              </span>
+            </div>
+            <span className='text-11px text-cyan-300/80 font-medium truncate mt-2px'>
+              {t('team.organization.ceoTagline', { defaultValue: 'Orchestrates Vision & Growth' })}
+            </span>
           </div>
         </div>
 
-        <div className='flex items-center gap-6px'>
+        {/* Action icons */}
+        <div className='flex items-center gap-4px shrink-0'>
           {onEditCeo && (
             <Tooltip content='Edit Executive HQ'>
               <Button
                 size='mini'
                 type='text'
-                icon={<Edit size={12} />}
+                icon={<Edit size={13} className='text-slate-400 hover:text-cyan-300' />}
                 onClick={(e) => {
                   e.stopPropagation();
                   onEditCeo();
@@ -75,7 +119,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
               color: theme.textColor,
               backgroundColor: theme.backgroundColor,
             }}
-            className='font-semibold text-10px px-6px py-1px rounded-full'
+            className='text-9px font-semibold px-5px py-0 rounded-full'
           >
             {theme.badgeText}
           </Tag>
@@ -83,19 +127,14 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
       </div>
 
       {/* Main Body */}
-      <div className='p-14px flex flex-col gap-10px bg-[var(--color-bg-2)]'>
-        {/* CEO Agent Box */}
-        <div className='p-10px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex items-center justify-between gap-8px'>
-          <div className='flex items-center gap-10px min-w-0'>
-            <span className='size-34px rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-14px shrink-0'>
-              CEO
+      <div className='p-12px flex flex-col gap-8px'>
+        {/* Model & Executive Directive row */}
+        <div className='flex items-center justify-between gap-8px px-8px py-4px rounded-8px bg-slate-800/50 border border-slate-700/60 text-11px'>
+          <div className='flex items-center gap-6px text-slate-300 truncate'>
+            <Lightning size={12} className='text-cyan-400 shrink-0' />
+            <span className='truncate text-10px font-mono'>
+              {rootCeo.ceoAgent.title || 'Executive Command'}
             </span>
-            <div className='flex flex-col min-w-0'>
-              <span className='text-13px font-semibold text-t-primary truncate'>{rootCeo.ceoAgent.name}</span>
-              <span className='text-11px text-t-secondary truncate'>
-                {rootCeo.ceoAgent.title || 'Aion CLI Executive Orchestrator'}
-              </span>
-            </div>
           </div>
           <div className='shrink-0' onClick={(e) => e.stopPropagation()}>
             <OrgModelSelector
@@ -108,54 +147,35 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
           </div>
         </div>
 
-        {/* Chief of Staff / HR */}
-        {rootCeo.chiefOfStaffAgent && (
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectMember?.(rootCeo.chiefOfStaffAgent.id);
-            }}
-            className='px-10px py-6px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-11px hover:border-primary/50 cursor-pointer transition-colors group'
-            title={`Chat with ${rootCeo.chiefOfStaffAgent.name} (Chief of Staff)`}
-          >
-            <div className='flex items-center gap-6px text-t-secondary group-hover:text-t-primary'>
-              <Peoples size={14} theme='outline' className='text-primary shrink-0' />
-              <span className='font-medium'>{rootCeo.chiefOfStaffAgent.name}</span>
-            </div>
-            <span className='text-10px text-t-tertiary'>{rootCeo.chiefOfStaffAgent.title}</span>
-          </div>
-        )}
-
         {/* Master Workspace Root indicator */}
         <div
           onClick={(e) => {
             e.stopPropagation();
             onSetFolder?.(rootCeo.id);
           }}
-          className='px-10px py-6px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-11px hover:border-primary/50 cursor-pointer transition-colors group'
+          className='px-8px py-4px rounded-8px bg-slate-800/40 border border-slate-700/50 flex items-center justify-between text-10px hover:border-cyan-500/50 cursor-pointer transition-colors group'
           title='Click to configure master organization workspace folder'
         >
           <div className='flex items-center gap-6px min-w-0'>
             <FolderClose
-              size={14}
-              theme='outline'
-              className={rootCeo.workspacePath ? 'text-amber-400 shrink-0' : 'text-t-tertiary shrink-0'}
+              size={12}
+              className={rootCeo.workspacePath ? 'text-cyan-400 shrink-0' : 'text-slate-500 shrink-0'}
             />
-            <span className='font-mono text-10px truncate text-t-secondary group-hover:text-t-primary'>
+            <span className='font-mono text-10px truncate text-slate-400 group-hover:text-slate-200'>
               {rootCeo.workspacePath ? `Master: ${rootCeo.workspacePath}` : 'Set Master Folder (Required)'}
             </span>
           </div>
-          <span className='text-10px text-primary font-mono shrink-0 ml-4px opacity-0 group-hover:opacity-100 transition-opacity'>
+          <span className='text-9px text-cyan-400 font-mono shrink-0 ml-4px opacity-0 group-hover:opacity-100 transition-opacity'>
             Edit ›
           </span>
         </div>
 
-        {/* Action Button: Dispatch Task to CEO */}
+        {/* Dispatch Task button */}
         <Button
           type='primary'
           size='small'
-          icon={<Send size={13} theme='outline' />}
-          className='!h-32px !rounded-8px !font-medium !text-12px !w-full'
+          icon={<Send size={12} theme='outline' />}
+          className='!h-28px !rounded-8px !font-medium !text-11px !w-full !bg-cyan-600 hover:!bg-cyan-500 !border-none'
           onClick={(e) => {
             e.stopPropagation();
             onDispatchToCeo?.(rootCeo);
@@ -165,15 +185,18 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
         </Button>
       </div>
 
-      {/* Global Status Ticker */}
-      <div className='px-12px py-6px bg-fill-1 border-t border-[var(--color-border-2)] text-10px font-mono text-t-secondary flex items-center justify-between'>
+      {/* Ticker / Status Bar */}
+      <div className='px-12px py-5px bg-slate-950/60 border-t border-slate-800/80 text-9px font-mono text-slate-400 flex items-center justify-between'>
         <div className='flex items-center gap-6px truncate'>
-          <span className='size-7px rounded-full shrink-0' style={{ backgroundColor: theme.borderColor }} />
-          <span className='truncate'>
-            {isSimulating ? 'Autonomous delegation in flight' : 'Ready for executive directives'}
+          <span
+            className='size-6px rounded-full shrink-0'
+            style={{ backgroundColor: isWorking ? '#06B6D4' : theme.borderColor }}
+          />
+          <span className='truncate text-slate-300'>
+            {isSimulating ? 'Autonomous delegation in flight' : isWorking ? 'Coordinating Organization' : 'Ready for directives'}
           </span>
         </div>
-        <span className='text-t-tertiary text-9px shrink-0'>
+        <span className='text-slate-500 shrink-0'>
           {rootCeo.lastActiveAt
             ? new Date(rootCeo.lastActiveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : 'idle'}
@@ -184,7 +207,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
       <Handle
         type='source'
         position={sourceHandlePos}
-        className='!bg-primary !w-12px !h-12px !border-2 !border-[var(--color-bg-2)] hover:!scale-125 transition-transform'
+        className='!bg-cyan-400 !w-10px !h-10px !border-2 !border-slate-900 hover:!scale-125 transition-transform'
       />
     </div>
   );
