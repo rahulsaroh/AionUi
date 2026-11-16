@@ -5,7 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
-import { knowledgeRepo } from '@/common/adapter/ipcBridge';
+import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
 import {
   MAX_DELEGATION_DEPTH,
   type OrgHierarchy,
@@ -1135,6 +1135,21 @@ export class OrgDelegationEngine {
         lastActivity = Date.now();
       });
 
+      let handbookPrefix = '';
+      try {
+        const memberKey = `org:${opts.agent.id}`;
+        const hb = await memberHandbook.getInjectedBlock({
+          memberKey,
+          conversationId: convId,
+          model: resolvedModel?.use_model || opts.agent.model?.modelId,
+        });
+        if (hb?.promptBlock) {
+          handbookPrefix = `${hb.promptBlock}\n\n`;
+        }
+      } catch (err) {
+        console.warn('[OrgDelegationEngine] Failed to build handbook for agent:', err);
+      }
+
       let knowledgePrefix = '';
       if (!opts.userDirective.includes('### Authoritative Knowledge Playbook')) {
         try {
@@ -1158,8 +1173,8 @@ export class OrgDelegationEngine {
       }
 
       const promptToSend = opts.conversationId
-        ? `${knowledgePrefix}${opts.userDirective}`
-        : `${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+        ? `${handbookPrefix}${knowledgePrefix}${opts.userDirective}`
+        : `${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
 
       try {
         await ipcBridge.conversation.sendMessage.invoke({

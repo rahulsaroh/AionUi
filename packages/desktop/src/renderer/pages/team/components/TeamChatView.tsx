@@ -1,5 +1,5 @@
 import { ipcBridge } from '@/common';
-import { knowledgeRepo } from '@/common/adapter/ipcBridge';
+import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import type { IConversationMcpStatus, IProvider, TChatConversation, TProviderWithModel } from '@/common/config/storage';
 import { Message, Spin, Tag } from '@arco-design/web-react';
@@ -170,6 +170,21 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
       if (isLeader) {
         const leaderSlot = assistants.find((a) => a.role === 'leader')?.slot_id || slot_id || 'leader';
         const leaderKey = `team:${team_id}:${leaderSlot}`;
+        let leaderHandbookBlock = '';
+        try {
+          const leaderAssistant = assistants.find((a) => a.role === 'leader');
+          const hb = await memberHandbook.getInjectedBlock({
+            memberKey: leaderKey,
+            conversationId: conversation.id,
+            model: leaderAssistant?.model,
+          });
+          if (hb?.promptBlock) {
+            leaderHandbookBlock = hb.promptBlock;
+          }
+        } catch (err) {
+          console.warn('[TeamChatView] Failed to build leader handbook instructions:', err);
+        }
+
         let leaderKnowledgeBlock = '';
 
         try {
@@ -225,7 +240,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
           console.warn('[TeamChatView] Failed to build team capability cards:', err);
         }
 
-        const blocks = [leaderKnowledgeBlock, capabilityCardsBlock].filter(Boolean);
+        const blocks = [leaderHandbookBlock, leaderKnowledgeBlock, capabilityCardsBlock].filter(Boolean);
         if (blocks.length > 0) {
           promptWithKnowledge = `${blocks.join('\n\n')}\n\n---\n${enrichedInput}`;
         }
@@ -238,6 +253,23 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
 
       if (!slot_id) throw new Error('Missing slot id for team agent send');
       const memberKey = `team:${team_id}:${slot_id}`;
+
+      let memberHandbookBlock = '';
+      try {
+        const targetAssistant = assistants.find((a) => a.slot_id === slot_id);
+        const hb = await memberHandbook.getInjectedBlock({
+          memberKey,
+          conversationId: conversation.id,
+          model: targetAssistant?.model,
+        });
+        if (hb?.promptBlock) {
+          memberHandbookBlock = hb.promptBlock;
+        }
+      } catch (err) {
+        console.warn('[TeamChatView] Failed to build member handbook instructions:', err);
+      }
+
+      let memberKnowledgeBlock = '';
       try {
         const memberAssign = await knowledgeRepo.getAssignment(memberKey);
         if (memberAssign && memberAssign.repoIds.length > 0) {
@@ -249,11 +281,16 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
             whenToUseHint: memberAssign.whenToUseHint,
           });
           if (inst?.instructions) {
-            promptWithKnowledge = `${inst.instructions}\n\n---\n${enrichedInput}`;
+            memberKnowledgeBlock = inst.instructions;
           }
         }
       } catch (err) {
         console.warn('[TeamChatView] Failed to build member knowledge instructions:', err);
+      }
+
+      const memberBlocks = [memberHandbookBlock, memberKnowledgeBlock].filter(Boolean);
+      if (memberBlocks.length > 0) {
+        promptWithKnowledge = `${memberBlocks.join('\n\n')}\n\n---\n${enrichedInput}`;
       }
 
       onPromptSent?.({ input: promptWithKnowledge, files, slot_id });
