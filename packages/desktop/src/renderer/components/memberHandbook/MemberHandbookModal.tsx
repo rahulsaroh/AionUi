@@ -359,8 +359,7 @@ export const MemberHandbookModal: React.FC<MemberHandbookModalProps> = ({
               <div className='flex items-center gap-4px'>
                 <History size={13} />
                 <span>
-                  {t('team.handbook.historyTab', { defaultValue: 'History & Revert' })} (
-                  {historyItems?.length || 0})
+                  {t('team.handbook.historyTab', { defaultValue: 'History & Revert' })} ({historyItems?.length || 0})
                 </span>
               </div>
             </Radio>
