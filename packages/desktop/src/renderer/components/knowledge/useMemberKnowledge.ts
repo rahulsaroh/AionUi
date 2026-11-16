@@ -22,10 +22,7 @@ export function useMemberKnowledge(memberKey?: string) {
     setLoading(true);
     setError(null);
     try {
-      const [repos, assignment] = await Promise.all([
-        knowledgeRepo.list(),
-        knowledgeRepo.getAssignment(memberKey),
-      ]);
+      const [repos, assignment] = await Promise.all([knowledgeRepo.list(), knowledgeRepo.getAssignment(memberKey)]);
       setAllRepos(repos || []);
       setAssignedRepoIds(assignment?.repoIds || []);
       setWhenToUseHint(assignment?.whenToUseHint || '');
@@ -56,10 +53,7 @@ export function useMemberKnowledge(memberKey?: string) {
     if (assignedRepos.some((r) => r.syncStatus === 'syncing')) return 'updating';
     if (
       assignedRepos.some(
-        (r) =>
-          r.syncStatus === 'needs_attention' ||
-          r.syncStatus === 'error' ||
-          r.trustStatus === 'reapproval_required'
+        (r) => r.syncStatus === 'needs_attention' || r.syncStatus === 'error' || r.trustStatus === 'reapproval_required'
       )
     ) {
       return 'needs_attention';

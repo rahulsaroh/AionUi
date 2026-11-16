@@ -1265,14 +1265,17 @@ export const OrgChatView: React.FC = () => {
                   </div>
                   <OrgProposalCard
                     cardData={activeProposal}
-                    onApprove={(createdRefs) => {
+                    onApprove={(createdRefs, lineupId) => {
                       setActiveProposal(null);
-                      if (activeConversation && createdRefs.length > 0) {
+                      if (activeConversation && (createdRefs.length > 0 || lineupId)) {
+                        const approvalText = lineupId
+                          ? `User approved the proposal. approved_lineup_id=${lineupId}. Use this id in assign_task.`
+                          : 'User approved the proposal.';
                         const entityMsg: OrgConversationMessage = {
                           id: `msg-${Date.now()}-created`,
                           sender: 'System',
                           role: 'system',
-                          content: `${t('team.organization.createdEntities', { defaultValue: 'Created:' })}\nApproved and instantiated ${createdRefs.length} organizational entities.`,
+                          content: `${t('team.organization.createdEntities', { defaultValue: 'Created:' })}\nApproved and instantiated ${createdRefs.length} organizational entities.\n${approvalText}`,
                           timestamp: Date.now(),
                           createdEntities: createdRefs,
                         };

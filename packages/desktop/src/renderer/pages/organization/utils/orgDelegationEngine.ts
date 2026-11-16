@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import { knowledgeRepo } from '@/common/adapter/ipcBridge';
 import {
   MAX_DELEGATION_DEPTH,
   type OrgHierarchy,
@@ -1134,9 +1135,31 @@ export class OrgDelegationEngine {
         lastActivity = Date.now();
       });
 
+      let knowledgePrefix = '';
+      if (!opts.userDirective.includes('### Authoritative Knowledge Playbook')) {
+        try {
+          const memberKey = `org:${opts.agent.id}`;
+          const assign = await knowledgeRepo.getAssignment(memberKey);
+          if (assign && assign.repoIds.length > 0) {
+            const inst = await knowledgeRepo.buildInstructions({
+              memberKey,
+              conversationId: convId,
+              memberName: opts.agent.name,
+              repoIds: assign.repoIds,
+              whenToUseHint: assign.whenToUseHint,
+            });
+            if (inst?.instructions) {
+              knowledgePrefix = `${inst.instructions}\n\n`;
+            }
+          }
+        } catch (err) {
+          console.warn('[OrgDelegationEngine] Failed to build knowledge for agent:', err);
+        }
+      }
+
       const promptToSend = opts.conversationId
-        ? opts.userDirective
-        : `[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+        ? `${knowledgePrefix}${opts.userDirective}`
+        : `${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
 
       try {
         await ipcBridge.conversation.sendMessage.invoke({
@@ -1168,7 +1191,7 @@ export class OrgDelegationEngine {
           if (freshConv?.id) {
             convId = freshConv.id;
             this.lastBackendConversationId = convId;
-            const fullPrompt = `[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+            const fullPrompt = `${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
             await ipcBridge.conversation.sendMessage.invoke({
               conversation_id: convId,
               input: fullPrompt,

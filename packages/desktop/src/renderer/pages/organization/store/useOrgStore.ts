@@ -85,6 +85,8 @@ function saveStored<T>(key: string, value: T): void {
 export type ApprovedLineupRecord = {
   id: string;
   proposalId?: string;
+  projectId?: string;
+  usedAt?: number;
   lineup: unknown;
   approvedAt: number;
 };
@@ -1059,11 +1061,12 @@ export function useOrgStore() {
     return { ok: true };
   }, []);
 
-  const recordApprovedLineup = useCallback((lineup: unknown, proposalId?: string): string => {
+  const recordApprovedLineup = useCallback((lineup: unknown, proposalId?: string, projectId?: string): string => {
     const id = `lineup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const record: ApprovedLineupRecord = {
       id,
       proposalId,
+      projectId,
       lineup,
       approvedAt: Date.now(),
     };
@@ -1138,11 +1141,12 @@ export function setOrgStoreSnapshot(next: Partial<OrgStoreState>): void {
   notify();
 }
 
-export function recordApprovedLineupInStore(lineup: unknown, proposalId?: string): string {
+export function recordApprovedLineupInStore(lineup: unknown, proposalId?: string, projectId?: string): string {
   const id = `lineup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const record: ApprovedLineupRecord = {
     id,
     proposalId,
+    projectId,
     lineup,
     approvedAt: Date.now(),
   };
@@ -1154,6 +1158,17 @@ export function recordApprovedLineupInStore(lineup: unknown, proposalId?: string
   saveStored(STORAGE_KEYS.APPROVED_LINEUPS, nextRecords);
   notify();
   return id;
+}
+
+export function updateApprovedLineupInStore(recordId: string, patch: Partial<ApprovedLineupRecord>): void {
+  const existingRecords = globalState.approvedLineups || [];
+  const nextRecords = existingRecords.map((r) => (r.id === recordId ? { ...r, ...patch } : r));
+  globalState = {
+    ...globalState,
+    approvedLineups: nextRecords,
+  };
+  saveStored(STORAGE_KEYS.APPROVED_LINEUPS, nextRecords);
+  notify();
 }
 
 export function setAutoApprovePermissionsInStore(enabled: boolean): void {

@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import type { OrgAgentMember, OrgDepartmentNode, OrgProject, OrgTeamNode } from '@/types/organization';
 import { useOrgStore } from '../store/useOrgStore';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
+import { MemberKnowledgePanel, KnowledgeChip } from '@/renderer/components/knowledge';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import {
   validateWithinMaster,
@@ -61,6 +62,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const [memberRole, setMemberRole] = useState('');
   const [memberPrompt, setMemberPrompt] = useState('');
   const [memberMcp, setMemberMcp] = useState('');
+  const [isKnowledgePanelOpen, setIsKnowledgePanelOpen] = useState(false);
   const [modelId, setModelId] = useState('claude-3-7-sonnet');
   const [parentDeptId, setParentDeptId] = useState('');
   const [folderPath, setFolderPath] = useState('');
@@ -343,129 +345,202 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const isCeo = entity === 'ceo';
 
   return (
-    <Modal
-      title={
-        <div className='flex items-center gap-6px'>
-          <Setting size={16} theme='outline' />
-          <span className='font-bold text-13px text-t-primary'>
-            {isCeo ? 'Edit Executive HQ (Root CEO)' : ''}
-            {isDept ? t('team.organization.editDepartment', { defaultValue: 'Edit Department' }) : ''}
-            {isTeam ? 'Edit Team' : ''}
-            {isMember ? 'Edit Team Member' : ''}
-            {isProject ? t('team.organization.editProject', { defaultValue: 'Edit Project' }) : ''}
-          </span>
-        </div>
-      }
-      visible={visible}
-      onCancel={onClose}
-      onOk={handleSave}
-      okText={t('team.organization.save', { defaultValue: 'Save' })}
-      cancelText={t('team.organization.cancel', { defaultValue: 'Cancel' })}
-      okButtonProps={{ disabled: !name.trim() && !isMember && !isProject ? !name.trim() : false }}
-    >
-      <div className='flex flex-col gap-10px'>
-        {isCeo && (
-          <>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>HQ Display Name</span>
-              <Input value={name} onChange={setName} placeholder='Root Executive HQ' />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Global CEO Agent Name</span>
-              <Input value={headName} onChange={setHeadName} placeholder='Global Organization CEO' />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Title / Role</span>
-              <Input value={headPrompt} onChange={setHeadPrompt} placeholder='Chief Executive Officer' />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Assigned AI Model (Root Default)</span>
-              <Select
-                value={modelId}
-                onChange={setModelId}
-                placeholder='Select model for Root CEO...'
-                showSearch
-                allowCreate
-              >
-                {configuredModelOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Master Organization Folder</span>
-              <WorkspaceFolderSelect
-                value={folderPath}
-                onChange={setFolderPath}
-                placeholder='Bind master workspace directory...'
-                recentLabel={t('common.recent', { defaultValue: 'Recent' })}
-                chooseDifferentLabel={t('common.chooseFolder', { defaultValue: 'Browse...' })}
-              />
-            </div>
-          </>
-        )}
-        {isDept && (
-          <>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.departmentName', { defaultValue: 'Department name' })}
-              </span>
-              <Input value={name} onChange={setName} autoFocus />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.description', { defaultValue: 'Description' })}
-              </span>
-              <Input.TextArea value={description} onChange={setDescription} rows={2} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Head / CEO Agent Name</span>
-              <Input value={headName} onChange={setHeadName} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>System Prompt / Role</span>
-              <Input.TextArea value={headPrompt} onChange={setHeadPrompt} rows={2} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Assigned AI Bot Model</span>
-              <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
-                <Select.Option value='claude-3-7-sonnet'>Claude 3.7 Sonnet</Select.Option>
-                <Select.Option value='claude-3-5-sonnet'>Claude 3.5 Sonnet</Select.Option>
-                <Select.Option value='claude-3-5-haiku'>Claude 3.5 Haiku</Select.Option>
-                <Select.Option value='gpt-4o'>GPT-4o</Select.Option>
-                <Select.Option value='gpt-4o-mini'>GPT-4o Mini</Select.Option>
-                <Select.Option value='gemini-2.0-flash'>Gemini 2.0 Flash</Select.Option>
-                <Select.Option value='deepseek-chat'>DeepSeek V3</Select.Option>
-                <Select.Option value='deepseek-reasoner'>DeepSeek R1</Select.Option>
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Parent Department</span>
-              <Select value={parentDeptId} onChange={setParentDeptId} allowClear placeholder='Top-level (Root CEO)'>
-                {departmentOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <div className='flex items-center justify-between'>
-                <span className='text-12px text-t-secondary'>Department Workspace Folder Path</span>
-                {masterRoot && name.trim() && (
-                  <Button
-                    size='mini'
-                    type='text'
-                    onClick={() => setFolderPath(getDefaultDeptPath(masterRoot, name))}
-                    className='!text-10px !h-20px !px-4px text-primary'
-                  >
-                    Auto-scaffold in Master Root
-                  </Button>
+    <>
+      <Modal
+        title={
+          <div className='flex items-center gap-6px'>
+            <Setting size={16} theme='outline' />
+            <span className='font-bold text-13px text-t-primary'>
+              {isCeo ? 'Edit Executive HQ (Root CEO)' : ''}
+              {isDept ? t('team.organization.editDepartment', { defaultValue: 'Edit Department' }) : ''}
+              {isTeam ? 'Edit Team' : ''}
+              {isMember ? 'Edit Team Member' : ''}
+              {isProject ? t('team.organization.editProject', { defaultValue: 'Edit Project' }) : ''}
+            </span>
+          </div>
+        }
+        visible={visible}
+        onCancel={onClose}
+        onOk={handleSave}
+        okText={t('team.organization.save', { defaultValue: 'Save' })}
+        cancelText={t('team.organization.cancel', { defaultValue: 'Cancel' })}
+        okButtonProps={{ disabled: !name.trim() && !isMember && !isProject ? !name.trim() : false }}
+      >
+        <div className='flex flex-col gap-10px'>
+          {isCeo && (
+            <>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>HQ Display Name</span>
+                <Input value={name} onChange={setName} placeholder='Root Executive HQ' />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Global CEO Agent Name</span>
+                <Input value={headName} onChange={setHeadName} placeholder='Global Organization CEO' />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Title / Role</span>
+                <Input value={headPrompt} onChange={setHeadPrompt} placeholder='Chief Executive Officer' />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Assigned AI Model (Root Default)</span>
+                <Select
+                  value={modelId}
+                  onChange={setModelId}
+                  placeholder='Select model for Root CEO...'
+                  showSearch
+                  allowCreate
+                >
+                  {configuredModelOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Master Organization Folder</span>
+                <WorkspaceFolderSelect
+                  value={folderPath}
+                  onChange={setFolderPath}
+                  placeholder='Bind master workspace directory...'
+                  recentLabel={t('common.recent', { defaultValue: 'Recent' })}
+                  chooseDifferentLabel={t('common.chooseFolder', { defaultValue: 'Browse...' })}
+                />
+              </div>
+            </>
+          )}
+          {isDept && (
+            <>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.departmentName', { defaultValue: 'Department name' })}
+                </span>
+                <Input value={name} onChange={setName} autoFocus />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.description', { defaultValue: 'Description' })}
+                </span>
+                <Input.TextArea value={description} onChange={setDescription} rows={2} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Head / CEO Agent Name</span>
+                <Input value={headName} onChange={setHeadName} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>System Prompt / Role</span>
+                <Input.TextArea value={headPrompt} onChange={setHeadPrompt} rows={2} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Assigned AI Bot Model</span>
+                <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
+                  <Select.Option value='claude-3-7-sonnet'>Claude 3.7 Sonnet</Select.Option>
+                  <Select.Option value='claude-3-5-sonnet'>Claude 3.5 Sonnet</Select.Option>
+                  <Select.Option value='claude-3-5-haiku'>Claude 3.5 Haiku</Select.Option>
+                  <Select.Option value='gpt-4o'>GPT-4o</Select.Option>
+                  <Select.Option value='gpt-4o-mini'>GPT-4o Mini</Select.Option>
+                  <Select.Option value='gemini-2.0-flash'>Gemini 2.0 Flash</Select.Option>
+                  <Select.Option value='deepseek-chat'>DeepSeek V3</Select.Option>
+                  <Select.Option value='deepseek-reasoner'>DeepSeek R1</Select.Option>
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Parent Department</span>
+                <Select value={parentDeptId} onChange={setParentDeptId} allowClear placeholder='Top-level (Root CEO)'>
+                  {departmentOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-12px text-t-secondary'>Department Workspace Folder Path</span>
+                  {masterRoot && name.trim() && (
+                    <Button
+                      size='mini'
+                      type='text'
+                      onClick={() => setFolderPath(getDefaultDeptPath(masterRoot, name))}
+                      className='!text-10px !h-20px !px-4px text-primary'
+                    >
+                      Auto-scaffold in Master Root
+                    </Button>
+                  )}
+                </div>
+                <div className='flex items-center gap-6px'>
+                  <WorkspaceFolderSelect
+                    value={folderPath}
+                    onChange={setFolderPath}
+                    placeholder='Choose subfolder within master root...'
+                    recentLabel='Recent'
+                    chooseDifferentLabel='Browse Folder...'
+                  />
+                </div>
+                {pathScopeError ? (
+                  <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+                ) : masterRoot ? (
+                  <span className='text-10px text-t-tertiary truncate'>
+                    Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+                  </span>
+                ) : (
+                  <span className='text-10px text-amber-500'>Organization master folder is not set yet.</span>
                 )}
               </div>
-              <div className='flex items-center gap-6px'>
+            </>
+          )}
+
+          {isTeam && (
+            <>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Team Name</span>
+                <Input value={name} onChange={setName} autoFocus />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.description', { defaultValue: 'Description' })}
+                </span>
+                <Input.TextArea value={description} onChange={setDescription} rows={2} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Team Lead / Head Name</span>
+                <Input value={headName} onChange={setHeadName} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Team Lead System Prompt</span>
+                <Input.TextArea value={headPrompt} onChange={setHeadPrompt} rows={2} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Assigned AI Bot Model (from App Settings)</span>
+                <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
+                  {configuredModelOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>HR Coordinator Name</span>
+                <Input value={hrName} onChange={setHrName} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-12px text-t-secondary'>Team Workspace Folder Path</span>
+                  {masterRoot && name.trim() && (
+                    <Button
+                      size='mini'
+                      type='text'
+                      onClick={() => {
+                        const dept = hierarchy.departments.find((d) => d.id === context.departmentId);
+                        setFolderPath(getDefaultTeamPath(masterRoot, dept?.name || 'department', name));
+                      }}
+                      className='!text-10px !h-20px !px-4px text-primary'
+                    >
+                      Auto-scaffold in Master Root
+                    </Button>
+                  )}
+                </div>
                 <WorkspaceFolderSelect
                   value={folderPath}
                   onChange={setFolderPath}
@@ -473,217 +548,167 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
                   recentLabel='Recent'
                   chooseDifferentLabel='Browse Folder...'
                 />
+                {pathScopeError ? (
+                  <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+                ) : masterRoot ? (
+                  <span className='text-10px text-t-tertiary truncate'>
+                    Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+                  </span>
+                ) : null}
               </div>
-              {pathScopeError ? (
-                <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
-              ) : masterRoot ? (
-                <span className='text-10px text-t-tertiary truncate'>
-                  Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
-                </span>
-              ) : (
-                <span className='text-10px text-amber-500'>Organization master folder is not set yet.</span>
+            </>
+          )}
+
+          {isMember && (
+            <>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Member Name</span>
+                <Input value={memberName} onChange={setMemberName} autoFocus />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Role</span>
+                <Input value={memberRole} onChange={setMemberRole} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>System Prompt</span>
+                <Input.TextArea value={memberPrompt} onChange={setMemberPrompt} rows={2} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Assigned AI Bot Model (from App Settings)</span>
+                <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
+                  {configuredModelOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>MCP Tools / Backend</span>
+                <Input value={memberMcp} onChange={setMemberMcp} placeholder='e.g. acp, filesystem, ...' />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Shared Departments</span>
+                <Tag className='text-10px text-t-tertiary'>{context.departmentId || 'Current department'}</Tag>
+              </div>
+              {data && 'id' in data && (
+                <div className='flex flex-col gap-4px'>
+                  <span className='text-12px text-t-secondary'>Knowledge</span>
+                  <div className='flex items-center gap-8px'>
+                    <KnowledgeChip
+                      memberKey={`org:${(data as OrgAgentMember).id}`}
+                      memberName={memberName || (data as OrgAgentMember).name}
+                      onClick={() => setIsKnowledgePanelOpen(true)}
+                      showWhenEmpty
+                    />
+                  </div>
+                </div>
               )}
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        {isTeam && (
-          <>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Team Name</span>
-              <Input value={name} onChange={setName} autoFocus />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.description', { defaultValue: 'Description' })}
-              </span>
-              <Input.TextArea value={description} onChange={setDescription} rows={2} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Team Lead / Head Name</span>
-              <Input value={headName} onChange={setHeadName} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Team Lead System Prompt</span>
-              <Input.TextArea value={headPrompt} onChange={setHeadPrompt} rows={2} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Assigned AI Bot Model (from App Settings)</span>
-              <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
-                {configuredModelOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>HR Coordinator Name</span>
-              <Input value={hrName} onChange={setHrName} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <div className='flex items-center justify-between'>
-                <span className='text-12px text-t-secondary'>Team Workspace Folder Path</span>
-                {masterRoot && name.trim() && (
-                  <Button
-                    size='mini'
-                    type='text'
-                    onClick={() => {
-                      const dept = hierarchy.departments.find((d) => d.id === context.departmentId);
-                      setFolderPath(getDefaultTeamPath(masterRoot, dept?.name || 'department', name));
-                    }}
-                    className='!text-10px !h-20px !px-4px text-primary'
-                  >
-                    Auto-scaffold in Master Root
-                  </Button>
-                )}
-              </div>
-              <WorkspaceFolderSelect
-                value={folderPath}
-                onChange={setFolderPath}
-                placeholder='Choose subfolder within master root...'
-                recentLabel='Recent'
-                chooseDifferentLabel='Browse Folder...'
-              />
-              {pathScopeError ? (
-                <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
-              ) : masterRoot ? (
-                <span className='text-10px text-t-tertiary truncate'>
-                  Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+          {isProject && (
+            <>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.projectName', { defaultValue: 'Project name' })}
                 </span>
-              ) : null}
-            </div>
-          </>
-        )}
-
-        {isMember && (
-          <>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Member Name</span>
-              <Input value={memberName} onChange={setMemberName} autoFocus />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Role</span>
-              <Input value={memberRole} onChange={setMemberRole} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>System Prompt</span>
-              <Input.TextArea value={memberPrompt} onChange={setMemberPrompt} rows={2} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Assigned AI Bot Model (from App Settings)</span>
-              <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
-                {configuredModelOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>MCP Tools / Backend</span>
-              <Input value={memberMcp} onChange={setMemberMcp} placeholder='e.g. acp, filesystem, ...' />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Shared Departments</span>
-              <Tag className='text-10px text-t-tertiary'>{context.departmentId || 'Current department'}</Tag>
-            </div>
-          </>
-        )}
-
-        {isProject && (
-          <>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.projectName', { defaultValue: 'Project name' })}
-              </span>
-              <Input value={name} onChange={setName} autoFocus />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.department', { defaultValue: 'Department' })}
-              </span>
-              <Select value={projectDeptId} onChange={setProjectDeptId}>
-                {departmentOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.team', { defaultValue: 'Team' })}
-              </span>
-              <Select value={projectTeamId} onChange={setProjectTeamId} allowClear placeholder='No team'>
-                {teamOptions.map((opt) => (
-                  <Select.Option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </Select.Option>
-                ))}
-              </Select>
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <div className='flex items-center justify-between'>
-                <span className='text-12px text-t-secondary'>Project Workspace Folder</span>
-                {masterRoot && name.trim() && (
-                  <Button
-                    size='mini'
-                    type='text'
-                    onClick={() => setFolderPath(getDefaultProjectPath(masterRoot, name))}
-                    className='!text-10px !h-20px !px-4px text-primary'
-                  >
-                    Auto-scaffold in Master Root
-                  </Button>
-                )}
+                <Input value={name} onChange={setName} autoFocus />
               </div>
-              <WorkspaceFolderSelect
-                value={folderPath}
-                onChange={setFolderPath}
-                placeholder='Assign subfolder within master root...'
-                recentLabel='Recent'
-                chooseDifferentLabel='Browse Folder...'
-              />
-              {pathScopeError ? (
-                <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
-              ) : masterRoot ? (
-                <span className='text-10px text-t-tertiary truncate'>
-                  Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.department', { defaultValue: 'Department' })}
                 </span>
-              ) : null}
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Build Command</span>
-              <Input value={buildCmd} onChange={setBuildCmd} placeholder='e.g. bun run build' />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Run Command</span>
-              <Input value={runCmd} onChange={setRunCmd} placeholder='e.g. bun run dev' />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>
-                {t('team.organization.description', { defaultValue: 'Description' })}
-              </span>
-              <Input.TextArea value={description} onChange={setDescription} rows={2} />
-            </div>
-            <div className='flex flex-col gap-4px'>
-              <span className='text-12px text-t-secondary'>Status</span>
-              <Select value={projectStatus} onChange={setProjectStatus}>
-                <Select.Option value='active'>
-                  {t('team.organization.statusActive', { defaultValue: 'Active' })}
-                </Select.Option>
-                <Select.Option value='dormant'>
-                  {t('team.organization.statusDormant', { defaultValue: 'Dormant' })}
-                </Select.Option>
-                <Select.Option value='done'>
-                  {t('team.organization.statusDone', { defaultValue: 'Done' })}
-                </Select.Option>
-              </Select>
-            </div>
-          </>
-        )}
-      </div>
-    </Modal>
+                <Select value={projectDeptId} onChange={setProjectDeptId}>
+                  {departmentOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.team', { defaultValue: 'Team' })}
+                </span>
+                <Select value={projectTeamId} onChange={setProjectTeamId} allowClear placeholder='No team'>
+                  {teamOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-12px text-t-secondary'>Project Workspace Folder</span>
+                  {masterRoot && name.trim() && (
+                    <Button
+                      size='mini'
+                      type='text'
+                      onClick={() => setFolderPath(getDefaultProjectPath(masterRoot, name))}
+                      className='!text-10px !h-20px !px-4px text-primary'
+                    >
+                      Auto-scaffold in Master Root
+                    </Button>
+                  )}
+                </div>
+                <WorkspaceFolderSelect
+                  value={folderPath}
+                  onChange={setFolderPath}
+                  placeholder='Assign subfolder within master root...'
+                  recentLabel='Recent'
+                  chooseDifferentLabel='Browse Folder...'
+                />
+                {pathScopeError ? (
+                  <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
+                ) : masterRoot ? (
+                  <span className='text-10px text-t-tertiary truncate'>
+                    Must reside inside master folder: <code className='text-primary'>{masterRoot}</code>
+                  </span>
+                ) : null}
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Build Command</span>
+                <Input value={buildCmd} onChange={setBuildCmd} placeholder='e.g. bun run build' />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Run Command</span>
+                <Input value={runCmd} onChange={setRunCmd} placeholder='e.g. bun run dev' />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.organization.description', { defaultValue: 'Description' })}
+                </span>
+                <Input.TextArea value={description} onChange={setDescription} rows={2} />
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>Status</span>
+                <Select value={projectStatus} onChange={setProjectStatus}>
+                  <Select.Option value='active'>
+                    {t('team.organization.statusActive', { defaultValue: 'Active' })}
+                  </Select.Option>
+                  <Select.Option value='dormant'>
+                    {t('team.organization.statusDormant', { defaultValue: 'Dormant' })}
+                  </Select.Option>
+                  <Select.Option value='done'>
+                    {t('team.organization.statusDone', { defaultValue: 'Done' })}
+                  </Select.Option>
+                </Select>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+      {isMember && data && 'id' in data && (
+        <MemberKnowledgePanel
+          memberKey={`org:${(data as OrgAgentMember).id}`}
+          memberName={memberName || (data as OrgAgentMember).name}
+          visible={isKnowledgePanelOpen}
+          onClose={() => setIsKnowledgePanelOpen(false)}
+        />
+      )}
+    </>
   );
 };
 

@@ -53,12 +53,7 @@ export const KnowledgeChip: React.FC<KnowledgeChipProps> = ({
         ? t('team.knowledgeRepos.status.needsAttention', { defaultValue: 'Needs attention' })
         : t('team.knowledgeRepos.status.idle', { defaultValue: 'Up to date' });
 
-  const statusColor =
-    status === 'updating'
-      ? 'arcoblue'
-      : status === 'needs_attention'
-        ? 'orange'
-        : 'green';
+  const statusColor = status === 'updating' ? 'arcoblue' : status === 'needs_attention' ? 'orange' : 'green';
 
   const statusIcon =
     status === 'updating' ? (

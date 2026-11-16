@@ -265,7 +265,18 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
       });
       onTeamRunAck?.(ack);
     },
-    [allTeams, assistants, conversation.extra?.workspace, conversation.id, isLeader, onPromptSent, onTeamRunAck, slot_id, team_id, assistant_name]
+    [
+      allTeams,
+      assistants,
+      conversation.extra?.workspace,
+      conversation.id,
+      isLeader,
+      onPromptSent,
+      onTeamRunAck,
+      slot_id,
+      team_id,
+      assistant_name,
+    ]
   );
   const teamSendMessageOverride = team_id ? teamSendMessage : undefined;
   const resolvedAssistantBackend =

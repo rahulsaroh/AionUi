@@ -207,11 +207,7 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
           )}
 
           <Form.Item label={t('team.knowledgeRepos.whenToUseHint', { defaultValue: 'When to use' })}>
-            <Input
-              value={hint}
-              onChange={setHint}
-              placeholder='e.g. video production pipeline or backend coding'
-            />
+            <Input value={hint} onChange={setHint} placeholder='e.g. video production pipeline or backend coding' />
           </Form.Item>
 
           <Form.Item label={t('team.knowledgeRepos.title', { defaultValue: 'Knowledge' })}>
@@ -288,12 +284,7 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                   />
                 </div>
                 <div className='flex justify-end pt-4px'>
-                  <Button
-                    size='small'
-                    type='primary'
-                    loading={cloning}
-                    onClick={handleCloneAndAssign}
-                  >
+                  <Button size='small' type='primary' loading={cloning} onClick={handleCloneAndAssign}>
                     Clone & Attach
                   </Button>
                 </div>

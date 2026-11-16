@@ -247,12 +247,18 @@ async function main() {
 
   server.tool(
     'assign_task',
-    'Delegates an execution task to a specific project lead or department. If new team members should be recruited, pass approved_lineup after getting explicit user approval first.',
+    'Delegates an execution task to a specific project lead or department. If new team members should be recruited, pass approved_lineup_id after getting explicit user approval first.',
     {
       project_id: z.string().optional().describe('ID or name of target project'),
       target: z.string().optional().describe('Target project ID or department (alias for project_id)'),
       text: z.string().optional().describe('Clear, actionable technical directive for execution'),
       task: z.string().optional().describe('Clear, actionable directive for execution (alias for text)'),
+      approved_lineup_id: z
+        .string()
+        .optional()
+        .describe(
+          'ID of the user-approved lineup (from proposal approval or ask_user reply). Pass this id exactly as received.'
+        ),
       approved_lineup: z
         .union([
           z.string(),
@@ -268,7 +274,7 @@ async function main() {
         ])
         .optional()
         .describe(
-          'User-approved lineup for member recruitment (e.g. [{ name: "Coder", assistant: "claude-code" }]). Must only be passed after user explicitly approves.'
+          'Deprecated fallback: User-approved lineup for member recruitment. Prefer passing approved_lineup_id.'
         ),
     },
     async (args) => {

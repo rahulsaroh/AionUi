@@ -10,6 +10,7 @@ import { Robot, LinkOne } from '@icon-park/react';
 import type { OrgAgentMember, OrgNodeStatus } from '@/types/organization';
 import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { useOrgStore } from '../store/useOrgStore';
+import { KnowledgeChip } from '@/renderer/components/knowledge';
 
 interface AgentMemberPillProps {
   member: OrgAgentMember;
@@ -114,6 +115,8 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
             <span>{sharedCount}</span>
           </span>
         )}
+
+        <KnowledgeChip memberKey={`org:${member.id}`} memberName={member.name} />
 
         {/* Busy / Active Status Ring indicator */}
         {(effectiveStatus === 'working' || isBusyElsewhere) && (

@@ -11,9 +11,14 @@ import * as os from 'os';
 import {
   executeOrgToolInStore,
   onStructureProposed,
+  handleUserAnswerAsk,
   type StructureProposal,
 } from '@/renderer/pages/organization/store/orgToolExecutor';
-import { getOrgStoreSnapshot, setOrgStoreSnapshot } from '@/renderer/pages/organization/store/useOrgStore';
+import {
+  getOrgStoreSnapshot,
+  setOrgStoreSnapshot,
+  recordApprovedLineupInStore,
+} from '@/renderer/pages/organization/store/useOrgStore';
 import { scanFolderCompact } from '@process/services/org/scanFolder';
 import { handleOrgToolRequest, setOrgToolExecutor } from '@process/resources/builtinMcp/orgBridgeServer';
 import { setMasterRootForTesting, resetMasterRoot } from '@process/services/org/orgScope';
@@ -86,6 +91,7 @@ describe('Root CEO Tools Acceptance Tests (Steps 1-7)', () => {
       },
       projects: [],
       members: [],
+      approvedLineups: [],
     });
 
     // Connect bridge executor to store
@@ -402,6 +408,7 @@ describe('Root CEO Tools Acceptance Tests (Steps 1-7)', () => {
       },
       projects: [],
       members: [],
+      approvedLineups: [],
     });
 
     const wipedStore = getOrgStoreSnapshot();
@@ -422,5 +429,159 @@ describe('Root CEO Tools Acceptance Tests (Steps 1-7)', () => {
     expect(restoredStore.projects[0].name).toBe('flutter_app1');
     expect(restoredStore.members).toHaveLength(1);
     expect(restoredStore.members![0].name).toBe('Aria Sterling');
+  });
+
+  describe('Recruiting validation and approved_lineup_id flow (MCP Bridge)', () => {
+    it('proposal Approve -> CEO receives lineup id -> assign_task with that id appends approval lines', async () => {
+      // 1. Setup dept & project
+      const deptRes = await callTool('create_department', {
+        name: 'App Builder',
+        folder: path.join(tempMasterRoot, 'App Builder'),
+      });
+      const projRes = await callTool('create_project', {
+        departmentId: deptRes.result.id,
+        name: 'flutter_app1',
+        folder: path.join(tempMasterRoot, 'App Builder', 'flutter_app1'),
+      });
+
+      // 2. Proposal is proposed with suggestedMembers
+      const suggestedMembers = [{ name: 'Flutter Specialist', assistant: 'claude-code' }];
+      const propRes = await callTool('propose_structure', {
+        departments: [{ name: 'App Builder', folder: path.join(tempMasterRoot, 'App Builder') }],
+        suggestedMembers,
+      });
+      expect(propRes.result.proposalId).toBeDefined();
+
+      // 3. User approves proposal in UI, which records lineup and yields id
+      const lineupId = recordApprovedLineupInStore(suggestedMembers, propRes.result.proposalId);
+      expect(lineupId).toBeDefined();
+
+      // Follow-up message received by CEO:
+      const ceoNotice = `User approved the proposal. approved_lineup_id=${lineupId}. Use this id in assign_task.`;
+      expect(ceoNotice).toContain(lineupId);
+
+      // 4. CEO delegates with approved_lineup_id
+      const assignRes = await callTool('assign_task', {
+        project_id: projRes.result.id,
+        task: 'Implement notification bell',
+        approved_lineup_id: lineupId,
+      });
+
+      expect(assignRes.success).toBe(true);
+      expect(assignRes.result.task).toContain('Implement notification bell');
+      expect(assignRes.result.task).toContain('User approved: add Flutter Specialist using claude-code');
+
+      // Record is bound to project
+      const state = getOrgStoreSnapshot();
+      const rec = state.approvedLineups?.find((r) => r.id === lineupId);
+      expect(rec?.projectId).toBe(projRes.result.id);
+      expect(rec?.usedAt).toBeDefined();
+    });
+
+    it('ask_user approval path produces a usable lineup id that assign_task accepts', async () => {
+      const deptRes = await callTool('create_department', {
+        name: 'App Builder',
+        folder: path.join(tempMasterRoot, 'App Builder'),
+      });
+      const projRes = await callTool('create_project', {
+        departmentId: deptRes.result.id,
+        name: 'flutter_app2',
+        folder: path.join(tempMasterRoot, 'App Builder', 'flutter_app2'),
+      });
+
+      // CEO asks user about adding a backend dev
+      const askRes = await callTool('ask_user', {
+        question: 'Should we recruit Bob as backend specialist for flutter_app2?',
+        suggestedMembers: [{ name: 'Bob', assistant: 'backend-agent' }],
+        project_id: projRes.result.id,
+      });
+      expect(askRes.success).toBe(true);
+
+      // User answers in the chat
+      const { answer, approvedLineupId } = handleUserAnswerAsk(askRes.result, 'Yes, add him');
+      expect(approvedLineupId).toBeDefined();
+      expect(answer).toContain(`approved_lineup_id=${approvedLineupId}`);
+
+      // CEO passes this id to assign_task
+      const assignRes = await callTool('assign_task', {
+        project_id: projRes.result.id,
+        task: 'Set up cloud sync',
+        approved_lineup_id: approvedLineupId,
+      });
+
+      expect(assignRes.success).toBe(true);
+      expect(assignRes.result.task).toContain('User approved: add Bob using backend-agent');
+    });
+
+    it('rejects model-invented lineup or unknown id without sending task', async () => {
+      const deptRes = await callTool('create_department', {
+        name: 'App Builder',
+        folder: path.join(tempMasterRoot, 'App Builder'),
+      });
+      const projRes = await callTool('create_project', {
+        departmentId: deptRes.result.id,
+        name: 'flutter_app1',
+        folder: path.join(tempMasterRoot, 'App Builder', 'flutter_app1'),
+      });
+
+      const assignRes = await callTool('assign_task', {
+        project_id: projRes.result.id,
+        task: 'Do unauthorized work',
+        approved_lineup_id: 'fake-lineup-id-123',
+      });
+
+      expect(assignRes.success).toBe(false);
+      expect(assignRes.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+    });
+
+    it('rejects expired or wrong-project lineup id', async () => {
+      const deptRes = await callTool('create_department', {
+        name: 'App Builder',
+        folder: path.join(tempMasterRoot, 'App Builder'),
+      });
+      const proj1Res = await callTool('create_project', {
+        departmentId: deptRes.result.id,
+        name: 'flutter_app1',
+        folder: path.join(tempMasterRoot, 'App Builder', 'flutter_app1'),
+      });
+      const proj2Res = await callTool('create_project', {
+        departmentId: deptRes.result.id,
+        name: 'flutter_app2',
+        folder: path.join(tempMasterRoot, 'App Builder', 'flutter_app2'),
+      });
+
+      // Bound to proj1
+      const lineupId = recordApprovedLineupInStore(
+        [{ name: 'Charlie', assistant: 'dev' }],
+        undefined,
+        proj1Res.result.id
+      );
+
+      // Try assigning to proj2
+      const mismatchRes = await callTool('assign_task', {
+        project_id: proj2Res.result.id,
+        task: 'Work on proj2',
+        approved_lineup_id: lineupId,
+      });
+      expect(mismatchRes.success).toBe(false);
+      expect(mismatchRes.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+
+      // Now test expired on proj1
+      const state = getOrgStoreSnapshot();
+      setOrgStoreSnapshot({
+        ...state,
+        approvedLineups: (state.approvedLineups || []).map((r) =>
+          r.id === lineupId ? { ...r, approvedAt: Date.now() - 30 * 60 * 60 * 1000 } : r
+        ),
+      });
+
+      const expiredRes = await callTool('assign_task', {
+        project_id: proj1Res.result.id,
+        task: 'Work on proj1',
+        approved_lineup_id: lineupId,
+      });
+      expect(expiredRes.success).toBe(false);
+      expect(expiredRes.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+    });
   });
 });

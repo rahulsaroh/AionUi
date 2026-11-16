@@ -127,8 +127,7 @@ export function fromBackendAssistant(raw: unknown): TeamAssistant {
       : Array.isArray(r.knowledge_repo_ids)
         ? (r.knowledge_repo_ids as string[])
         : undefined,
-    whenToUseHint:
-      (r.whenToUseHint as string | undefined) ?? (r.when_to_use_hint as string | undefined) ?? undefined,
+    whenToUseHint: (r.whenToUseHint as string | undefined) ?? (r.when_to_use_hint as string | undefined) ?? undefined,
   };
 }
 

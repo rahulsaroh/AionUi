@@ -275,7 +275,7 @@ describe('Organization Backend Teams Integration (Real AionCore Team Engine)', (
       });
     });
 
-    it('ignores invented approved_lineup when not recorded in store', async () => {
+    it('rejects invented approved_lineup when not recorded in store', async () => {
       const sendSpy = vi.spyOn(ipcBridge.team.sendMessage, 'invoke').mockResolvedValue({
         enqueue_status: 'accepted',
         message_id: 'msg-invented',
@@ -287,11 +287,9 @@ describe('Organization Backend Teams Integration (Real AionCore Team Engine)', (
         approved_lineup: [{ name: 'Hallucinated Specialist', assistant: 'claude-3-opus' }],
       });
 
-      expect(res.success).toBe(true);
-      expect(sendSpy).toHaveBeenCalledWith({
-        team_id: 'team-backend-mobile',
-        input: 'Scaffold authentication flow',
-      });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+      expect(sendSpy).not.toHaveBeenCalled();
     });
 
     it('returns error when target project has no backendTeamId and does not mark delegating', async () => {

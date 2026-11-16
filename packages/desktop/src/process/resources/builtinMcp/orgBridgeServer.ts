@@ -118,6 +118,13 @@ async function forwardToolToRenderer(
   if (customToolExecutor) {
     try {
       const res = await customToolExecutor(tool, args, meta);
+      if (res && typeof res === 'object' && 'success' in res && res.success === false) {
+        return {
+          success: false,
+          error: res.error || 'Tool execution failed.',
+          result: res,
+        };
+      }
       return { success: true, result: res };
     } catch (err) {
       return {

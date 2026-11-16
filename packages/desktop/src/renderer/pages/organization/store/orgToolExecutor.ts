@@ -5,7 +5,12 @@
  */
 
 import { ipcBridge } from '@/common';
-import { getOrgStoreSnapshot } from './useOrgStore';
+import {
+  getOrgStoreSnapshot,
+  updateApprovedLineupInStore,
+  recordApprovedLineupInStore,
+  type ApprovedLineupRecord,
+} from './useOrgStore';
 import { updateNodeStatus, updateActivityTicker } from './useOrgTelemetryStore';
 import { validateOrgFolder } from '../utils/orgPathUtils';
 import { createProjectBackendTeam } from './orgBackendTeam';
@@ -18,6 +23,7 @@ import type {
 import type { OrgDepartmentNode, OrgProject, OrgAgentMember, OrgNodeStatus } from '@/types/organization';
 
 export interface StructureProposal {
+  id?: string;
   departments: Array<{
     name: string;
     folder: string;
@@ -401,49 +407,81 @@ export async function executeOrgToolInStore(
       }
 
       let enrichedText = taskText;
-      const approvedLineup = args.approved_lineup;
-      if (approvedLineup) {
-        // Validate approved_lineup against approved lineups recorded in the store
-        const approvedRecords = store.approvedLineups || [];
-        const isApproved = approvedRecords.some((record) => {
-          if (!record) return false;
-          // Match by ID if approved_lineup is a string matching record.id
-          if (typeof approvedLineup === 'string' && record.id === approvedLineup) return true;
-          // Match by stringified comparison
-          try {
-            return JSON.stringify(record.lineup) === JSON.stringify(approvedLineup);
-          } catch {
-            return false;
-          }
-        });
+      const approvedLineupId =
+        typeof args.approved_lineup_id === 'string' && args.approved_lineup_id.trim()
+          ? args.approved_lineup_id.trim()
+          : typeof args.approved_lineup === 'string' &&
+              (store.approvedLineups || []).some((r) => r.id === args.approved_lineup.trim())
+            ? args.approved_lineup.trim()
+            : undefined;
 
-        if (isApproved) {
-          let approvalStr = '';
-          if (Array.isArray(approvedLineup)) {
-            approvalStr = approvedLineup
-              .map((item) => {
-                if (typeof item === 'string') {
-                  return item.startsWith('User approved:') ? item : `User approved: ${item}`;
-                }
-                if (item && typeof item === 'object') {
-                  const name = (item as { name?: string }).name || 'Specialist';
-                  const assistant =
-                    (item as { assistant?: string }).assistant ||
-                    (item as { assistant_id?: string }).assistant_id ||
-                    'default';
-                  return `User approved: add ${name} using ${assistant}`;
-                }
-                return 'User approved: add member';
-              })
-              .join('\n');
-          } else if (typeof approvedLineup === 'string') {
-            approvalStr = approvedLineup.startsWith('User approved:')
-              ? approvedLineup
-              : `User approved: ${approvedLineup}`;
-          }
-          if (approvalStr) {
-            enrichedText = `${enrichedText}\n\n${approvalStr}`;
-          }
+      const hasLineupArg = Boolean(args.approved_lineup_id || args.approved_lineup);
+
+      let matchedRecord: ApprovedLineupRecord | undefined;
+
+      if (hasLineupArg) {
+        const approvedRecords = store.approvedLineups || [];
+        if (approvedLineupId) {
+          matchedRecord = approvedRecords.find((r) => r.id === approvedLineupId);
+        } else if (args.approved_lineup) {
+          // Fallback match by JSON comparison
+          matchedRecord = approvedRecords.find((record) => {
+            if (!record) return false;
+            try {
+              return JSON.stringify(record.lineup) === JSON.stringify(args.approved_lineup);
+            } catch {
+              return false;
+            }
+          });
+        }
+
+        // Validate: must exist, not expired (24h), and project match if projectId is set on record
+        const now = Date.now();
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+        const isExpired = matchedRecord ? now - matchedRecord.approvedAt > ONE_DAY_MS : true;
+        const projectMismatch = Boolean(
+          matchedRecord?.projectId && resolvedProjectId && matchedRecord.projectId !== resolvedProjectId
+        );
+
+        if (!matchedRecord || isExpired || projectMismatch) {
+          return {
+            success: false,
+            error: 'approved_lineup not recognized: ask the user to approve the lineup again',
+            dispatched: false,
+            target: resolvedTargetId,
+            targetName,
+            projectId: resolvedProjectId,
+            status: 'error',
+          };
+        }
+
+        // Valid match! Build approval lines from stored record (not model-supplied text)
+        const storedLineup = matchedRecord.lineup;
+        let approvalStr = '';
+        if (Array.isArray(storedLineup)) {
+          approvalStr = storedLineup
+            .map((item) => {
+              if (typeof item === 'string') {
+                return item.startsWith('User approved:') ? item : `User approved: ${item}`;
+              }
+              if (item && typeof item === 'object') {
+                const name = (item as { name?: string }).name || 'Specialist';
+                const assistant =
+                  (item as { assistant?: string }).assistant ||
+                  (item as { assistant_id?: string }).assistant_id ||
+                  (item as { role?: string }).role ||
+                  'default';
+                return `User approved: add ${name} using ${assistant}`;
+              }
+              return 'User approved: add member';
+            })
+            .join('\n');
+        } else if (typeof storedLineup === 'string') {
+          approvalStr = storedLineup.startsWith('User approved:') ? storedLineup : `User approved: ${storedLineup}`;
+        }
+
+        if (approvalStr) {
+          enrichedText = `${enrichedText}\n\n${approvalStr}`;
         }
       }
 
@@ -466,6 +504,14 @@ export async function executeOrgToolInStore(
             status: 'error',
           };
         }
+      }
+
+      if (matchedRecord) {
+        const patch: Partial<ApprovedLineupRecord> = { usedAt: Date.now() };
+        if (resolvedProjectId && !matchedRecord.projectId) {
+          patch.projectId = resolvedProjectId;
+        }
+        updateApprovedLineupInStore(matchedRecord.id, patch);
       }
 
       updateNodeStatus(resolvedTargetId, 'delegating');
@@ -584,8 +630,10 @@ export async function executeOrgToolInStore(
     case 'propose_structure': {
       const departments = Array.isArray(args.departments) ? args.departments : [];
       const suggestedMembers = Array.isArray(args.suggestedMembers) ? args.suggestedMembers : [];
+      const proposalId = args.id || `proposal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
       emitStructureProposed({
+        id: proposalId,
         departments,
         suggestedMembers,
       });
@@ -593,6 +641,7 @@ export async function executeOrgToolInStore(
       return {
         success: true,
         proposed: true,
+        proposalId,
         departmentsCount: departments.length,
         message: 'Organizational proposal presented to user. Waiting for approval.',
       };
@@ -627,12 +676,46 @@ export async function executeOrgToolInStore(
       return {
         asked: true,
         question,
+        members: args.suggestedMembers || args.members,
+        projectId: args.projectId || args.project_id,
       };
     }
 
     default:
       throw new Error(`Unsupported organizational tool: "${tool}".`);
   }
+}
+
+/**
+ * Handles user answer to an ask_user question.
+ * When the question context was about recruiting members, records an approved lineup
+ * and returns the answer text appended with approved_lineup_id=<id>.
+ */
+export function handleUserAnswerAsk(
+  questionPayload: {
+    question?: string;
+    members?: unknown;
+    suggestedMembers?: unknown;
+    projectId?: string;
+    project_id?: string;
+  },
+  userAnswer: string
+): { answer: string; approvedLineupId?: string } {
+  const members = questionPayload.suggestedMembers || questionPayload.members;
+  const isAffirmative = /^(yes|yeah|sure|ok|okay|approve|approved|go ahead|proceed|yep|add|hire)/i.test(
+    userAnswer.trim()
+  );
+  const projectId = questionPayload.projectId || questionPayload.project_id;
+
+  if (members && isAffirmative) {
+    const lineupId = recordApprovedLineupInStore(members, undefined, projectId);
+    return {
+      answer: `${userAnswer.trim()} approved_lineup_id=${lineupId}`,
+      approvedLineupId: lineupId,
+    };
+  }
+
+  return { answer: userAnswer };
 }
 
 let bridgeListenerRegistered = false;

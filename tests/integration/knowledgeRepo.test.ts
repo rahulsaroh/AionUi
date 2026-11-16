@@ -468,8 +468,19 @@ describe('Knowledge Repos Integration & Safety Tests', () => {
       updatePolicy: 'auto' as const,
       trustStatus: 'trusted' as const,
       manifest: {
-        alwaysOnRules: [{ id: 'r1', name: 'Rule 1', relativePath: 'RULE.md', content: 'Follow guidelines', sizeBytes: 50, priority: 1 }],
-        onDemandSkills: [{ id: 's1', name: 'skill-alpha', description: 'Alpha workflow', relativePath: 'skills/alpha/SKILL.md' }],
+        alwaysOnRules: [
+          {
+            id: 'r1',
+            name: 'Rule 1',
+            relativePath: 'RULE.md',
+            content: 'Follow guidelines',
+            sizeBytes: 50,
+            priority: 1,
+          },
+        ],
+        onDemandSkills: [
+          { id: 's1', name: 'skill-alpha', description: 'Alpha workflow', relativePath: 'skills/alpha/SKILL.md' },
+        ],
         setupFiles: [],
         estimatedTokens: 100,
       },

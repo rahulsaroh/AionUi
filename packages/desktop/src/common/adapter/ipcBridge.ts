@@ -2742,7 +2742,9 @@ export const knowledgeRepo = {
     }
     throw new Error('Knowledge repos are only supported in desktop mode');
   },
-  getAssignment: async (memberKey: string): Promise<import('../types/knowledgeRepo').KnowledgeAssignment | undefined> => {
+  getAssignment: async (
+    memberKey: string
+  ): Promise<import('../types/knowledgeRepo').KnowledgeAssignment | undefined> => {
     if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoGetAssignment) {
       return window.electronAPI.knowledgeRepoGetAssignment(memberKey);
     }

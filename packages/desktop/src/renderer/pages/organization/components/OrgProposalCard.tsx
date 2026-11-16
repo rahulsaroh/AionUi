@@ -24,6 +24,7 @@ export interface StructureProposalDept {
 }
 
 export interface StructureProposalData {
+  id?: string;
   departments: StructureProposalDept[];
   suggestedMembers?: Array<{
     name: string;
@@ -34,13 +35,14 @@ export interface StructureProposalData {
 
 export interface OrgProposalCardProps {
   cardData: StructureProposalData | ProposalCardData;
-  onApprove: (createdRefs: OrgCreatedEntityRef[]) => void;
+  onApprove: (createdRefs: OrgCreatedEntityRef[], lineupId?: string) => void;
   onReject: () => void;
 }
 
 function normalizeProposalData(data: StructureProposalData | ProposalCardData): StructureProposalData {
   if ('departments' in data && Array.isArray(data.departments)) {
     return {
+      id: (data as StructureProposalData).id,
       departments: data.departments,
       suggestedMembers: data.suggestedMembers || [],
       rejected: data.rejected,
@@ -101,8 +103,9 @@ export const OrgProposalCard: React.FC<OrgProposalCardProps> = ({ cardData, onAp
     const createdRefs: OrgCreatedEntityRef[] = [];
 
     try {
+      let lineupId: string | undefined;
       if (proposal.suggestedMembers && proposal.suggestedMembers.length > 0) {
-        recordApprovedLineupInStore(proposal.suggestedMembers);
+        lineupId = recordApprovedLineupInStore(proposal.suggestedMembers, proposal.id);
       }
       for (const dept of proposal.departments) {
         let deptId = '';
@@ -149,7 +152,7 @@ export const OrgProposalCard: React.FC<OrgProposalCardProps> = ({ cardData, onAp
       }
 
       Message.success(`Successfully instantiated ${createdRefs.length} organizational entities.`);
-      onApprove(createdRefs);
+      onApprove(createdRefs, lineupId);
     } catch (err) {
       Message.error(`Failed to approve structure: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

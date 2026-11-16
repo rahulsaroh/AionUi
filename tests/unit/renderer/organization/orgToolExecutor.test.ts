@@ -5,8 +5,16 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { executeOrgToolInStore, onStructureProposed } from '@/renderer/pages/organization/store/orgToolExecutor';
-import { getOrgStoreSnapshot, setOrgStoreSnapshot } from '@/renderer/pages/organization/store/useOrgStore';
+import {
+  executeOrgToolInStore,
+  onStructureProposed,
+  handleUserAnswerAsk,
+} from '@/renderer/pages/organization/store/orgToolExecutor';
+import {
+  getOrgStoreSnapshot,
+  setOrgStoreSnapshot,
+  recordApprovedLineupInStore,
+} from '@/renderer/pages/organization/store/useOrgStore';
 import { org } from '@/common/adapter/ipcBridge';
 import { ipcBridge } from '@/common';
 
@@ -236,5 +244,186 @@ describe('executeOrgToolInStore (Step 1 & Step 2)', () => {
     expect(capturedProposal.departments.length).toBe(1);
     expect(capturedProposal.departments[0].name).toBe('App Builder');
     unsub();
+  });
+
+  describe('assign_task recruiting and approved_lineup validation', () => {
+    it('appends approval lines when valid approved_lineup_id is passed', async () => {
+      const dept = await executeOrgToolInStore('create_department', {
+        name: 'Engineering',
+        folder: '/company/master/engineering',
+      });
+      const proj = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project Alpha',
+        folder: '/company/master/engineering/alpha',
+      });
+
+      const lineupId = recordApprovedLineupInStore([
+        { name: 'Dev 1', assistant: 'claude-code' },
+        { name: 'Tester', assistant: 'qa-bot' },
+      ]);
+
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: proj.id,
+        task: 'Build the feature',
+        approved_lineup_id: lineupId,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.task).toContain('Build the feature');
+      expect(res.task).toContain('User approved: add Dev 1 using claude-code');
+      expect(res.task).toContain('User approved: add Tester using qa-bot');
+
+      // Verify project binding and usedAt
+      const state = getOrgStoreSnapshot();
+      const record = state.approvedLineups?.find((r) => r.id === lineupId);
+      expect(record?.projectId).toBe(proj.id);
+      expect(record?.usedAt).toBeDefined();
+    });
+
+    it('returns error and does not dispatch when lineup id is unknown or invented by model', async () => {
+      const dept = await executeOrgToolInStore('create_department', {
+        name: 'Engineering',
+        folder: '/company/master/engineering',
+      });
+      const proj = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project Beta',
+        folder: '/company/master/engineering/beta',
+      });
+
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: proj.id,
+        task: 'Build the feature',
+        approved_lineup_id: 'invented-id-by-model',
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+      expect(res.dispatched).toBe(false);
+    });
+
+    it('returns error when approved lineup is expired (>24h)', async () => {
+      const dept = await executeOrgToolInStore('create_department', {
+        name: 'Engineering',
+        folder: '/company/master/engineering',
+      });
+      const proj = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project Gamma',
+        folder: '/company/master/engineering/gamma',
+      });
+
+      const lineupId = recordApprovedLineupInStore([{ name: 'Dev 2', assistant: 'claude' }]);
+      // Modify record to be 25 hours old
+      const state = getOrgStoreSnapshot();
+      setOrgStoreSnapshot({
+        ...state,
+        approvedLineups: (state.approvedLineups || []).map((r) =>
+          r.id === lineupId ? { ...r, approvedAt: Date.now() - 25 * 60 * 60 * 1000 } : r
+        ),
+      });
+
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: proj.id,
+        task: 'Build the feature',
+        approved_lineup_id: lineupId,
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+      expect(res.dispatched).toBe(false);
+    });
+
+    it('returns error when lineup was bound to another project (project mismatch)', async () => {
+      const dept = await executeOrgToolInStore('create_department', {
+        name: 'Engineering',
+        folder: '/company/master/engineering',
+      });
+      const proj1 = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project 1',
+        folder: '/company/master/engineering/p1',
+      });
+      const proj2 = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project 2',
+        folder: '/company/master/engineering/p2',
+      });
+
+      const lineupId = recordApprovedLineupInStore([{ name: 'Dev 1', assistant: 'claude' }], undefined, proj1.id);
+
+      // Attempt using it on proj2
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: proj2.id,
+        task: 'Build for p2',
+        approved_lineup_id: lineupId,
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('approved_lineup not recognized: ask the user to approve the lineup again');
+      expect(res.dispatched).toBe(false);
+    });
+
+    it('matches by id regardless of key order differences or object shapes', async () => {
+      const dept = await executeOrgToolInStore('create_department', {
+        name: 'Engineering',
+        folder: '/company/master/engineering',
+      });
+      const proj = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project Delta',
+        folder: '/company/master/engineering/delta',
+      });
+
+      // Record with keys: assistant, name
+      const lineupId = recordApprovedLineupInStore([{ assistant: 'claude-code', name: 'Dev 1' }]);
+
+      // Call assign_task using ID
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: proj.id,
+        task: 'Do work',
+        approved_lineup_id: lineupId,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.task).toContain('User approved: add Dev 1 using claude-code');
+    });
+
+    it('ask_user approval path produces a usable lineup id and works with assign_task', async () => {
+      const dept = await executeOrgToolInStore('create_department', {
+        name: 'Engineering',
+        folder: '/company/master/engineering',
+      });
+      const proj = await executeOrgToolInStore('create_project', {
+        departmentId: dept.id,
+        name: 'Project Epsilon',
+        folder: '/company/master/engineering/epsilon',
+      });
+
+      // CEO asked user about recruiting
+      const askResult = await executeOrgToolInStore('ask_user', {
+        question: 'Should I recruit Alice as coder for Project Epsilon?',
+        suggestedMembers: [{ name: 'Alice', assistant: 'coder-bot' }],
+        project_id: proj.id,
+      });
+
+      expect(askResult.asked).toBe(true);
+
+      // User says yes
+      const { answer, approvedLineupId } = handleUserAnswerAsk(askResult, 'Yes, please add her');
+      expect(approvedLineupId).toBeDefined();
+      expect(answer).toContain(`approved_lineup_id=${approvedLineupId}`);
+
+      // CEO uses the approvedLineupId in assign_task
+      const res = await executeOrgToolInStore('assign_task', {
+        project_id: proj.id,
+        task: 'Welcome Alice and start work',
+        approved_lineup_id: approvedLineupId,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.task).toContain('User approved: add Alice using coder-bot');
+    });
   });
 });

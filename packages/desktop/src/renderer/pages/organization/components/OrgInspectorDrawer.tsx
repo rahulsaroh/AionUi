@@ -27,6 +27,7 @@ import { ORG_THEME_PALETTE, computeLifecycleStatus } from '../utils/orgTheme';
 import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { validateWithinMaster } from '../utils/orgPathUtils';
 import { OrgModelSelector } from './OrgModelSelector';
+import { MemberKnowledgePanel, KnowledgeChip } from '@/renderer/components/knowledge';
 import type { OrgProject, OrgAgentMember, OrgConversation, OrgConversationMessage } from '@/types/organization';
 
 export type OrgNodeType = 'ceo' | 'department' | 'team' | 'project' | 'member';
@@ -101,6 +102,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [isKnowledgePanelOpen, setIsKnowledgePanelOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -575,200 +577,236 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
   };
 
   return (
-    <Drawer
-      title={
-        <div className='flex flex-col gap-4px w-full min-w-0 pr-8px select-none overflow-hidden'>
-          <div className='flex items-center justify-between gap-8px min-w-0 w-full'>
-            <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
-              <span className='size-22px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
-                {selectedNodeType === 'ceo' ? (
-                  <Peoples size={13} theme='outline' fill='currentColor' />
-                ) : selectedNodeType === 'department' ? (
-                  <Workbench size={13} theme='outline' fill='currentColor' />
-                ) : selectedNodeType === 'project' ? (
-                  <FolderClose size={13} theme='outline' fill='currentColor' />
-                ) : (
-                  <User size={13} theme='outline' fill='currentColor' />
-                )}
-              </span>
-              <span className='font-bold text-13px text-t-primary truncate min-w-0' title={nodeTitle}>
-                {nodeTitle}
-              </span>
+    <>
+      <Drawer
+        title={
+          <div className='flex flex-col gap-4px w-full min-w-0 pr-8px select-none overflow-hidden'>
+            <div className='flex items-center justify-between gap-8px min-w-0 w-full'>
+              <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
+                <span className='size-22px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
+                  {selectedNodeType === 'ceo' ? (
+                    <Peoples size={13} theme='outline' fill='currentColor' />
+                  ) : selectedNodeType === 'department' ? (
+                    <Workbench size={13} theme='outline' fill='currentColor' />
+                  ) : selectedNodeType === 'project' ? (
+                    <FolderClose size={13} theme='outline' fill='currentColor' />
+                  ) : (
+                    <User size={13} theme='outline' fill='currentColor' />
+                  )}
+                </span>
+                <span className='font-bold text-13px text-t-primary truncate min-w-0' title={nodeTitle}>
+                  {nodeTitle}
+                </span>
+                <Tag
+                  size='small'
+                  color='arcoblue'
+                  className='text-10px font-medium px-5px py-0.5px rounded-full shrink-0'
+                >
+                  {nodeRole}
+                </Tag>
+              </div>
               <Tag
                 size='small'
-                color='arcoblue'
+                style={{
+                  borderColor: theme.borderColor,
+                  color: theme.textColor,
+                  backgroundColor: theme.backgroundColor,
+                }}
                 className='text-10px font-medium px-5px py-0.5px rounded-full shrink-0'
               >
-                {nodeRole}
+                {theme.badgeText}
               </Tag>
             </div>
-            <Tag
-              size='small'
-              style={{ borderColor: theme.borderColor, color: theme.textColor, backgroundColor: theme.backgroundColor }}
-              className='text-10px font-medium px-5px py-0.5px rounded-full shrink-0'
-            >
-              {theme.badgeText}
-            </Tag>
-          </div>
-          <div className='flex items-center justify-between gap-6px min-w-0 text-10px font-mono text-t-secondary'>
-            <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
-              <span className='truncate' title={`Chatting with: ${leaderRole} (${leaderName})`}>
-                💬 {leaderRole}: <span className='text-t-primary font-medium'>{leaderName}</span>
-              </span>
-              {nodeWorkspacePath ? (
-                <div
-                  className='flex items-center gap-3px text-t-primary px-5px py-0.5px rounded bg-amber-500/10 border border-amber-500/20 shrink-0 max-w-160px'
-                  title={nodeWorkspacePath}
-                >
-                  <FolderClose size={10} theme='outline' className='text-amber-400 shrink-0' />
-                  <span className='truncate'>{nodeWorkspacePath}</span>
-                </div>
-              ) : null}
-            </div>
-            <div className='flex items-center gap-2px shrink-0'>
-              {onSetFolder && (
-                <Button
-                  size='mini'
-                  type='text'
-                  icon={<LinkOne size={11} />}
-                  onClick={handleChangeFolder}
-                  disabled={!selectedNodeId}
-                  className='!px-4px !text-10px'
-                  title='Change Folder'
-                />
-              )}
-              {selectedNodeType === 'department' && editableDepartmentId && (
-                <Button
-                  size='mini'
-                  type='text'
-                  icon={<Edit size={11} />}
-                  onClick={() => onEditDepartment?.(editableDepartmentId)}
-                  className='!px-4px !text-10px'
-                  title='Quick Edit'
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      }
-      visible={visible && Boolean(selectedNodeId)}
-      onCancel={onClose}
-      width={480}
-      zIndex={100}
-      getPopupContainer={getPopupContainer}
-      className='org-inspector-drawer'
-      wrapClassName='org-inspector-drawer-wrapper'
-      headerStyle={{ height: 'auto', minHeight: '52px', padding: '10px 16px', overflow: 'hidden' }}
-      bodyStyle={{ padding: '12px 16px', overflowX: 'hidden' }}
-      footer={
-        <div className='flex flex-col gap-6px w-full min-w-0'>
-          {targetAgentMember && (
-            <div className='flex items-center justify-between px-2px'>
-              <span className='text-10px text-t-tertiary'>AI Model for Directives:</span>
-              <OrgModelSelector
-                currentModel={targetAgentMember.model}
-                onSelectModel={(newModel) => {
-                  updateAgentModel(targetAgentMember.id, newModel);
-                  Message.success(
-                    `Model updated to ${newModel.modelName || newModel.modelId} for ${targetAgentMember.name}`
-                  );
-                }}
-              />
-            </div>
-          )}
-          <div className='flex items-center gap-8px w-full min-w-0'>
-            <Input
-              value={directiveInput}
-              onChange={setDirectiveInput}
-              onPressEnter={() => void handleDispatchDirective()}
-              placeholder={
-                selectedNodeType === 'ceo'
-                  ? "Ask Root CEO, plan structure, or type 'Create department Engineering'..."
-                  : selectedNodeType === 'project'
-                    ? `Dispatch directive to ${nodeTitle} team...`
-                    : selectedNodeType === 'member'
-                      ? `Message ${leaderName}...`
-                      : `Dispatch directive to ${leaderName}...`
-              }
-              disabled={isExecuting}
-              className='flex-1 min-w-0 !rounded-8px text-12px'
-            />
-            <Button
-              type='primary'
-              loading={isExecuting}
-              icon={<Send size={13} />}
-              onClick={() => void handleDispatchDirective()}
-              className='shrink-0 !rounded-8px !px-14px'
-            >
-              Send
-            </Button>
-          </div>
-        </div>
-      }
-    >
-      <div className='flex flex-col gap-12px min-w-0 pr-2px pb-16px'>
-        <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex flex-col gap-8px'>
-          <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-10px min-w-0'>
-              <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
-                <Workbench size={16} theme='outline' />
-              </span>
-              <div className='flex flex-col min-w-0'>
-                <span className='text-13px font-bold text-t-primary truncate'>{leaderName}</span>
-                <span className='text-11px text-t-secondary truncate'>{leaderTitle}</span>
+            <div className='flex items-center justify-between gap-6px min-w-0 text-10px font-mono text-t-secondary'>
+              <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
+                <span className='truncate' title={`Chatting with: ${leaderRole} (${leaderName})`}>
+                  💬 {leaderRole}: <span className='text-t-primary font-medium'>{leaderName}</span>
+                </span>
+                {nodeWorkspacePath ? (
+                  <div
+                    className='flex items-center gap-3px text-t-primary px-5px py-0.5px rounded bg-amber-500/10 border border-amber-500/20 shrink-0 max-w-160px'
+                    title={nodeWorkspacePath}
+                  >
+                    <FolderClose size={10} theme='outline' className='text-amber-400 shrink-0' />
+                    <span className='truncate'>{nodeWorkspacePath}</span>
+                  </div>
+                ) : null}
+              </div>
+              <div className='flex items-center gap-2px shrink-0'>
+                {onSetFolder && (
+                  <Button
+                    size='mini'
+                    type='text'
+                    icon={<LinkOne size={11} />}
+                    onClick={handleChangeFolder}
+                    disabled={!selectedNodeId}
+                    className='!px-4px !text-10px'
+                    title='Change Folder'
+                  />
+                )}
+                {selectedNodeType === 'department' && editableDepartmentId && (
+                  <Button
+                    size='mini'
+                    type='text'
+                    icon={<Edit size={11} />}
+                    onClick={() => onEditDepartment?.(editableDepartmentId)}
+                    className='!px-4px !text-10px'
+                    title='Quick Edit'
+                  />
+                )}
               </div>
             </div>
-            <div className='flex items-center gap-4px text-10px font-mono text-t-tertiary shrink-0'>
-              <Time size={12} theme='outline' />
-              <span>
-                {lastActiveAt
-                  ? new Date(lastActiveAt).toLocaleDateString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : 'Dormant (7d+)'}
-              </span>
+          </div>
+        }
+        visible={visible && Boolean(selectedNodeId)}
+        onCancel={onClose}
+        width={480}
+        zIndex={100}
+        getPopupContainer={getPopupContainer}
+        className='org-inspector-drawer'
+        wrapClassName='org-inspector-drawer-wrapper'
+        headerStyle={{ height: 'auto', minHeight: '52px', padding: '10px 16px', overflow: 'hidden' }}
+        bodyStyle={{ padding: '12px 16px', overflowX: 'hidden' }}
+        footer={
+          <div className='flex flex-col gap-6px w-full min-w-0'>
+            {targetAgentMember && (
+              <div className='flex items-center justify-between px-2px'>
+                <span className='text-10px text-t-tertiary'>AI Model for Directives:</span>
+                <OrgModelSelector
+                  currentModel={targetAgentMember.model}
+                  onSelectModel={(newModel) => {
+                    updateAgentModel(targetAgentMember.id, newModel);
+                    Message.success(
+                      `Model updated to ${newModel.modelName || newModel.modelId} for ${targetAgentMember.name}`
+                    );
+                  }}
+                />
+              </div>
+            )}
+            <div className='flex items-center gap-8px w-full min-w-0'>
+              <Input
+                value={directiveInput}
+                onChange={setDirectiveInput}
+                onPressEnter={() => void handleDispatchDirective()}
+                placeholder={
+                  selectedNodeType === 'ceo'
+                    ? "Ask Root CEO, plan structure, or type 'Create department Engineering'..."
+                    : selectedNodeType === 'project'
+                      ? `Dispatch directive to ${nodeTitle} team...`
+                      : selectedNodeType === 'member'
+                        ? `Message ${leaderName}...`
+                        : `Dispatch directive to ${leaderName}...`
+                }
+                disabled={isExecuting}
+                className='flex-1 min-w-0 !rounded-8px text-12px'
+              />
+              <Button
+                type='primary'
+                loading={isExecuting}
+                icon={<Send size={13} />}
+                onClick={() => void handleDispatchDirective()}
+                className='shrink-0 !rounded-8px !px-14px'
+              >
+                Send
+              </Button>
             </div>
           </div>
-          {targetAgentMember && (
-            <div className='flex items-center justify-between pt-6px border-t border-[var(--color-border-2)]/60'>
-              <span className='text-10px text-t-tertiary font-medium'>Assigned AI Model:</span>
-              <OrgModelSelector
-                currentModel={targetAgentMember.model}
-                onSelectModel={(newModel) => {
-                  updateAgentModel(targetAgentMember.id, newModel);
-                  Message.success(
-                    `Model updated to ${newModel.modelName || newModel.modelId} for ${targetAgentMember.name}`
-                  );
-                }}
-              />
+        }
+      >
+        <div className='flex flex-col gap-12px min-w-0 pr-2px pb-16px'>
+          <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex flex-col gap-8px'>
+            <div className='flex items-center justify-between'>
+              <div className='flex items-center gap-10px min-w-0'>
+                <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
+                  <Workbench size={16} theme='outline' />
+                </span>
+                <div className='flex flex-col min-w-0'>
+                  <span className='text-13px font-bold text-t-primary truncate'>{leaderName}</span>
+                  <span className='text-11px text-t-secondary truncate'>{leaderTitle}</span>
+                </div>
+              </div>
+              <div className='flex items-center gap-4px text-10px font-mono text-t-tertiary shrink-0'>
+                <Time size={12} theme='outline' />
+                <span>
+                  {lastActiveAt
+                    ? new Date(lastActiveAt).toLocaleDateString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Dormant (7d+)'}
+                </span>
+              </div>
             </div>
-          )}
-        </div>
+            {targetAgentMember && (
+              <div className='flex items-center justify-between pt-6px border-t border-[var(--color-border-2)]/60'>
+                <span className='text-10px text-t-tertiary font-medium'>Assigned AI Model:</span>
+                <OrgModelSelector
+                  currentModel={targetAgentMember.model}
+                  onSelectModel={(newModel) => {
+                    updateAgentModel(targetAgentMember.id, newModel);
+                    Message.success(
+                      `Model updated to ${newModel.modelName || newModel.modelId} for ${targetAgentMember.name}`
+                    );
+                  }}
+                />
+              </div>
+            )}
+            {targetAgentMember && (
+              <div className='flex items-center justify-between pt-6px border-t border-[var(--color-border-2)]/60'>
+                <span className='text-10px text-t-tertiary font-medium'>Knowledge:</span>
+                <div className='flex items-center gap-6px'>
+                  <KnowledgeChip
+                    memberKey={`org:${targetAgentMember.id}`}
+                    memberName={targetAgentMember.name}
+                    onClick={() => setIsKnowledgePanelOpen(true)}
+                    showWhenEmpty
+                  />
+                </div>
+              </div>
+            )}
+          </div>
 
-        <Button
-          type='outline'
-          size='small'
-          icon={<MessageOne size={13} theme='outline' />}
-          onClick={() => {
-            if (activeConversation) {
-              setSelectedConversationId(activeConversation.id);
-              setOrgViewMode('chat');
-              onClose();
-            } else if (selectedNodeType === 'project') {
-              const proj = projects.find((p) => p.id === selectedNodeId);
-              if (proj) {
-                const newConvId = `conv-proj-${proj.id}-${Date.now()}`;
+          <Button
+            type='outline'
+            size='small'
+            icon={<MessageOne size={13} theme='outline' />}
+            onClick={() => {
+              if (activeConversation) {
+                setSelectedConversationId(activeConversation.id);
+                setOrgViewMode('chat');
+                onClose();
+              } else if (selectedNodeType === 'project') {
+                const proj = projects.find((p) => p.id === selectedNodeId);
+                if (proj) {
+                  const newConvId = `conv-proj-${proj.id}-${Date.now()}`;
+                  addOrgConversation({
+                    id: newConvId,
+                    title: `${proj.name} - Chat`,
+                    type: 'team_execution',
+                    sourceNodeId: proj.teamIds?.[0] || proj.departmentId || 'root-ceo',
+                    targetNodeId: proj.teamIds?.[0] || proj.departmentId || 'root-ceo',
+                    projectId: proj.id,
+                    teamId: proj.teamIds?.[0],
+                    timestamp: Date.now(),
+                    summary: '',
+                    messages: [],
+                  });
+                  setSelectedConversationId(newConvId);
+                  setOrgViewMode('chat');
+                  onClose();
+                  return;
+                }
+              } else if (selectedNodeType === 'team') {
+                const newConvId = `conv-team-${selectedNodeId}-${Date.now()}`;
                 addOrgConversation({
                   id: newConvId,
-                  title: `${proj.name} - Chat`,
+                  title: `${nodeTitle} - Chat`,
                   type: 'team_execution',
-                  sourceNodeId: proj.teamIds?.[0] || proj.departmentId || 'root-ceo',
-                  targetNodeId: proj.teamIds?.[0] || proj.departmentId || 'root-ceo',
-                  projectId: proj.id,
-                  teamId: proj.teamIds?.[0],
+                  sourceNodeId: selectedNodeId,
+                  targetNodeId: selectedNodeId,
+                  teamId: selectedNodeId,
                   timestamp: Date.now(),
                   summary: '',
                   messages: [],
@@ -777,255 +815,247 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                 setOrgViewMode('chat');
                 onClose();
                 return;
+              } else if (targetAgentMember) {
+                handleStartDirectChat(targetAgentMember);
+              } else {
+                handleStartDirectChat({ id: selectedNodeId, name: leaderName, title: leaderTitle });
               }
-            } else if (selectedNodeType === 'team') {
-              const newConvId = `conv-team-${selectedNodeId}-${Date.now()}`;
-              addOrgConversation({
-                id: newConvId,
-                title: `${nodeTitle} - Chat`,
-                type: 'team_execution',
-                sourceNodeId: selectedNodeId,
-                targetNodeId: selectedNodeId,
-                teamId: selectedNodeId,
-                timestamp: Date.now(),
-                summary: '',
-                messages: [],
-              });
-              setSelectedConversationId(newConvId);
-              setOrgViewMode('chat');
-              onClose();
-              return;
-            } else if (targetAgentMember) {
-              handleStartDirectChat(targetAgentMember);
-            } else {
-              handleStartDirectChat({ id: selectedNodeId, name: leaderName, title: leaderTitle });
-            }
-          }}
-          className='w-full !rounded-8px !text-12px !py-6px !font-medium'
-        >
-          Open in Full Chat with {leaderName || nodeTitle}
-        </Button>
-
-        {linkedProjects.length > 0 && (
-          <div className='flex flex-col gap-6px'>
-            <span className='text-10px font-semibold uppercase tracking-wider text-t-tertiary'>
-              Operating Projects ({linkedProjects.length})
-            </span>
-            <div className='flex items-center gap-6px flex-wrap'>
-              {linkedProjects.map((p) => {
-                const project = projects.find((item) => item.id === p.id);
-                return (
-                  <Button
-                    key={p.id}
-                    size='mini'
-                    className='!h-auto !px-8px !py-3px !rounded-6px !bg-fill-1 !border !border-[var(--color-border-2)] !text-11px !font-mono !text-t-primary'
-                    icon={<FolderClose size={12} theme='outline' className='text-amber-400' />}
-                    onClick={() => {
-                      if (project) onEditProject?.(project);
-                    }}
-                    title={p.path || p.name}
-                  >
-                    <span className='max-w-220px truncate'>{p.name}</span>
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <Tabs
-          activeTab={activeTab}
-          onChange={(key) => setActiveTab(key as 'conversations' | 'terminal' | 'members')}
-          type='rounded'
-          className='w-full'
-        >
-          <Tabs.TabPane
-            key='conversations'
-            title={
-              <span className='flex items-center gap-5px text-12px'>
-                <MessageOne size={13} theme='outline' />
-                <span>Chat ({activeConversation?.messages?.length || 0})</span>
-              </span>
-            }
+            }}
+            className='w-full !rounded-8px !text-12px !py-6px !font-medium'
           >
-            <div className='flex flex-col gap-10px mt-8px min-w-0'>
-              {/* Thread switcher bar */}
-              <div className='flex items-center justify-between gap-6px p-6px px-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)]'>
-                <div className='flex items-center gap-6px flex-1 min-w-0'>
-                  <span className='text-10px uppercase tracking-wider text-t-tertiary shrink-0 font-semibold'>
-                    Thread:
-                  </span>
-                  {nodeConversations.length > 1 ? (
-                    <Select
+            Open in Full Chat with {leaderName || nodeTitle}
+          </Button>
+
+          {linkedProjects.length > 0 && (
+            <div className='flex flex-col gap-6px'>
+              <span className='text-10px font-semibold uppercase tracking-wider text-t-tertiary'>
+                Operating Projects ({linkedProjects.length})
+              </span>
+              <div className='flex items-center gap-6px flex-wrap'>
+                {linkedProjects.map((p) => {
+                  const project = projects.find((item) => item.id === p.id);
+                  return (
+                    <Button
+                      key={p.id}
                       size='mini'
-                      value={activeConversation?.id}
-                      onChange={(val) => setActiveThreadId(val)}
-                      className='flex-1 min-w-0 !h-24px'
-                      bordered={false}
+                      className='!h-auto !px-8px !py-3px !rounded-6px !bg-fill-1 !border !border-[var(--color-border-2)] !text-11px !font-mono !text-t-primary'
+                      icon={<FolderClose size={12} theme='outline' className='text-amber-400' />}
+                      onClick={() => {
+                        if (project) onEditProject?.(project);
+                      }}
+                      title={p.path || p.name}
                     >
-                      {nodeConversations.map((c) => (
-                        <Select.Option key={c.id} value={c.id}>
-                          <span className='truncate'>
-                            {c.title || 'Untitled'} ({c.messages?.length || 0} msgs)
-                          </span>
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  ) : (
-                    <span className='text-11px font-medium text-t-primary truncate min-w-0'>
-                      {activeConversation?.title || 'Active Thread'} ({activeConversation?.messages?.length || 0} msgs)
-                    </span>
-                  )}
-                </div>
-                <Button
-                  size='mini'
-                  type='text'
-                  icon={<Plus size={11} />}
-                  onClick={() => {
-                    const newId = `conv-${selectedNodeType}-${selectedNodeId}-${Date.now()}`;
-                    setActiveThreadId(newId);
-                    Message.info('Started a new thread. Type your message below.');
-                  }}
-                  title='Start a new conversation thread'
-                  className='!text-11px !px-6px !h-22px shrink-0 text-primary'
-                >
-                  New Thread
-                </Button>
+                      <span className='max-w-220px truncate'>{p.name}</span>
+                    </Button>
+                  );
+                })}
               </div>
+            </div>
+          )}
 
-              {/* Message stream */}
-              {!activeConversation?.messages || activeConversation.messages.length === 0 ? (
-                <div className='py-28px text-center flex flex-col items-center gap-6px text-t-tertiary'>
-                  <MessageOne size={24} className='opacity-30' />
-                  <span className='text-12px font-medium text-t-secondary'>No messages in this thread</span>
-                  <span className='text-11px max-w-260px'>
-                    Send directives or questions in the chatbar below to converse with {leaderName}.
-                  </span>
-                </div>
-              ) : (
-                <div className='flex flex-col gap-10px min-w-0'>
-                  {activeConversation.messages.map((m) => {
-                    const isUser = m.role === 'user' || m.sender === 'You' || m.sender === 'Executive User';
-                    const isError =
-                      m.role === 'system_error' ||
-                      m.content.includes('Inference Error') ||
-                      m.content.includes('USER_LLM_PROVIDER_GATEWAY_ERROR');
-
-                    return (
-                      <div
-                        key={m.id}
-                        className={`flex flex-col gap-3px min-w-0 ${isUser ? 'items-end' : 'items-start'}`}
+          <Tabs
+            activeTab={activeTab}
+            onChange={(key) => setActiveTab(key as 'conversations' | 'terminal' | 'members')}
+            type='rounded'
+            className='w-full'
+          >
+            <Tabs.TabPane
+              key='conversations'
+              title={
+                <span className='flex items-center gap-5px text-12px'>
+                  <MessageOne size={13} theme='outline' />
+                  <span>Chat ({activeConversation?.messages?.length || 0})</span>
+                </span>
+              }
+            >
+              <div className='flex flex-col gap-10px mt-8px min-w-0'>
+                {/* Thread switcher bar */}
+                <div className='flex items-center justify-between gap-6px p-6px px-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)]'>
+                  <div className='flex items-center gap-6px flex-1 min-w-0'>
+                    <span className='text-10px uppercase tracking-wider text-t-tertiary shrink-0 font-semibold'>
+                      Thread:
+                    </span>
+                    {nodeConversations.length > 1 ? (
+                      <Select
+                        size='mini'
+                        value={activeConversation?.id}
+                        onChange={(val) => setActiveThreadId(val)}
+                        className='flex-1 min-w-0 !h-24px'
+                        bordered={false}
                       >
-                        <div className='flex items-center gap-6px text-10px text-t-tertiary px-4px'>
-                          {!isUser && <Robot size={11} className='text-primary shrink-0' />}
-                          <span className='font-medium'>{isUser ? 'You' : m.sender}</span>
-                          <span>•</span>
-                          <span className='font-mono'>
-                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-
-                        <div
-                          className={`max-w-[94%] rounded-12px text-12px px-12px py-8px break-words leading-relaxed ${
-                            isUser
-                              ? 'bg-message-user border border-primary/15 text-t-primary rounded-br-2px'
-                              : isError
-                                ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-bl-2px font-mono text-11px'
-                                : 'bg-fill-2 border border-[var(--color-border-2)] text-t-primary rounded-bl-2px'
-                          }`}
-                        >
-                          {isError ? (
-                            <div className='flex flex-col gap-4px'>
-                              <div className='flex items-center gap-5px text-rose-400 font-semibold'>
-                                <Remind size={13} className='shrink-0' />
-                                <span>Model Provider Error</span>
-                              </div>
-                              <div className='whitespace-pre-wrap text-10px leading-normal'>
-                                {cleanErrorText(m.content)}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className='whitespace-pre-wrap'>{m.content}</div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {isExecuting && (
-                <div className='flex items-center gap-8px p-10px rounded-10px bg-fill-2 border border-primary/30 text-primary text-12px animate-pulse'>
-                  <Spin size={12} />
-                  <span className='text-11px font-mono truncate'>
-                    {executionLogs[0] || `Executing directive with ${leaderName}...`}
-                  </span>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          </Tabs.TabPane>
-
-          <Tabs.TabPane
-            key='terminal'
-            title={
-              <span className='flex items-center gap-5px text-12px'>
-                <Terminal size={13} theme='outline' />
-                <span>Live Logs ({executionLogs.length})</span>
-              </span>
-            }
-          >
-            <div className='p-10px rounded-8px bg-slate-950 font-mono text-11px text-emerald-300 min-h-160px max-h-260px overflow-y-auto flex flex-col gap-4px border border-slate-800 mt-8px'>
-              {executionLogs.length === 0 ? (
-                <span className='text-slate-500 italic'>No live telemetry events logged.</span>
-              ) : (
-                executionLogs.map((log, idx) => (
-                  <div key={idx} className='leading-tight'>
-                    {log}
-                  </div>
-                ))
-              )}
-            </div>
-          </Tabs.TabPane>
-
-          <Tabs.TabPane
-            key='members'
-            title={
-              <span className='flex items-center gap-5px text-12px'>
-                <Peoples size={13} theme='outline' />
-                <span>Roster ({specialists.length})</span>
-              </span>
-            }
-          >
-            <div className='flex flex-col gap-6px mt-8px'>
-              {specialists.map((spec) => (
-                <div
-                  key={spec.id}
-                  className='p-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-12px hover:bg-fill-2 transition-colors'
-                >
-                  <div className='flex items-center gap-8px min-w-0'>
-                    <Robot size={14} theme='outline' className='text-primary shrink-0' />
-                    <div className='flex flex-col min-w-0'>
-                      <span className='font-medium text-t-primary truncate'>{spec.name}</span>
-                      <span className='text-10px text-t-tertiary truncate max-w-160px font-mono'>{spec.title}</span>
-                    </div>
+                        {nodeConversations.map((c) => (
+                          <Select.Option key={c.id} value={c.id}>
+                            <span className='truncate'>
+                              {c.title || 'Untitled'} ({c.messages?.length || 0} msgs)
+                            </span>
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <span className='text-11px font-medium text-t-primary truncate min-w-0'>
+                        {activeConversation?.title || 'Active Thread'} ({activeConversation?.messages?.length || 0}{' '}
+                        msgs)
+                      </span>
+                    )}
                   </div>
                   <Button
                     size='mini'
                     type='text'
-                    icon={<MessageOne size={12} theme='outline' />}
-                    onClick={() => handleStartDirectChat(spec)}
-                    className='!rounded-6px !text-11px'
+                    icon={<Plus size={11} />}
+                    onClick={() => {
+                      const newId = `conv-${selectedNodeType}-${selectedNodeId}-${Date.now()}`;
+                      setActiveThreadId(newId);
+                      Message.info('Started a new thread. Type your message below.');
+                    }}
+                    title='Start a new conversation thread'
+                    className='!text-11px !px-6px !h-22px shrink-0 text-primary'
                   >
-                    Chat
+                    New Thread
                   </Button>
                 </div>
-              ))}
-            </div>
-          </Tabs.TabPane>
-        </Tabs>
-      </div>
-    </Drawer>
+
+                {/* Message stream */}
+                {!activeConversation?.messages || activeConversation.messages.length === 0 ? (
+                  <div className='py-28px text-center flex flex-col items-center gap-6px text-t-tertiary'>
+                    <MessageOne size={24} className='opacity-30' />
+                    <span className='text-12px font-medium text-t-secondary'>No messages in this thread</span>
+                    <span className='text-11px max-w-260px'>
+                      Send directives or questions in the chatbar below to converse with {leaderName}.
+                    </span>
+                  </div>
+                ) : (
+                  <div className='flex flex-col gap-10px min-w-0'>
+                    {activeConversation.messages.map((m) => {
+                      const isUser = m.role === 'user' || m.sender === 'You' || m.sender === 'Executive User';
+                      const isError =
+                        m.role === 'system_error' ||
+                        m.content.includes('Inference Error') ||
+                        m.content.includes('USER_LLM_PROVIDER_GATEWAY_ERROR');
+
+                      return (
+                        <div
+                          key={m.id}
+                          className={`flex flex-col gap-3px min-w-0 ${isUser ? 'items-end' : 'items-start'}`}
+                        >
+                          <div className='flex items-center gap-6px text-10px text-t-tertiary px-4px'>
+                            {!isUser && <Robot size={11} className='text-primary shrink-0' />}
+                            <span className='font-medium'>{isUser ? 'You' : m.sender}</span>
+                            <span>•</span>
+                            <span className='font-mono'>
+                              {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          <div
+                            className={`max-w-[94%] rounded-12px text-12px px-12px py-8px break-words leading-relaxed ${
+                              isUser
+                                ? 'bg-message-user border border-primary/15 text-t-primary rounded-br-2px'
+                                : isError
+                                  ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-bl-2px font-mono text-11px'
+                                  : 'bg-fill-2 border border-[var(--color-border-2)] text-t-primary rounded-bl-2px'
+                            }`}
+                          >
+                            {isError ? (
+                              <div className='flex flex-col gap-4px'>
+                                <div className='flex items-center gap-5px text-rose-400 font-semibold'>
+                                  <Remind size={13} className='shrink-0' />
+                                  <span>Model Provider Error</span>
+                                </div>
+                                <div className='whitespace-pre-wrap text-10px leading-normal'>
+                                  {cleanErrorText(m.content)}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className='whitespace-pre-wrap'>{m.content}</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {isExecuting && (
+                  <div className='flex items-center gap-8px p-10px rounded-10px bg-fill-2 border border-primary/30 text-primary text-12px animate-pulse'>
+                    <Spin size={12} />
+                    <span className='text-11px font-mono truncate'>
+                      {executionLogs[0] || `Executing directive with ${leaderName}...`}
+                    </span>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            </Tabs.TabPane>
+
+            <Tabs.TabPane
+              key='terminal'
+              title={
+                <span className='flex items-center gap-5px text-12px'>
+                  <Terminal size={13} theme='outline' />
+                  <span>Live Logs ({executionLogs.length})</span>
+                </span>
+              }
+            >
+              <div className='p-10px rounded-8px bg-slate-950 font-mono text-11px text-emerald-300 min-h-160px max-h-260px overflow-y-auto flex flex-col gap-4px border border-slate-800 mt-8px'>
+                {executionLogs.length === 0 ? (
+                  <span className='text-slate-500 italic'>No live telemetry events logged.</span>
+                ) : (
+                  executionLogs.map((log, idx) => (
+                    <div key={idx} className='leading-tight'>
+                      {log}
+                    </div>
+                  ))
+                )}
+              </div>
+            </Tabs.TabPane>
+
+            <Tabs.TabPane
+              key='members'
+              title={
+                <span className='flex items-center gap-5px text-12px'>
+                  <Peoples size={13} theme='outline' />
+                  <span>Roster ({specialists.length})</span>
+                </span>
+              }
+            >
+              <div className='flex flex-col gap-6px mt-8px'>
+                {specialists.map((spec) => (
+                  <div
+                    key={spec.id}
+                    className='p-8px rounded-8px bg-fill-1 border border-[var(--color-border-2)] flex items-center justify-between text-12px hover:bg-fill-2 transition-colors'
+                  >
+                    <div className='flex items-center gap-8px min-w-0'>
+                      <Robot size={14} theme='outline' className='text-primary shrink-0' />
+                      <div className='flex flex-col min-w-0'>
+                        <span className='font-medium text-t-primary truncate'>{spec.name}</span>
+                        <span className='text-10px text-t-tertiary truncate max-w-160px font-mono'>{spec.title}</span>
+                      </div>
+                    </div>
+                    <Button
+                      size='mini'
+                      type='text'
+                      icon={<MessageOne size={12} theme='outline' />}
+                      onClick={() => handleStartDirectChat(spec)}
+                      className='!rounded-6px !text-11px'
+                    >
+                      Chat
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </Tabs.TabPane>
+          </Tabs>
+        </div>
+      </Drawer>
+      {targetAgentMember && (
+        <MemberKnowledgePanel
+          memberKey={`org:${targetAgentMember.id}`}
+          memberName={targetAgentMember.name}
+          visible={isKnowledgePanelOpen}
+          onClose={() => setIsKnowledgePanelOpen(false)}
+        />
+      )}
+    </>
   );
 };
 

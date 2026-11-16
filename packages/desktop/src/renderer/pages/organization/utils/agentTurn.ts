@@ -6,6 +6,7 @@
 
 import { OrgDelegationEngine } from './orgDelegationEngine';
 import { runCeoTurn, type CeoEvent } from './ceoExecutionService';
+import { knowledgeRepo } from '@/common/adapter/ipcBridge';
 import type { OrgAgentMember, OrgConversation, OrgHierarchy, OrgProject } from '@/types/organization';
 
 export type OrgChatTargetType = 'ceo' | 'department_head' | 'project_head' | 'member';
@@ -96,7 +97,29 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
     try {
       const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, onNodeStatusUpdate, { projects });
 
-      const composedPrompt = `${systemContext}\n\n---\nUser: ${userText}`;
+      let knowledgeBlock = '';
+      try {
+        const memberKey = `org:${agent.id}`;
+        const assign = await knowledgeRepo.getAssignment(memberKey);
+        if (assign && assign.repoIds.length > 0) {
+          const inst = await knowledgeRepo.buildInstructions({
+            memberKey,
+            conversationId: conversation?.backendConversationId,
+            memberName: agent.name,
+            repoIds: assign.repoIds,
+            whenToUseHint: assign.whenToUseHint,
+          });
+          if (inst?.instructions) {
+            knowledgeBlock = inst.instructions;
+          }
+        }
+      } catch (err) {
+        console.warn('[agentTurn] Failed to load agent knowledge:', err);
+      }
+
+      const composedPrompt = knowledgeBlock
+        ? `${knowledgeBlock}\n\n${systemContext}\n\n---\nUser: ${userText}`
+        : `${systemContext}\n\n---\nUser: ${userText}`;
       const response = await engine.executeDirectMessage(
         agent,
         composedPrompt,
