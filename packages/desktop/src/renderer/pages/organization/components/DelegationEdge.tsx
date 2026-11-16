@@ -6,9 +6,17 @@
 
 import React from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type EdgeProps } from '@xyflow/react';
-import { Tag } from '@arco-design/web-react';
 import { LoadingOne } from '@icon-park/react';
 import { useOrgTelemetryStore } from '../store/useOrgTelemetryStore';
+import { getDepartmentAccent } from '../utils/orgTheme';
+
+export interface DelegationEdgeData {
+  deptIndex?: number;
+  deptColor?: string;
+  isPathHighlighted?: boolean;
+  isDimmed?: boolean;
+  isWorkingPath?: boolean;
+}
 
 export const DelegationEdge: React.FC<EdgeProps> = ({
   id,
@@ -20,6 +28,7 @@ export const DelegationEdge: React.FC<EdgeProps> = ({
   targetY,
   sourcePosition,
   targetPosition,
+  data,
   style = {},
   markerEnd,
 }) => {
@@ -39,14 +48,37 @@ export const DelegationEdge: React.FC<EdgeProps> = ({
   const isInFlight = handoff?.status === 'in_flight';
   const isCompleted = handoff?.status === 'completed';
 
+  const edgeData = (data || {}) as DelegationEdgeData;
+  const deptAccent = getDepartmentAccent(edgeData.deptIndex ?? 0, edgeData.deptColor);
+  const baseColor = edgeData.deptColor || deptAccent.border;
+
+  const isHighlighted = Boolean(edgeData.isPathHighlighted);
+  const isDimmed = Boolean(edgeData.isDimmed) && !isHighlighted;
+  const isWorking = Boolean(edgeData.isWorkingPath) || isInFlight;
+
+  // Department-tinted color with soft glow
+  let strokeColor = isCompleted ? '#10B981' : baseColor;
+  let strokeWidth = isHighlighted || isWorking ? 3 : 2;
+  let filterGlow = isHighlighted || isWorking
+    ? `drop-shadow(0 0 8px ${baseColor})`
+    : `drop-shadow(0 0 3px ${deptAccent.glow})`;
+
+  if (isInFlight) {
+    strokeColor = '#F59E0B';
+    strokeWidth = 3;
+    filterGlow = 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.7))';
+  }
+
   const edgeStyle: React.CSSProperties = {
     ...style,
-    strokeWidth: isInFlight ? 3 : 2,
-    stroke: isInFlight ? '#f59e0b' : isCompleted ? '#10b981' : 'var(--color-border-3, #94a3b8)',
-    strokeDasharray: isInFlight ? '8 6' : undefined,
-    animation: isInFlight ? 'delegationPulse 1s linear infinite' : undefined,
-    filter: isInFlight ? 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.6))' : undefined,
-    transition: 'stroke 0.3s ease, stroke-width 0.3s ease',
+    stroke: strokeColor,
+    strokeWidth,
+    opacity: isDimmed ? 0.25 : 0.85,
+    strokeDasharray: isWorking || isInFlight ? '8 6' : undefined,
+    animation: isWorking || isInFlight ? 'delegationPulse 1.2s linear infinite' : undefined,
+    filter: filterGlow,
+    pointerEvents: 'none',
+    transition: 'stroke 0.3s ease, stroke-width 0.3s ease, opacity 0.3s ease, filter 0.3s ease',
   };
 
   return (

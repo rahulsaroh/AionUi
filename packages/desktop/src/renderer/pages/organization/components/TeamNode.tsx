@@ -167,6 +167,13 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
         className='!w-8px !h-8px !border-2 !border-slate-900 hover:!scale-125 transition-transform'
         style={{ backgroundColor: greenBorder }}
       />
+      {/* Additional target handle at bottom for tether connections from shared members */}
+      <Handle
+        type='target'
+        position={Position.Bottom}
+        id='bottom-target'
+        className='!w-6px !h-6px !opacity-0 !pointer-events-none'
+      />
     </div>
   );
 };

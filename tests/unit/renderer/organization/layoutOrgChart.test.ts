@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { layoutOrgChart } from '@/renderer/pages/organization/utils/layoutOrgChart';
+import { generateSharedMemberTethers, type SharedMemberPoolItem } from '@/renderer/pages/organization/utils/orgTethers';
 import type { Node, Edge } from '@xyflow/react';
 
 describe('layoutOrgChart', () => {
@@ -116,5 +117,58 @@ describe('layoutOrgChart', () => {
     // Shared members are placed side-by-side in the bottom strip
     expect(designerNode.position.y).toBe(qaNode.position.y);
     expect(designerNode.position.x).not.toBe(qaNode.position.x);
+  });
+
+  it('generates consistent colored tether edges for shared members across teams', () => {
+    const sharedPool: SharedMemberPoolItem[] = [
+      {
+        canonicalId: 'canonical-designer',
+        member: { id: 'm-1', name: 'Designer' },
+        count: 3,
+        departments: ['Engineering', 'Marketing'],
+        teamIds: ['team-alpha', 'team-beta', 'team-gamma'],
+      },
+      {
+        canonicalId: 'canonical-architect',
+        member: { id: 'm-2', name: 'Architect' },
+        count: 2,
+        departments: ['Engineering', 'Infrastructure'],
+        teamIds: ['team-alpha', 'team-delta'],
+      },
+    ];
+
+    const existingNodeIds = new Set(['team-alpha', 'team-beta', 'team-gamma', 'team-delta']);
+
+    const tethers = generateSharedMemberTethers(sharedPool, existingNodeIds);
+
+    // 3 teams for designer + 2 teams for architect = 5 tethers total
+    expect(tethers.length).toBe(5);
+
+    // Designer tethers
+    const designerTethers = tethers.filter((e) => (e.data as any)?.canonicalId === 'canonical-designer');
+    expect(designerTethers.length).toBe(3);
+    const designerColor = (designerTethers[0].data as any)?.memberColor;
+    expect(designerColor).toBeDefined();
+
+    // All tethers for this member must share the exact same color
+    designerTethers.forEach((edge) => {
+      expect((edge.data as any)?.memberColor).toBe(designerColor);
+      expect(edge.source).toBe('shared-canonical-designer');
+      expect(edge.targetHandle).toBe('bottom-target');
+      expect(edge.zIndex).toBe(-1);
+    });
+
+    // Targets must match the teams
+    const targetTeams = designerTethers.map((e) => e.target);
+    expect(targetTeams).toEqual(['team-alpha', 'team-beta', 'team-gamma']);
+
+    // Architect tethers
+    const architectTethers = tethers.filter((e) => (e.data as any)?.canonicalId === 'canonical-architect');
+    expect(architectTethers.length).toBe(2);
+    const architectColor = (architectTethers[0].data as any)?.memberColor;
+    architectTethers.forEach((edge) => {
+      expect((edge.data as any)?.memberColor).toBe(architectColor);
+      expect(edge.source).toBe('shared-canonical-architect');
+    });
   });
 });

@@ -41,6 +41,7 @@ import SharedMemberHeaderNode from './components/SharedMemberHeaderNode';
 import OrgCanvasTitleBlock from './components/OrgCanvasTitleBlock';
 import OrgCanvasLegend from './components/OrgCanvasLegend';
 import { layoutOrgChart } from './utils/layoutOrgChart';
+import { generateSharedMemberTethers } from './utils/orgTethers';
 import { createDepartmentShell, createTeamShell } from './utils/orgCoherence';
 import { useOrgStore } from './store/useOrgStore';
 import type { OrgProject, RootCEO, OrgAgentMember } from '@/types/organization';
@@ -91,6 +92,7 @@ const CanvasInner: React.FC = () => {
   const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeType, setSelectedNodeType] = useState<OrgNodeType | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isSeedModalOpen, setIsSeedModalOpen] = useState(false);
   const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
@@ -450,19 +452,12 @@ const CanvasInner: React.FC = () => {
           position: { x: 0, y: 0 },
         });
 
-        // Tether lines from bottom-strip shared member up to every team where they work
-        sharedItem.teamIds.forEach((targetTeamId) => {
-          if (rawNodes.some((n) => n.id === targetTeamId)) {
-            rawEdges.push({
-              id: `tether-${sharedItem.canonicalId}->${targetTeamId}`,
-              source: `shared-${sharedItem.canonicalId}`,
-              target: targetTeamId,
-              type: 'tether',
-              data: { canonicalId: sharedItem.canonicalId },
-            });
-          }
-        });
       });
+
+      // Generate tethers cleanly connecting each shared member to their teams
+      const existingNodeIdSet = new Set(rawNodes.map((n) => n.id));
+      const tethers = generateSharedMemberTethers(sharedPoolMembers, existingNodeIdSet);
+      rawEdges.push(...tethers);
     }
 
     const layouted = layoutOrgChart(rawNodes, rawEdges, direction);
@@ -491,6 +486,67 @@ const CanvasInner: React.FC = () => {
     setEdges,
     t,
   ]);
+
+  // Active shared agent (hovered or selected)
+  const activeSharedAgentId = hoveredCanonicalAgentId || selectedCanonicalAgentId;
+
+  // Build the set of edge IDs along the path from hoveredNodeId to root-ceo
+  const highlightedEdgeIdSet = useMemo(() => {
+    if (!hoveredNodeId) return new Set<string>();
+    const edgeSet = new Set<string>();
+    let currentId: string | null = hoveredNodeId;
+    const parentMap = new Map<string, { edgeId: string; parentId: string }>();
+
+    edges.forEach((edge) => {
+      if (edge.type === 'delegation') {
+        parentMap.set(edge.target, { edgeId: edge.id, parentId: edge.source });
+      }
+    });
+
+    while (currentId && parentMap.has(currentId)) {
+      const parent = parentMap.get(currentId)!;
+      edgeSet.add(parent.edgeId);
+      currentId = parent.parentId;
+    }
+
+    return edgeSet;
+  }, [hoveredNodeId, edges]);
+
+  // Derived edges with path highlighting and tether focus
+  const displayEdges = useMemo(() => {
+    return edges.map((edge) => {
+      if (edge.type === 'delegation') {
+        const isPathHighlighted = highlightedEdgeIdSet.has(edge.id);
+        const isDimmed = Boolean(hoveredNodeId) && !isPathHighlighted;
+        return {
+          ...edge,
+          zIndex: isPathHighlighted ? 10 : 1,
+          data: {
+            ...edge.data,
+            isPathHighlighted,
+            isDimmed,
+          },
+        };
+      }
+
+      if (edge.type === 'tether') {
+        const edgeCanonicalId = (edge.data as any)?.canonicalId;
+        const isHighlighted = Boolean(activeSharedAgentId && edgeCanonicalId === activeSharedAgentId);
+        const isDimmed = Boolean(activeSharedAgentId && edgeCanonicalId !== activeSharedAgentId);
+        return {
+          ...edge,
+          zIndex: isHighlighted ? 8 : -1,
+          data: {
+            ...edge.data,
+            isHighlighted,
+            isDimmed,
+          },
+        };
+      }
+
+      return edge;
+    });
+  }, [edges, highlightedEdgeIdSet, hoveredNodeId, activeSharedAgentId]);
 
   // Center canvas on the focused node when sidebar-driven selection changes
   useEffect(() => {
@@ -541,9 +597,11 @@ const CanvasInner: React.FC = () => {
 
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeMouseEnter={(_event, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         minZoom={0.2}
