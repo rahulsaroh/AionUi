@@ -20,6 +20,7 @@ export type DepartmentNodeData = {
   isCollapsed?: boolean;
   orientation?: 'TB' | 'LR';
   isDescendantWorking?: boolean;
+  isDimmed?: boolean;
   onToggleCollapse?: (deptId: string) => void;
   onAddSubTeam?: (deptId: string) => void;
   onAddProject?: (deptId: string) => void;
@@ -242,11 +243,17 @@ export function areDepartmentPropsEqual(
   if (prev.selected !== next.selected) return false;
   const p = prev.data;
   const n = next.data;
+  if (p.isDimmed !== n.isDimmed) return false;
   if (p.isDescendantWorking !== n.isDescendantWorking) return false;
   if (p.isCollapsed !== n.isCollapsed) return false;
   if (p.orientation !== n.orientation) return false;
   if (p.deptIndex !== n.deptIndex) return false;
   if (p.department !== n.department) return false;
+  if (p.department.name !== n.department.name) return false;
+  if (p.department.color !== n.department.color) return false;
+  if (p.department.status !== n.department.status) return false;
+  if (p.department.teams !== n.department.teams) return false;
+  if (p.department.teams.length !== n.department.teams.length) return false;
   return true;
 }
 

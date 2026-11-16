@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { ipcBridge } from '@/common';
 import type { NodeExecutionStatus, ActiveHandoff, NodeActivityUpdate } from '../types';
+import { touchNodeActivity } from './useOrgStore';
 
 type OrgTelemetryState = {
   nodeStatuses: Record<string, NodeExecutionStatus>;
@@ -41,6 +42,7 @@ export function updateNodeStatus(teamId: string, status: NodeExecutionStatus) {
 
 export function updateActivityTicker(teamId: string, update: NodeActivityUpdate) {
   if (!teamId) return;
+  touchNodeActivity(teamId);
   telemetryState = {
     ...telemetryState,
     activityTicker: {
@@ -57,6 +59,8 @@ export function recordDelegationStart(params: {
   taskDirective: string;
 }) {
   const { sourceTeamId, targetSubTeamId, taskDirective } = params;
+  touchNodeActivity(sourceTeamId);
+  touchNodeActivity(targetSubTeamId);
   const handoffId = `${sourceTeamId}->${targetSubTeamId}`;
 
   const handoff: ActiveHandoff = {
@@ -205,6 +209,7 @@ function initTelemetryBridge() {
       if (e?.team_id && e?.slot_work) {
         const state = e.slot_work.state;
         if (state === 'running' || state === 'starting') {
+          touchNodeActivity(e.team_id);
           updateNodeStatus(e.team_id, 'thinking');
         } else if (state === 'idle') {
           updateNodeStatus(e.team_id, 'idle');

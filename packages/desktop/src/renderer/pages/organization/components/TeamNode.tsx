@@ -20,6 +20,7 @@ export interface TeamNodeData {
   orientation?: 'TB' | 'LR';
   sharedCountsMap?: Record<string, number>;
   isDescendantWorking?: boolean;
+  isDimmed?: boolean;
   onSelectNode?: (nodeId: string, nodeType: 'team') => void;
   onSelectMember?: (memberId: string) => void;
 }
@@ -185,11 +186,22 @@ export function areTeamPropsEqual(
   if (prev.selected !== next.selected) return false;
   const p = prev.data;
   const n = next.data;
+  if (p.isDimmed !== n.isDimmed) return false;
   if (p.isDescendantWorking !== n.isDescendantWorking) return false;
   if (p.orientation !== n.orientation) return false;
-  if (p.team !== n.team) return false;
   if (p.departmentName !== n.departmentName) return false;
   if (p.sharedCountsMap !== n.sharedCountsMap) return false;
+  if (p.team !== n.team) return false;
+  if (p.team.name !== n.team.name) return false;
+  if ((p.team as { avatar?: string }).avatar !== (n.team as { avatar?: string }).avatar) return false;
+  if ((p.team as { color?: string }).color !== (n.team as { color?: string }).color) return false;
+  if (p.team.status !== n.team.status) return false;
+  if (p.team.specialistMembers !== n.team.specialistMembers) return false;
+  if (p.team.specialistMembers.length !== n.team.specialistMembers.length) return false;
+  if (p.team.teamLeadAgent !== n.team.teamLeadAgent) return false;
+  if (p.team.teamLeadAgent.icon !== n.team.teamLeadAgent.icon) return false;
+  if ((p.team.teamLeadAgent as { avatar?: string }).avatar !== (n.team.teamLeadAgent as { avatar?: string }).avatar)
+    return false;
   return true;
 }
 

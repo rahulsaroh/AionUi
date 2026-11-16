@@ -599,11 +599,14 @@ const CanvasInner: React.FC = () => {
 
   // Display nodes with filter dimming applied: non-matching nodes are dimmed while structure remains visible
   const displayNodes = useMemo(() => {
-    if (!matchingNodeIdSet) return nodes;
     return nodes.map((node) => {
-      const isDimmed = !matchingNodeIdSet.has(node.id);
+      const isDimmed = matchingNodeIdSet ? !matchingNodeIdSet.has(node.id) : false;
       return {
         ...node,
+        data: {
+          ...(node.data as any),
+          isDimmed,
+        },
         style: {
           ...node.style,
           opacity: isDimmed ? 0.22 : 1,

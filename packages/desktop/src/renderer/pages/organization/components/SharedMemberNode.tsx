@@ -13,6 +13,7 @@ export interface SharedMemberNodeData {
   member: OrgAgentMember;
   departmentsServed: string[];
   sharedCount: number;
+  isDimmed?: boolean;
   onSelectMember?: (memberId: string) => void;
   onHoverMember?: (canonicalId: string | null) => void;
 }
@@ -43,16 +44,23 @@ export const SharedMemberNode: React.FC<{ data: SharedMemberNodeData; selected?:
   );
 };
 
-function areSharedMemberPropsEqual(
+export function areSharedMemberPropsEqual(
   prev: { data: SharedMemberNodeData; selected?: boolean },
   next: { data: SharedMemberNodeData; selected?: boolean }
 ): boolean {
   if (prev.selected !== next.selected) return false;
   const p = prev.data;
   const n = next.data;
+  if (p.isDimmed !== n.isDimmed) return false;
   if (p.member !== n.member) return false;
+  if (p.member.name !== n.member.name) return false;
+  if (p.member.icon !== n.member.icon) return false;
+  if ((p.member as { avatar?: string }).avatar !== (n.member as { avatar?: string }).avatar) return false;
+  if (p.member.status !== n.member.status) return false;
+  if (p.member.role !== n.member.role) return false;
   if (p.sharedCount !== n.sharedCount) return false;
   if (p.departmentsServed.length !== n.departmentsServed.length) return false;
+  if (p.departmentsServed.some((d, idx) => d !== n.departmentsServed[idx])) return false;
   return true;
 }
 

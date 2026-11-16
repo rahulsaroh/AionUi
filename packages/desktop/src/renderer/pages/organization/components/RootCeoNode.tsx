@@ -19,6 +19,7 @@ export interface RootCeoNodeData {
   rootCeo: RootCEO;
   orientation?: 'TB' | 'LR';
   isDescendantWorking?: boolean;
+  isDimmed?: boolean;
   onDispatchToCeo?: (rootCeo: RootCEO) => void;
   onSelectNode?: (nodeId: string, nodeType: 'ceo') => void;
   onSelectMember?: (memberId: string) => void;
@@ -221,16 +222,25 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
   );
 };
 
-function areRootCeoPropsEqual(
+export function areRootCeoPropsEqual(
   prev: { data: RootCeoNodeData; selected?: boolean },
   next: { data: RootCeoNodeData; selected?: boolean }
 ): boolean {
   if (prev.selected !== next.selected) return false;
   const p = prev.data;
   const n = next.data;
+  if (p.isDimmed !== n.isDimmed) return false;
   if (p.isDescendantWorking !== n.isDescendantWorking) return false;
   if (p.orientation !== n.orientation) return false;
   if (p.rootCeo !== n.rootCeo) return false;
+  if (p.rootCeo.name !== n.rootCeo.name) return false;
+  if (p.rootCeo.status !== n.rootCeo.status) return false;
+  if (p.rootCeo.ceoAgent !== n.rootCeo.ceoAgent) return false;
+  if (p.rootCeo.ceoAgent.name !== n.rootCeo.ceoAgent.name) return false;
+  if (p.rootCeo.ceoAgent.icon !== n.rootCeo.ceoAgent.icon) return false;
+  if ((p.rootCeo.ceoAgent as { avatar?: string }).avatar !== (n.rootCeo.ceoAgent as { avatar?: string }).avatar)
+    return false;
+  if (p.rootCeo.ceoAgent.status !== n.rootCeo.ceoAgent.status) return false;
   return true;
 }
 

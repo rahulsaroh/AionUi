@@ -315,6 +315,174 @@ export async function revalidateStoredPaths(
   return { hierarchy, projects, changed };
 }
 
+export const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes of inactivity
+
+const nodeActivityTimestamps = new Map<string, number>();
+const nodeResetTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function resolveRelatedOrgIds(nodeId: string, hierarchy: OrgHierarchy): Set<string> {
+  let canonicalId: string | null = null;
+  const idsToUpdate = new Set<string>([nodeId]);
+
+  // Check Root CEO
+  if (
+    hierarchy.rootCeo.id === nodeId ||
+    hierarchy.rootCeo.ceoAgent.id === nodeId ||
+    hierarchy.rootCeo.ceoAgent.canonicalAgentId === nodeId
+  ) {
+    idsToUpdate.add(hierarchy.rootCeo.id);
+    idsToUpdate.add(hierarchy.rootCeo.ceoAgent.id);
+    if (hierarchy.rootCeo.ceoAgent.canonicalAgentId) {
+      idsToUpdate.add(hierarchy.rootCeo.ceoAgent.canonicalAgentId);
+    }
+  }
+
+  // Check Department CEOs & Teams & Members
+  hierarchy.departments.forEach((dept) => {
+    if (dept.id === nodeId || dept.departmentCeoAgent.id === nodeId) {
+      idsToUpdate.add(dept.id);
+      idsToUpdate.add(dept.departmentCeoAgent.id);
+    }
+    dept.teams.forEach((team) => {
+      if (team.id === nodeId || team.teamLeadAgent.id === nodeId) {
+        idsToUpdate.add(team.id);
+        idsToUpdate.add(team.teamLeadAgent.id);
+      }
+      team.specialistMembers.forEach((spec) => {
+        if (spec.id === nodeId || spec.canonicalAgentId === nodeId) {
+          idsToUpdate.add(spec.id);
+          if (spec.canonicalAgentId) {
+            canonicalId = spec.canonicalAgentId;
+            idsToUpdate.add(spec.canonicalAgentId);
+          }
+        }
+      });
+    });
+  });
+
+  // If canonicalId was found, update all instances of that member in all teams
+  if (canonicalId) {
+    hierarchy.departments.forEach((dept) => {
+      dept.teams.forEach((team) => {
+        team.specialistMembers.forEach((spec) => {
+          if (spec.canonicalAgentId === canonicalId) {
+            idsToUpdate.add(spec.id);
+          }
+        });
+      });
+    });
+  }
+
+  return idsToUpdate;
+}
+
+function scheduleNodeInactivityCheck(targetId: string) {
+  if (nodeResetTimers.has(targetId)) {
+    clearTimeout(nodeResetTimers.get(targetId)!);
+    nodeResetTimers.delete(targetId);
+  }
+
+  const timer = setTimeout(
+    () => {
+      const lastActivity = nodeActivityTimestamps.get(targetId) || 0;
+      const elapsed = Date.now() - lastActivity;
+
+      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+        nodeResetTimers.delete(targetId);
+        if (globalState.nodeStatuses[targetId] === 'working') {
+          globalState = {
+            ...globalState,
+            nodeStatuses: {
+              ...globalState.nodeStatuses,
+              [targetId]: 'idle',
+            },
+          };
+          notify();
+        }
+      } else {
+        // Re-schedule for remaining time
+        scheduleNodeInactivityCheck(targetId);
+      }
+    },
+    Math.max(1000, INACTIVITY_TIMEOUT_MS - (Date.now() - (nodeActivityTimestamps.get(targetId) || 0)))
+  );
+
+  nodeResetTimers.set(targetId, timer);
+}
+
+export function touchNodeActivity(nodeId: string): void {
+  const ids = resolveRelatedOrgIds(nodeId, globalState.hierarchy);
+  const now = Date.now();
+  ids.forEach((id) => {
+    nodeActivityTimestamps.set(id, now);
+    if (globalState.nodeStatuses[id] === 'working') {
+      scheduleNodeInactivityCheck(id);
+    }
+  });
+}
+
+export function getNodeLastActivity(nodeId: string): number | undefined {
+  return nodeActivityTimestamps.get(nodeId);
+}
+
+// Subscribe to IPC cron job execution events
+try {
+  ipcBridge.cron?.onJobExecuted?.on?.((event) => {
+    const job = globalState.cronJobs.find((c) => c.id === event.job_id);
+    if (!job) return;
+
+    const dept = globalState.hierarchy.departments.find((d) => d.id === job.departmentId);
+    const affectedIds = new Set<string>();
+    affectedIds.add(globalState.hierarchy.rootCeo.id);
+    affectedIds.add(globalState.hierarchy.rootCeo.ceoAgent.id);
+
+    if (dept) {
+      affectedIds.add(dept.id);
+      affectedIds.add(dept.departmentCeoAgent.id);
+      if (dept.teams.length > 0) {
+        affectedIds.add(dept.teams[0].id);
+        affectedIds.add(dept.teams[0].teamLeadAgent.id);
+        if (dept.teams[0].specialistMembers.length > 0) {
+          affectedIds.add(dept.teams[0].specialistMembers[0].id);
+        }
+      }
+    }
+
+    if (event.status === 'ok') {
+      const nextStatuses = { ...globalState.nodeStatuses };
+      affectedIds.forEach((id) => {
+        nextStatuses[id] = 'recently_finished';
+      });
+      globalState = { ...globalState, nodeStatuses: nextStatuses };
+      notify();
+
+      setTimeout(() => {
+        let changed = false;
+        const resetStatuses = { ...globalState.nodeStatuses };
+        affectedIds.forEach((id) => {
+          if (resetStatuses[id] === 'recently_finished') {
+            resetStatuses[id] = 'idle';
+            changed = true;
+          }
+        });
+        if (changed) {
+          globalState = { ...globalState, nodeStatuses: resetStatuses };
+          notify();
+        }
+      }, 2000);
+    } else if (event.status === 'error') {
+      const nextStatuses = { ...globalState.nodeStatuses };
+      affectedIds.forEach((id) => {
+        nextStatuses[id] = 'error';
+      });
+      globalState = { ...globalState, nodeStatuses: nextStatuses };
+      notify();
+    }
+  });
+} catch (err) {
+  console.warn('[useOrgStore] Cron execution subscription warning:', err);
+}
+
 export function useOrgStore() {
   const [state, setState] = useState<OrgStoreState>(globalState);
 
@@ -392,57 +560,7 @@ export function useOrgStore() {
   }, []);
 
   const updateNodeStatus = useCallback((nodeId: string, status: OrgNodeStatus) => {
-    let canonicalId: string | null = null;
-    const idsToUpdate = new Set<string>([nodeId]);
-
-    // Check Root CEO
-    if (
-      globalState.hierarchy.rootCeo.id === nodeId ||
-      globalState.hierarchy.rootCeo.ceoAgent.id === nodeId ||
-      globalState.hierarchy.rootCeo.ceoAgent.canonicalAgentId === nodeId
-    ) {
-      idsToUpdate.add(globalState.hierarchy.rootCeo.id);
-      idsToUpdate.add(globalState.hierarchy.rootCeo.ceoAgent.id);
-      if (globalState.hierarchy.rootCeo.ceoAgent.canonicalAgentId) {
-        idsToUpdate.add(globalState.hierarchy.rootCeo.ceoAgent.canonicalAgentId);
-      }
-    }
-
-    // Check Department CEOs & Teams & Members
-    globalState.hierarchy.departments.forEach((dept) => {
-      if (dept.id === nodeId || dept.departmentCeoAgent.id === nodeId) {
-        idsToUpdate.add(dept.id);
-        idsToUpdate.add(dept.departmentCeoAgent.id);
-      }
-      dept.teams.forEach((team) => {
-        if (team.id === nodeId || team.teamLeadAgent.id === nodeId) {
-          idsToUpdate.add(team.id);
-          idsToUpdate.add(team.teamLeadAgent.id);
-        }
-        team.specialistMembers.forEach((spec) => {
-          if (spec.id === nodeId || spec.canonicalAgentId === nodeId) {
-            idsToUpdate.add(spec.id);
-            if (spec.canonicalAgentId) {
-              canonicalId = spec.canonicalAgentId;
-              idsToUpdate.add(spec.canonicalAgentId);
-            }
-          }
-        });
-      });
-    });
-
-    // If canonicalId was found, update all instances of that member in all teams
-    if (canonicalId) {
-      globalState.hierarchy.departments.forEach((dept) => {
-        dept.teams.forEach((team) => {
-          team.specialistMembers.forEach((spec) => {
-            if (spec.canonicalAgentId === canonicalId) {
-              idsToUpdate.add(spec.id);
-            }
-          });
-        });
-      });
-    }
+    const idsToUpdate = resolveRelatedOrgIds(nodeId, globalState.hierarchy);
 
     const nextStatuses = { ...globalState.nodeStatuses };
     idsToUpdate.forEach((id) => {
@@ -457,6 +575,13 @@ export function useOrgStore() {
 
     // Auto-transition 'recently_finished' -> 'idle' after 2000ms
     if (status === 'recently_finished') {
+      idsToUpdate.forEach((id) => {
+        if (nodeResetTimers.has(id)) {
+          clearTimeout(nodeResetTimers.get(id)!);
+          nodeResetTimers.delete(id);
+        }
+      });
+
       setTimeout(() => {
         let needsReset = false;
         const resetStatuses = { ...globalState.nodeStatuses };
@@ -474,30 +599,20 @@ export function useOrgStore() {
           notify();
         }
       }, 2000);
-    }
-
-    // Stale-state crash protection: if a node remains 'working' for over 5 minutes, reset to 'idle'
-    if (status === 'working') {
-      setTimeout(
-        () => {
-          let needsReset = false;
-          const resetStatuses = { ...globalState.nodeStatuses };
-          idsToUpdate.forEach((id) => {
-            if (resetStatuses[id] === 'working') {
-              resetStatuses[id] = 'idle';
-              needsReset = true;
-            }
-          });
-          if (needsReset) {
-            globalState = {
-              ...globalState,
-              nodeStatuses: resetStatuses,
-            };
-            notify();
-          }
-        },
-        5 * 60 * 1000
-      );
+    } else if (status === 'working') {
+      const now = Date.now();
+      idsToUpdate.forEach((id) => {
+        nodeActivityTimestamps.set(id, now);
+        scheduleNodeInactivityCheck(id);
+      });
+    } else {
+      // Status is idle/error/dormant/etc. Cancel any pending inactivity reset timer
+      idsToUpdate.forEach((id) => {
+        if (nodeResetTimers.has(id)) {
+          clearTimeout(nodeResetTimers.get(id)!);
+          nodeResetTimers.delete(id);
+        }
+      });
     }
   }, []);
 
@@ -1017,6 +1132,54 @@ export function useOrgStore() {
     }
   }, []);
 
+  const runOrgCronJob = useCallback(
+    async (jobId: string) => {
+      const job = globalState.cronJobs.find((c) => c.id === jobId);
+      if (!job) return;
+
+      const dept = globalState.hierarchy.departments.find((d) => d.id === job.departmentId);
+      const affectedIds = new Set<string>();
+
+      // CEO
+      affectedIds.add(globalState.hierarchy.rootCeo.id);
+      affectedIds.add(globalState.hierarchy.rootCeo.ceoAgent.id);
+
+      // Department & Head
+      if (dept) {
+        affectedIds.add(dept.id);
+        affectedIds.add(dept.departmentCeoAgent.id);
+
+        // Primary team and lead
+        if (dept.teams.length > 0) {
+          const primaryTeam = dept.teams[0];
+          affectedIds.add(primaryTeam.id);
+          affectedIds.add(primaryTeam.teamLeadAgent.id);
+          if (primaryTeam.specialistMembers.length > 0) {
+            affectedIds.add(primaryTeam.specialistMembers[0].id);
+          }
+        }
+      }
+
+      // Transition to 'working' and touch activity
+      affectedIds.forEach((id) => {
+        updateNodeStatus(id, 'working');
+        touchNodeActivity(id);
+      });
+
+      try {
+        await ipcBridge.cron.runNow.invoke({ job_id: jobId });
+      } catch (err) {
+        console.warn('[useOrgStore] runOrgCronJob invoke notice:', err);
+      }
+
+      // Transition to recently_finished, which auto-fades to idle after 2000ms
+      affectedIds.forEach((id) => {
+        updateNodeStatus(id, 'recently_finished');
+      });
+    },
+    [updateNodeStatus]
+  );
+
   // Interactive CEO Delegation Simulation
   const runSimulation = useCallback(async () => {
     if (globalState.isSimulating) return;
@@ -1306,6 +1469,8 @@ export function useOrgStore() {
     addOrgCronJob,
     removeOrgCronJob,
     toggleCronJob,
+    runOrgCronJob,
+    touchNodeActivity,
     runSimulation,
     setOrgViewMode,
     setSelectedConversationId,

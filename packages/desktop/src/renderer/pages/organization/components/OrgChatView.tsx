@@ -90,6 +90,7 @@ export const OrgChatView: React.FC = () => {
     addOrgProject,
     addTeamMember,
     updateNodeStatus,
+    touchNodeActivity,
     updateAgentModel,
     updateRootCeo,
     openChatError,
@@ -562,6 +563,7 @@ export const OrgChatView: React.FC = () => {
         cancelRef.current = cancel;
 
         for await (const event of events) {
+          touchNodeActivity?.(targetAgent.id);
           switch (event.type) {
             case 'step':
               if (event.data.step) {

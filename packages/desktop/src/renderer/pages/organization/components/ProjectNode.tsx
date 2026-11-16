@@ -20,6 +20,7 @@ export interface ProjectNodeData {
   department: OrgDepartmentNode;
   orientation?: 'TB' | 'LR';
   isDescendantWorking?: boolean;
+  isDimmed?: boolean;
   onSelectNode?: (nodeId: string, type: 'project') => void;
   onEditProject?: () => void;
   onSetFolder?: () => void;
@@ -152,16 +153,21 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
   );
 };
 
-function areProjectPropsEqual(
+export function areProjectPropsEqual(
   prev: { data: ProjectNodeData; selected?: boolean },
   next: { data: ProjectNodeData; selected?: boolean }
 ): boolean {
   if (prev.selected !== next.selected) return false;
   const p = prev.data;
   const n = next.data;
+  if (p.isDimmed !== n.isDimmed) return false;
   if (p.isDescendantWorking !== n.isDescendantWorking) return false;
   if (p.orientation !== n.orientation) return false;
   if (p.project !== n.project) return false;
+  if (p.project.name !== n.project.name) return false;
+  if (p.project.status !== n.project.status) return false;
+  if (p.project.teamIds !== n.project.teamIds) return false;
+  if (p.project.memberIds !== n.project.memberIds) return false;
   if (p.department !== n.department) return false;
   return true;
 }
