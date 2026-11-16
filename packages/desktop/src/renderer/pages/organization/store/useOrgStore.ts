@@ -179,7 +179,12 @@ function createInitialState(): OrgStoreState {
     conversations: conversationReconciled.conversations,
     cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
     approvedLineups: loadStored<ApprovedLineupRecord[]>(STORAGE_KEYS.APPROVED_LINEUPS, () => []),
-    autoApprovePermissions: loadStored<AutoApprovePermissionsMode>(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, () => 'off'),
+    autoApprovePermissions: (() => {
+      const loaded = loadStored<unknown>(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, () => 'off');
+      if (loaded === true || loaded === 'all') return 'all';
+      if (loaded === 'read_only') return 'read_only';
+      return 'off';
+    })(),
     nodeStatuses: {},
     hoveredCanonicalAgentId: null,
     selectedCanonicalAgentId: null,

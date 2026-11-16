@@ -5,8 +5,10 @@
  */
 
 import { ipcBridge } from '@/common';
+import { memberHandbook } from '@/common/adapter/ipcBridge';
 import type { IGpuStatus, IStartOnBootStatus } from '@/common/adapter/ipcBridge';
 import { configService } from '@/common/config/configService';
+import { backfillMissingHandbooks } from '@/renderer/utils/memberHandbook/backfillHandbooks';
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import FeedbackButton from '@/renderer/components/base/FeedbackButton';
 import LanguageSwitcher from '@/renderer/components/settings/LanguageSwitcher';
@@ -77,6 +79,8 @@ const SystemModalContent: React.FC = () => {
   const [saveUploadToWorkspace, setSaveUploadToWorkspace] = useState(false);
   const [backupDir, setBackupDir] = useState<string>(configService.get('system.backupDir') ?? '');
   const [backingUp, setBackingUp] = useState(false);
+  const [handbookDir, setHandbookDir] = useState<string>('');
+  const [backfillingHandbooks, setBackfillingHandbooks] = useState(false);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -118,7 +122,18 @@ const SystemModalContent: React.FC = () => {
     setSaveUploadToWorkspace(configService.get('upload.saveToWorkspace') ?? false);
     const savedBackupDir = configService.get('system.backupDir') ?? '';
     setBackupDir(savedBackupDir);
-  }, [isDesktop]);
+    if (isDesktop) {
+      memberHandbook
+        .getHandbookDir()
+        .then((dir) => {
+          if (dir) {
+            setHandbookDir(dir);
+            form.setFieldValue('handbookDir', dir);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [form, isDesktop]);
 
   useEffect(() => {
     let cancelled = false;
@@ -573,6 +588,64 @@ const SystemModalContent: React.FC = () => {
     [backupDir, form, handleBackupDirChange, saveDirConfigValidate, systemInfo, t]
   );
 
+  const handleHandbookDirChange = useCallback(
+    async (newDir: string) => {
+      if (!newDir) return;
+      try {
+        await memberHandbook.setHandbookDir(newDir);
+        setHandbookDir(newDir);
+        Message.success(t('settings.memberHandbookDirSaved', { defaultValue: 'Member handbooks directory updated' }));
+      } catch (err) {
+        Message.error(
+          t('settings.memberHandbookDirFailed', { defaultValue: 'Failed to update handbook directory: ' }) + String(err)
+        );
+      }
+    },
+    [t]
+  );
+
+  const handleOpenHandbookFolder = useCallback(async () => {
+    try {
+      await memberHandbook.openFolder();
+    } catch {
+      Message.error(t('settings.memberHandbookOpenFailed', { defaultValue: 'Failed to open handbooks folder' }));
+    }
+  }, [t]);
+
+  const handleCopyHandbookPath = useCallback(async () => {
+    try {
+      const dir = handbookDir || (await memberHandbook.getHandbookDir());
+      if (dir) {
+        await navigator.clipboard.writeText(dir);
+        Message.success(t('settings.memberHandbookPathCopied', { defaultValue: 'Path copied to clipboard' }));
+      }
+    } catch {
+      Message.error(t('settings.memberHandbookCopyFailed', { defaultValue: 'Failed to copy path' }));
+    }
+  }, [handbookDir, t]);
+
+  const handleBackfillHandbooks = useCallback(async () => {
+    setBackfillingHandbooks(true);
+    try {
+      const summary = await backfillMissingHandbooks();
+      if (summary.createdCount === 0 && summary.skippedCount === 0) {
+        Message.info(t('settings.memberHandbookBackfillNone', { defaultValue: 'No members found to backfill' }));
+      } else {
+        Message.success(
+          t('settings.memberHandbookBackfillSuccess', {
+            defaultValue: `Backfill completed: ${summary.createdCount} created, ${summary.skippedCount} already existed`,
+            created: summary.createdCount,
+            skipped: summary.skippedCount,
+          })
+        );
+      }
+    } catch (err) {
+      Message.error(t('settings.memberHandbookBackfillFailed', { defaultValue: 'Backfill failed: ' }) + String(err));
+    } finally {
+      setBackfillingHandbooks(false);
+    }
+  }, [t]);
+
   return (
     <div className='flex flex-col h-full w-full'>
       {modalContextHolder}
@@ -655,6 +728,40 @@ const SystemModalContent: React.FC = () => {
                         <Button size='mini' type='primary' loading={backingUp} onClick={() => void handleBackupData()}>
                           {backingUp ? t('settings.backingUp') : t('settings.backupNow')}
                         </Button>
+                      )}
+                    </div>
+                  </div>
+                }
+              />
+              <DirInputItem
+                label={t('settings.memberHandbookDir', { defaultValue: 'Member Handbooks Directory' })}
+                field='handbookDir'
+                onCustomChange={handleHandbookDirChange}
+                extra={
+                  <div className='flex items-center justify-between mt-6px text-12px text-t-secondary'>
+                    <span>
+                      {t('settings.memberHandbookDirDesc', {
+                        defaultValue: 'Storage folder for employee handbooks (<userData>/member-handbooks by default)',
+                      })}
+                    </span>
+                    <div className='flex items-center gap-8px'>
+                      {isDesktop && (
+                        <>
+                          <Button size='mini' type='secondary' onClick={() => void handleOpenHandbookFolder()}>
+                            {t('settings.openFolder', { defaultValue: 'Open folder' })}
+                          </Button>
+                          <Button size='mini' type='secondary' onClick={() => void handleCopyHandbookPath()}>
+                            {t('settings.copyPath', { defaultValue: 'Copy path' })}
+                          </Button>
+                          <Button
+                            size='mini'
+                            type='primary'
+                            loading={backfillingHandbooks}
+                            onClick={() => void handleBackfillHandbooks()}
+                          >
+                            {t('settings.backfillHandbooks', { defaultValue: 'Create missing handbooks' })}
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>

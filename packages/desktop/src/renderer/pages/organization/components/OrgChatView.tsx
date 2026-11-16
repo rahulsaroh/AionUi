@@ -5,13 +5,25 @@
  */
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Button, Input, Message, Spin, Dropdown, Menu } from '@arco-design/web-react';
-import { Send, NetworkTree, Robot, User, FolderClose, Peoples, Time, Plus, Loading, Close } from '@icon-park/react';
+import { Button, Input, Message, Spin, Dropdown, Menu, Popover, Radio } from '@arco-design/web-react';
+import {
+  Send,
+  NetworkTree,
+  Robot,
+  User,
+  FolderClose,
+  Peoples,
+  Time,
+  Plus,
+  Loading,
+  Close,
+  Setting,
+} from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
-import { useOrgStore } from '../store/useOrgStore';
+import { useOrgStore, type AutoApprovePermissionsMode } from '../store/useOrgStore';
 import { OrgModelSelector } from './OrgModelSelector';
 import { runAgentTurn, buildAgentSystemContext, type OrgChatTarget } from '../utils/agentTurn';
 import { OrgMasterFolderModal } from './OrgMasterFolderModal';
@@ -82,6 +94,8 @@ export const OrgChatView: React.FC = () => {
     updateRootCeo,
     openChatError,
     clearOpenChatError,
+    autoApprovePermissions = 'off',
+    setAutoApprovePermissions = () => {},
   } = useOrgStore();
 
   const [inputPrompt, setInputPrompt] = useState('');
@@ -92,7 +106,7 @@ export const OrgChatView: React.FC = () => {
   const [errorState, setErrorState] = useState<{ message: string; threadId: string } | null>(null);
   const [draftsByThreadId, setDraftsByThreadId] = useState<Record<string, string>>({});
   const [activeProposal, setActiveProposal] = useState<StructureProposalData | null>(null);
-  const [activePermission, setActivePermission] = useState<OrgPermissionRequest | null>(null);
+  const [permissionQueue, setPermissionQueue] = useState<OrgPermissionRequest[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<(() => Promise<void>) | null>(null);
@@ -103,7 +117,11 @@ export const OrgChatView: React.FC = () => {
       setActiveProposal(proposal);
     });
     const unsubPermission = onOrgPermissionRequested((req) => {
-      setActivePermission(req);
+      if (!req) return;
+      setPermissionQueue((prev) => {
+        if (prev.some((p) => p.id === req.id)) return prev;
+        return [...prev, req];
+      });
     });
     let unsubLive: (() => void) | undefined;
     try {
@@ -121,6 +139,22 @@ export const OrgChatView: React.FC = () => {
       unsubLive?.();
     };
   }, []);
+
+  const activePermission = permissionQueue[0] || null;
+
+  const handleResolvePermission = useCallback(
+    async (optionId?: string) => {
+      if (permissionQueue.length === 0) return;
+      const currentReq = permissionQueue[0];
+      setPermissionQueue((prev) => prev.slice(1));
+      try {
+        await currentReq.respond(optionId);
+      } catch (err) {
+        console.error('Failed to respond to permission request', err);
+      }
+    },
+    [permissionQueue]
+  );
 
   // Active conversation: selected from sidebar or the latest Root CEO conversation
   const activeConversation = useMemo<OrgConversation | undefined>(() => {
@@ -1007,6 +1041,92 @@ export const OrgChatView: React.FC = () => {
             </Button>
           </Dropdown>
 
+          <Popover
+            trigger='click'
+            position='br'
+            title={
+              <div className='font-semibold text-13px text-t-primary'>
+                {t('team.organization.autoApprovePermissionsTitle', {
+                  defaultValue: 'Auto-approve agent tool permissions',
+                })}
+              </div>
+            }
+            content={
+              <div className='flex flex-col gap-12px max-w-320px p-4px'>
+                <div className='text-12px text-t-secondary leading-snug'>
+                  {t('team.organization.autoApprovePermissionsHelp', {
+                    defaultValue:
+                      'When on, agent tool requests (including shell commands) are allowed without asking. Folder and shell guards still apply.',
+                  })}
+                </div>
+                <Radio.Group
+                  direction='vertical'
+                  value={autoApprovePermissions}
+                  onChange={(val: string) => setAutoApprovePermissions(val as AutoApprovePermissionsMode)}
+                  className='flex flex-col gap-8px'
+                >
+                  <Radio value='off'>
+                    <div className='flex flex-col'>
+                      <span className='text-12px font-medium text-t-primary'>
+                        {t('team.organization.autoApproveModeOff', { defaultValue: 'Off' })}
+                      </span>
+                      <span className='text-11px text-t-tertiary'>
+                        {t('team.organization.autoApproveModeOffDesc', {
+                          defaultValue: 'Ask for confirmation on all agent tool requests',
+                        })}
+                      </span>
+                    </div>
+                  </Radio>
+                  <Radio value='read_only'>
+                    <div className='flex flex-col'>
+                      <span className='text-12px font-medium text-t-primary'>
+                        {t('team.organization.autoApproveModeReadOnly', {
+                          defaultValue: 'Read-only tools only',
+                        })}
+                      </span>
+                      <span className='text-11px text-t-tertiary'>
+                        {t('team.organization.autoApproveModeReadOnlyDesc', {
+                          defaultValue: 'Auto-approve scan_folder, list_org, get_status, list_project_tasks',
+                        })}
+                      </span>
+                    </div>
+                  </Radio>
+                  <Radio value='all'>
+                    <div className='flex flex-col'>
+                      <span className='text-12px font-medium text-t-primary'>
+                        {t('team.organization.autoApproveModeAll', { defaultValue: 'All tools' })}
+                      </span>
+                      <span className='text-11px text-t-tertiary'>
+                        {t('team.organization.autoApproveModeAllDesc', {
+                          defaultValue: 'Auto-approve all tool and shell requests',
+                        })}
+                      </span>
+                    </div>
+                  </Radio>
+                </Radio.Group>
+              </div>
+            }
+          >
+            <Button
+              size='small'
+              type={autoApprovePermissions !== 'off' ? 'primary' : 'secondary'}
+              icon={<Setting size={13} theme='outline' />}
+              className='!rounded-8px !text-12px'
+              title={t('team.organization.autoApprovePermissionsTitle', {
+                defaultValue: 'Auto-approve agent tool permissions',
+              })}
+              aria-label={t('team.organization.autoApprovePermissionsTitle', {
+                defaultValue: 'Auto-approve agent tool permissions',
+              })}
+            >
+              {autoApprovePermissions === 'all'
+                ? '⚡ Auto-approve: All'
+                : autoApprovePermissions === 'read_only'
+                  ? '👁️ Auto-approve: Read-only'
+                  : 'Permissions'}
+            </Button>
+          </Popover>
+
           <Button
             size='small'
             type='primary'
@@ -1313,7 +1433,18 @@ export const OrgChatView: React.FC = () => {
                   ⚠️
                 </div>
                 <div className='flex flex-col gap-4px min-w-0 max-w-[90%]'>
-                  <div className='text-11px font-mono text-t-tertiary px-2px'>Agent • Permission Request</div>
+                  <div className='text-11px font-mono text-t-tertiary px-2px flex items-center gap-6px'>
+                    <span>
+                      {activePermission.agentName ? `${activePermission.agentName} • ` : 'Agent • '}
+                      {activePermission.toolName ? `${activePermission.toolName} • ` : ''}
+                      Permission Request
+                    </span>
+                    {permissionQueue.length > 1 && (
+                      <span className='px-6px py-1px rounded-full bg-orange-500/20 text-orange-400 text-10px font-medium'>
+                        1 of {permissionQueue.length}
+                      </span>
+                    )}
+                  </div>
                   <div className='p-14px rounded-8px border border-orange-500/30 bg-bg-2 shadow-sm flex flex-col gap-10px'>
                     <div className='text-13px font-semibold text-t-primary'>{activePermission.description}</div>
                     <div className='text-12px text-t-secondary'>
@@ -1328,14 +1459,15 @@ export const OrgChatView: React.FC = () => {
                               opt.kind?.includes('allow') || opt.option_id?.includes('allow') ? 'primary' : 'default'
                             }
                             status={
-                              opt.kind?.includes('deny') || opt.option_id?.includes('deny') ? 'danger' : 'default'
+                              opt.kind?.includes('deny') ||
+                              opt.kind?.includes('reject') ||
+                              opt.option_id?.includes('deny') ||
+                              opt.option_id?.includes('reject')
+                                ? 'danger'
+                                : 'default'
                             }
                             size='small'
-                            onClick={async () => {
-                              const handler = activePermission.respond;
-                              setActivePermission(null);
-                              await handler(opt.option_id);
-                            }}
+                            onClick={() => void handleResolvePermission(opt.option_id)}
                           >
                             {opt.name || opt.option_id || 'Allow'}
                           </Button>
@@ -1345,23 +1477,11 @@ export const OrgChatView: React.FC = () => {
                           <Button
                             type='primary'
                             size='small'
-                            onClick={async () => {
-                              const handler = activePermission.respond;
-                              setActivePermission(null);
-                              await handler('proceed_once');
-                            }}
+                            onClick={() => void handleResolvePermission('proceed_once')}
                           >
                             Allow Once
                           </Button>
-                          <Button
-                            size='small'
-                            status='danger'
-                            onClick={async () => {
-                              const handler = activePermission.respond;
-                              setActivePermission(null);
-                              await handler('deny');
-                            }}
-                          >
+                          <Button size='small' status='danger' onClick={() => void handleResolvePermission('deny')}>
                             Deny
                           </Button>
                         </>

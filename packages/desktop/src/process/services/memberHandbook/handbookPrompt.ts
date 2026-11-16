@@ -100,11 +100,11 @@ export function parseHandbookMarkdown(content: string): ParsedHandbookSections {
         result.methodology.push(line.replace(/^[-*]\s+/, '').trim());
       }
     } else if (currentSection.includes('rule')) {
-      if (subSection.includes('do') && !subSection.includes('don\'t') && !subSection.includes('dont')) {
+      if (subSection.includes('do') && !subSection.includes("don't") && !subSection.includes('dont')) {
         if (line.startsWith('- ') || line.startsWith('* ')) {
           result.rulesDo.push(line.replace(/^[-*]\s+/, '').trim());
         }
-      } else if (subSection.includes('don\'t') || subSection.includes('dont')) {
+      } else if (subSection.includes("don't") || subSection.includes('dont')) {
         if (line.startsWith('- ') || line.startsWith('* ')) {
           result.rulesDont.push(line.replace(/^[-*]\s+/, '').trim());
         }
@@ -151,24 +151,21 @@ export function buildCompressedPrompt(
   budgetTokens = 3000
 ): string {
   // 1. Mandatory core: Methodology (numbered SOP) & Rules
-  const methodologyText = parsed.methodology
-    .map((step, idx) => `${idx + 1}. ${step}`)
-    .join('\n');
+  const methodologyText = parsed.methodology.map((step, idx) => `${idx + 1}. ${step}`).join('\n');
 
   const doText = parsed.rulesDo.map((r) => `- DO: ${r}`).join('\n');
   const dontText = parsed.rulesDont.map((r) => `- DON'T: ${r}`).join('\n');
   const rulesBlock = [doText, dontText].filter(Boolean).join('\n');
 
   // Checklist ending
-  const checklistItems = parsed.selfCheckChecklist.length > 0
-    ? parsed.selfCheckChecklist.map((c) => `- [ ] ${c}`).join('\n')
-    : '- [ ] Output adheres to assigned role standards and zero unverified assumptions.';
+  const checklistItems =
+    parsed.selfCheckChecklist.length > 0
+      ? parsed.selfCheckChecklist.map((c) => `- [ ] ${c}`).join('\n')
+      : '- [ ] Output adheres to assigned role standards and zero unverified assumptions.';
 
   const checklistBlock = `Before you answer, verify:\n${checklistItems}`;
 
-  const identityHeader = role
-    ? `Teammate: ${memberName} | Role: ${role}`
-    : `Teammate: ${memberName}`;
+  const identityHeader = role ? `Teammate: ${memberName} | Role: ${role}` : `Teammate: ${memberName}`;
 
   // Assemble base mandatory text
   let assembled = `[EMPLOYEE HANDBOOK: ${memberName}]
@@ -179,7 +176,7 @@ Working Methodology (SOP):
 ${methodologyText || '1. Analyze instructions.\n2. Execute step-by-step.\n3. Verify results.'}
 
 Rules:
-${rulesBlock || '- DO: Adhere to role requirements.\n- DON\'T: Introduce unverified changes.'}`;
+${rulesBlock || "- DO: Adhere to role requirements.\n- DON'T: Introduce unverified changes."}`;
 
   // Check remaining budget
   let currentTokens = estimateTokens(assembled) + estimateTokens(checklistBlock) + 50;

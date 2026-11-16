@@ -1435,5 +1435,18 @@
   "dataDir": "Datenspeicherverzeichnis",
   "dataDirDesc": "Zentraler Ordner, in dem alle Daten (Datenbank, Arbeitsbereich, Konfiguration und Protokolle) gespeichert und gesichert werden",
   "changeDataDir": "Datenspeicherverzeichnis ändern",
-  "dataDirRestartConfirm": "Das Ändern des Datenspeicherverzeichnisses erfordert einen Neustart von AionUi. AionUi scannt den ausgewählten Ordner und lädt die Daten, ohne bestehende Dateien zu löschen. Jetzt neu starten?"
+  "dataDirRestartConfirm": "Das Ändern des Datenspeicherverzeichnisses erfordert einen Neustart von AionUi. AionUi scannt den ausgewählten Ordner und lädt die Daten, ohne bestehende Dateien zu löschen. Jetzt neu starten?",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

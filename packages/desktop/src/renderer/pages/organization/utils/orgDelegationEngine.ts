@@ -782,7 +782,7 @@ export class OrgDelegationEngine {
       if (!notice || notice === lastNoticeChunk) return;
       lastNoticeChunk = notice;
       collectedText.push(notice);
-      opts.onStreamUpdate(notice);
+      opts.onStreamUpdate?.(notice);
       this.onAgentStream?.(notice);
     };
 
@@ -1051,11 +1051,11 @@ export class OrgDelegationEngine {
             // Extract identified command / shell
             const isShell = Boolean(
               rawInput?.command ||
-                rawData?.command ||
-                toolName.includes('bash') ||
-                toolName.includes('shell') ||
-                toolName.includes('terminal') ||
-                toolName.includes('exec')
+              rawData?.command ||
+              toolName.includes('bash') ||
+              toolName.includes('shell') ||
+              toolName.includes('terminal') ||
+              toolName.includes('exec')
             );
 
             // Read live store mode first, then class option, then localStorage
@@ -1075,8 +1075,16 @@ export class OrgDelegationEngine {
               }
             } else if (autoApproveMode === 'off' && typeof localStorage !== 'undefined') {
               const stored = localStorage.getItem('aionui:org-auto-approve-permissions');
-              if (stored === 'true' || stored === 'all') autoApproveMode = 'all';
-              else if (stored === 'read_only') autoApproveMode = 'read_only';
+              if (stored) {
+                try {
+                  const parsed = JSON.parse(stored);
+                  if (parsed === true || parsed === 'all') autoApproveMode = 'all';
+                  else if (parsed === 'read_only') autoApproveMode = 'read_only';
+                } catch {
+                  if (stored === 'true' || stored === 'all') autoApproveMode = 'all';
+                  else if (stored === 'read_only') autoApproveMode = 'read_only';
+                }
+              }
             }
 
             let shouldAutoApprove = false;
@@ -1183,7 +1191,7 @@ export class OrgDelegationEngine {
                 '');
           if (text) {
             collectedText.push(text);
-            opts.onStreamUpdate(text);
+            opts.onStreamUpdate?.(text);
             this.onAgentStream?.(text);
             contentCount++;
           }
@@ -1322,7 +1330,7 @@ export class OrgDelegationEngine {
                   (assistantMsg?.content as { content?: string; text?: string })?.text;
                 if (msgText) {
                   collectedText.push(msgText);
-                  opts.onStreamUpdate(msgText);
+                  opts.onStreamUpdate?.(msgText);
                   this.onAgentStream?.(msgText);
                   contentCount++;
                   resolve();

@@ -219,8 +219,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   memberHandbookListHistory: (memberKey: string) => ipcRenderer.invoke('memberHandbook:listHistory', memberKey),
   memberHandbookSetKnowledgeSection: (params: unknown) =>
     ipcRenderer.invoke('memberHandbook:setKnowledgeSection', params),
-  memberHandbookGetInjectedBlock: (params: unknown) =>
-    ipcRenderer.invoke('memberHandbook:getInjectedBlock', params),
+  memberHandbookGetInjectedBlock: (params: unknown) => ipcRenderer.invoke('memberHandbook:getInjectedBlock', params),
   // Gateway & Combos APIs
   gatewayGetStatus: () => ipcRenderer.invoke('gateway:getStatus'),
   gatewayGetAccounts: () => ipcRenderer.invoke('gateway:getAccounts'),

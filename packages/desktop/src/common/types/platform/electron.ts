@@ -278,10 +278,7 @@ export interface ElectronBridgeAPI {
     memberKey: string;
     newMemberName: string;
   }) => Promise<{ success: boolean; newFileName: string; newFilePath: string }>;
-  memberHandbookDelete?: (params: {
-    memberKey: string;
-    archive?: boolean;
-  }) => Promise<{ success: boolean }>;
+  memberHandbookDelete?: (params: { memberKey: string; archive?: boolean }) => Promise<{ success: boolean }>;
   memberHandbookList?: () => Promise<import('../team/handbookTypes').HandbookDetail[]>;
   memberHandbookGetStatus?: (params: {
     memberKey: string;
@@ -291,9 +288,7 @@ export interface ElectronBridgeAPI {
     memberKey: string;
     historyId: string;
   }) => Promise<import('../team/handbookTypes').HandbookDetail>;
-  memberHandbookListHistory?: (
-    memberKey: string
-  ) => Promise<import('../team/handbookTypes').HandbookHistoryItem[]>;
+  memberHandbookListHistory?: (memberKey: string) => Promise<import('../team/handbookTypes').HandbookHistoryItem[]>;
   memberHandbookSetKnowledgeSection?: (params: {
     memberKey: string;
     repos: import('../team/handbookTypes').HandbookAssignedRepo[];

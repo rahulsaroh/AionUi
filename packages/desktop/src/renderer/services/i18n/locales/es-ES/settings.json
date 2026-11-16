@@ -1435,5 +1435,18 @@
   "dataDir": "Directorio de almacenamiento de datos",
   "dataDirDesc": "Carpeta unificada donde se almacenan y respaldan todos los datos (base de datos, espacio de trabajo, configuración y registros)",
   "changeDataDir": "Cambiar directorio de almacenamiento de datos",
-  "dataDirRestartConfirm": "Cambiar la carpeta de almacenamiento de datos requiere reiniciar AionUi. AionUi escaneará la carpeta seleccionada y cargará los datos sin eliminar ningún archivo existente. ¿Desea reiniciar ahora?"
+  "dataDirRestartConfirm": "Cambiar la carpeta de almacenamiento de datos requiere reiniciar AionUi. AionUi escaneará la carpeta seleccionada y cargará los datos sin eliminar ningún archivo existente. ¿Desea reiniciar ahora?",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

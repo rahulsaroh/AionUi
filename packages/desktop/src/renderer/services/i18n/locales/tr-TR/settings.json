@@ -1435,5 +1435,18 @@
   "dataDir": "Veri Depolama Dizini",
   "dataDirDesc": "Tüm verilerin (veritabanı, çalışma alanı, yapılandırma ve günlükler) depolandığı ve yedeklendiği birleşik klasör",
   "changeDataDir": "Veri depolama dizinini değiştir",
-  "dataDirRestartConfirm": "Veri depolama klasörünü değiştirmek AionUi'nin yeniden başlatılmasını gerektirir. AionUi seçilen klasörü tarayacak ve mevcut dosyaları silmeden verileri yükleyecektir. Şimdi yeniden başlatmak istiyor musunuz?"
+  "dataDirRestartConfirm": "Veri depolama klasörünü değiştirmek AionUi'nin yeniden başlatılmasını gerektirir. AionUi seçilen klasörü tarayacak ve mevcut dosyaları silmeden verileri yükleyecektir. Şimdi yeniden başlatmak istiyor musunuz?",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

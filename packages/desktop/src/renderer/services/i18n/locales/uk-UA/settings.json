@@ -1450,5 +1450,18 @@
   "dataDir": "Папка зберігання даних",
   "dataDirDesc": "Єдина папка для зберігання та резервного копіювання всіх даних (база даних, робоча область, налаштування та логи)",
   "changeDataDir": "Змінити папку зберігання даних",
-  "dataDirRestartConfirm": "Зміна папки зберігання даних потребує перезапуску AionUi. AionUi просканує вибрану папку та завантажить дані без видалення наявних файлів. Перезапустити зараз?"
+  "dataDirRestartConfirm": "Зміна папки зберігання даних потребує перезапуску AionUi. AionUi просканує вибрану папку та завантажить дані без видалення наявних файлів. Перезапустити зараз?",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

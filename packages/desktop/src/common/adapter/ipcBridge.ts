@@ -3007,10 +3007,7 @@ export const memberHandbook = {
     }
     return null;
   },
-  update: async (params: {
-    memberKey: string;
-    content: string;
-  }): Promise<{ success: boolean; fileHash: string }> => {
+  update: async (params: { memberKey: string; content: string }): Promise<{ success: boolean; fileHash: string }> => {
     if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookUpdate) {
       return window.electronAPI.memberHandbookUpdate(params);
     }
@@ -3025,10 +3022,7 @@ export const memberHandbook = {
     }
     throw new Error('memberHandbookRename is only supported in desktop mode');
   },
-  delete: async (params: {
-    memberKey: string;
-    archive?: boolean;
-  }): Promise<{ success: boolean }> => {
+  delete: async (params: { memberKey: string; archive?: boolean }): Promise<{ success: boolean }> => {
     if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookDelete) {
       return window.electronAPI.memberHandbookDelete(params);
     }
@@ -3064,9 +3058,7 @@ export const memberHandbook = {
     }
     throw new Error('memberHandbookRevert is only supported in desktop mode');
   },
-  listHistory: async (
-    memberKey: string
-  ): Promise<import('../types/team/handbookTypes').HandbookHistoryItem[]> => {
+  listHistory: async (memberKey: string): Promise<import('../types/team/handbookTypes').HandbookHistoryItem[]> => {
     if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookListHistory) {
       return window.electronAPI.memberHandbookListHistory(memberKey);
     }

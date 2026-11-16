@@ -45,7 +45,7 @@ describe('Handbook Templates & Generation', () => {
     expect(content).toContain('## Working Methodology');
     expect(content).toContain('## Rules');
     expect(content).toContain('### Do');
-    expect(content).toContain('### Don\'t');
+    expect(content).toContain("### Don't");
     expect(content).toContain('## Output Standards & Self-Check Checklist');
     expect(content).toContain('Before completing your answer or task, verify:');
     expect(content).toContain('## Knowledge');

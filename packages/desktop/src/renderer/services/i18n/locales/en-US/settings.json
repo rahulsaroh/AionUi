@@ -1435,5 +1435,18 @@
   "dataDir": "Data Storage Directory",
   "dataDirDesc": "Single folder where all data (database, workspace files, configuration, and logs) is stored and backed up",
   "changeDataDir": "Change data storage directory",
-  "dataDirRestartConfirm": "Changing the data storage folder requires restarting AionUi. AionUi will scan the selected folder and load all your data without deleting any existing files. Do you want to restart now?"
+  "dataDirRestartConfirm": "Changing the data storage folder requires restarting AionUi. AionUi will scan the selected folder and load all your data without deleting any existing files. Do you want to restart now?",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

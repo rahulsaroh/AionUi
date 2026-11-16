@@ -15,6 +15,7 @@ import {
   Search,
   Github,
   BookOne,
+  BookOpen,
 } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
@@ -27,6 +28,7 @@ import { useTeamTabs } from '../hooks/TeamTabsContext';
 import TeamAddMemberPopover from './memberPicker/TeamAddMemberPopover';
 import { KnowledgeRepoModal } from './KnowledgeRepoModal';
 import { MemberKnowledgePanel, KnowledgeChip } from '@/renderer/components/knowledge';
+import { MemberHandbookModal } from '@/renderer/components/memberHandbook';
 
 const TAB_OVERFLOW_THRESHOLD = 10;
 
@@ -52,6 +54,7 @@ type TeamTabViewProps = {
   onRename?: (slot_id: string, new_name: string) => void;
   onRemove?: (slot_id: string) => void;
   onAssignRepos?: (slot_id: string) => void;
+  onOpenHandbook?: (slot_id: string) => void;
 };
 
 const TeamTabView: React.FC<TeamTabViewProps> = React.memo(
@@ -73,6 +76,7 @@ const TeamTabView: React.FC<TeamTabViewProps> = React.memo(
     onRename,
     onRemove,
     onAssignRepos,
+    onOpenHandbook,
   }) => {
     const { t } = useTranslation();
     const [editing, setEditing] = useState(false);
@@ -243,6 +247,19 @@ const TeamTabView: React.FC<TeamTabViewProps> = React.memo(
             }}
           >
             <BookOne theme='outline' size='13' fill='currentColor' />
+          </span>
+        )}
+        {showHoverActions && onOpenHandbook && (
+          <span
+            data-testid={`team-tab-handbook-${slot_id}`}
+            className='shrink-0 flex items-center justify-center w-20px h-20px rounded-6px text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-3)] hover:text-[color:var(--brand)] transition-colors duration-150'
+            title={t('team.handbook.openHandbook', { defaultValue: 'Employee Handbook' })}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenHandbook(slot_id);
+            }}
+          >
+            <BookOpen theme='outline' size='13' fill='currentColor' />
           </span>
         )}
         {showHoverActions && !isLeader && onRemove && (
@@ -504,6 +521,7 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false);
   const [assignRepoAssistant, setAssignRepoAssistant] = useState<TeamAssistant | null>(null);
+  const [handbookAssistant, setHandbookAssistant] = useState<TeamAssistant | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -659,6 +677,14 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
     [assistants]
   );
 
+  const handleTabOpenHandbook = useCallback(
+    (sid: string) => {
+      const target = assistants.find((a) => a.slot_id === sid);
+      if (target) setHandbookAssistant(target);
+    },
+    [assistants]
+  );
+
   if (assistants.length === 0) return null;
 
   return (
@@ -729,6 +755,7 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
                         onRename={handleTabRename}
                         onRemove={handleTabRemove}
                         onAssignRepos={handleTabAssignRepos}
+                        onOpenHandbook={handleTabOpenHandbook}
                       />
                     );
                   })
@@ -883,6 +910,17 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
             assignRepoAssistant.whenToUseHint = whenToUseHint;
             setAssignRepoAssistant(null);
           }}
+        />
+      )}
+
+      {handbookAssistant && (
+        <MemberHandbookModal
+          visible={Boolean(handbookAssistant)}
+          memberKey={`team:${team_id}:${handbookAssistant.slot_id}`}
+          memberName={handbookAssistant.assistant_name}
+          role={handbookAssistant.role}
+          model={handbookAssistant.model}
+          onClose={() => setHandbookAssistant(null)}
         />
       )}
     </div>

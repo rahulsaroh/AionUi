@@ -41,6 +41,7 @@ export function sanitizeHandbookFileName(memberName: string): string {
     return 'member';
   }
   // Replace illegal chars with _
+  // oxlint-disable-next-line eslint(no-control-regex)
   let sanitized = memberName.replace(/[\\/:*?"<>|\x00-\x1F]/g, '_');
   // Trim leading/trailing spaces and dots
   sanitized = sanitized.replace(/^[\s.]+|[\s.]+$/g, '');

@@ -229,7 +229,8 @@ describe('HandbookService & Member Handbook Core', () => {
       // External or in-app update
       await service.update({
         memberKey: 'team:inj:2',
-        content: '# Modified UI Designer Handbook\n## Working Methodology\n1. Brand new SOP step.\n## Rules\n### Do\n- Follow tokens',
+        content:
+          '# Modified UI Designer Handbook\n## Working Methodology\n1. Brand new SOP step.\n## Rules\n### Do\n- Follow tokens',
       });
 
       // Turn 3: hash changed, should re-inject full block!

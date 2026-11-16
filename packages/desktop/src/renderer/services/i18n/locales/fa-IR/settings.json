@@ -1435,5 +1435,18 @@
   "dataDir": "مسیر ذخیره‌سازی داده‌ها",
   "dataDirDesc": "پوشه یکپارچه که همه داده‌ها (پایگاه داده، فضای کاری، تنظیمات و گزارش‌ها) در آن ذخیره و پشتیبان‌گیری می‌شوند",
   "changeDataDir": "تغییر مسیر ذخیره‌سازی داده‌ها",
-  "dataDirRestartConfirm": "تغییر پوشه ذخیره‌سازی داده نیازمند راه‌اندازی مجدد AionUi است. AionUi ابتدا پوشه انتخاب‌شده را اسکن کرده و بدون حذف فایل‌های موجود، داده‌ها را بارگذاری می‌کند. آیا اکنون راه‌اندازی مجدد شود؟"
+  "dataDirRestartConfirm": "تغییر پوشه ذخیره‌سازی داده نیازمند راه‌اندازی مجدد AionUi است. AionUi ابتدا پوشه انتخاب‌شده را اسکن کرده و بدون حذف فایل‌های موجود، داده‌ها را بارگذاری می‌کند. آیا اکنون راه‌اندازی مجدد شود؟",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

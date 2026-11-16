@@ -354,7 +354,12 @@ export function matchRoleTemplate(role?: string): RoleTemplateDefinition {
   if (clean.includes('video') || clean.includes('motion') || clean.includes('edit') || clean.includes('media')) {
     return ROLE_TEMPLATES['video-editor'];
   }
-  if (clean.includes('research') || clean.includes('paper') || clean.includes('literature') || clean.includes('study')) {
+  if (
+    clean.includes('research') ||
+    clean.includes('paper') ||
+    clean.includes('literature') ||
+    clean.includes('study')
+  ) {
     return ROLE_TEMPLATES.researcher;
   }
   if (clean.includes('project') || clean.includes('manager') || clean.includes('pm') || clean.includes('lead')) {

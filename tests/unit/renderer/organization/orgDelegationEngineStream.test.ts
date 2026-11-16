@@ -323,6 +323,186 @@ describe('OrgDelegationEngine responseStream handling', () => {
     unsub();
   });
 
+  it('read_only auto-approve mode approves scan_folder but asks for create_department and shell', async () => {
+    const readOnlyEngine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, {
+      simulationMode: false,
+      autoApprovePermissions: 'read_only',
+    });
+    const confirmSpy = vi
+      .spyOn(ipcBridge.conversation.confirmation.confirm, 'invoke')
+      .mockResolvedValue(undefined as any);
+    const streamUpdates: string[] = [];
+
+    let capturedRequest: import('@/renderer/pages/organization/utils/orgDelegationEngine').OrgPermissionRequest | null =
+      null;
+    const unsub = (await import('@/renderer/pages/organization/utils/orgDelegationEngine')).onOrgPermissionRequested(
+      (req) => {
+        capturedRequest = req;
+      }
+    );
+
+    const stepPromise = readOnlyEngine.runOrgAgentStep({
+      agent: testAgent,
+      systemPrompt: 'You are an agent',
+      userDirective: 'scan and create',
+      workspacePath: '',
+      onStreamUpdate: (t) => streamUpdates.push(t),
+    });
+
+    for (let i = 0; i < 50 && !streamHandler; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(streamHandler).toBeDefined();
+
+    // 1. scan_folder -> auto-approved
+    streamHandler!({
+      conversation_id: 'conv-123',
+      msg_id: 'msg-scan-1',
+      type: 'acp_permission',
+      data: {
+        tool_call: {
+          tool_call_id: 'tc-scan',
+          name: 'scan_folder',
+          title: 'scan_folder /src',
+        },
+        options: [{ option_id: 'allow_once', kind: 'allow_once', name: 'Allow Once' }],
+      },
+    });
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_id: 'tc-scan',
+        conversation_id: 'conv-123',
+      })
+    );
+    expect(capturedRequest).toBeNull();
+
+    // 2. create_department -> requires confirmation (asks user)
+    confirmSpy.mockClear();
+    streamHandler!({
+      conversation_id: 'conv-123',
+      msg_id: 'msg-create-1',
+      type: 'acp_permission',
+      data: {
+        tool_call: {
+          tool_call_id: 'tc-create',
+          name: 'create_department',
+          title: 'Create Engineering Department',
+        },
+        options: [{ option_id: 'allow_once', kind: 'allow_once', name: 'Allow Once' }],
+      },
+    });
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(capturedRequest).not.toBeNull();
+    expect(capturedRequest!.callId).toBe('tc-create');
+    expect(capturedRequest!.agentName).toBe(testAgent.name);
+    expect(capturedRequest!.toolName).toBe('create_department');
+
+    // Respond to unblock
+    await capturedRequest!.respond('allow_once');
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_id: 'tc-create',
+      })
+    );
+
+    // 3. shell tool -> requires confirmation even in read_only mode
+    capturedRequest = null;
+    confirmSpy.mockClear();
+    streamHandler!({
+      conversation_id: 'conv-123',
+      msg_id: 'msg-shell-1',
+      type: 'acp_permission',
+      data: {
+        tool_call: {
+          tool_call_id: 'tc-shell',
+          name: 'bash',
+          title: 'Run bash echo',
+        },
+        options: [{ option_id: 'allow_once', kind: 'allow_once', name: 'Allow Once' }],
+      },
+    });
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(capturedRequest).not.toBeNull();
+    expect(capturedRequest!.callId).toBe('tc-shell');
+
+    await capturedRequest!.respond('allow_once');
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'finish',
+      status: 'finish',
+    });
+
+    await stepPromise;
+    unsub();
+  });
+
+  it('reads live store value without restarting engine when option is omitted', async () => {
+    const { setAutoApprovePermissionsInStore } = await import('@/renderer/pages/organization/store/useOrgStore');
+    setAutoApprovePermissionsInStore('all');
+
+    const liveEngine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, {
+      simulationMode: false,
+    });
+    const confirmSpy = vi
+      .spyOn(ipcBridge.conversation.confirmation.confirm, 'invoke')
+      .mockResolvedValue(undefined as any);
+
+    let capturedRequest: import('@/renderer/pages/organization/utils/orgDelegationEngine').OrgPermissionRequest | null =
+      null;
+    const unsub = (await import('@/renderer/pages/organization/utils/orgDelegationEngine')).onOrgPermissionRequested(
+      (req) => {
+        capturedRequest = req;
+      }
+    );
+
+    const stepPromise = liveEngine.runOrgAgentStep({
+      agent: testAgent,
+      systemPrompt: 'You are an agent',
+      userDirective: 'live test',
+      workspacePath: '',
+    });
+
+    for (let i = 0; i < 50 && !streamHandler; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      msg_id: 'msg-live-1',
+      type: 'acp_permission',
+      data: {
+        tool_call: {
+          tool_call_id: 'tc-live-tool',
+          name: 'create_team',
+          title: 'Create Team',
+        },
+        options: [{ option_id: 'allow_once', kind: 'allow_once', name: 'Allow Once' }],
+      },
+    });
+
+    // Auto-confirmed due to live store = 'all'
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_id: 'tc-live-tool',
+      })
+    );
+    expect(capturedRequest).toBeNull();
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'finish',
+      status: 'finish',
+    });
+
+    await stepPromise;
+    setAutoApprovePermissionsInStore('off');
+    unsub();
+  });
+
   it('dedupes consecutive identical notices but never content', async () => {
     const streamUpdates: string[] = [];
     const stepPromise = engine.runOrgAgentStep({

@@ -1437,5 +1437,18 @@
   "dataDir": "データ保存ディレクトリ",
   "dataDirDesc": "すべてのデータ（データベース、ワークスペース、設定、ログ）を保存・バックアップする統一フォルダー",
   "changeDataDir": "データ保存ディレクトリを変更",
-  "dataDirRestartConfirm": "データ保存ディレクトリの変更には AionUi の再起動が必要です。AionUi は選択したフォルダーをスキャンして既存のファイルを削除せずにデータを読み込みます。今すぐ再起動しますか？"
+  "dataDirRestartConfirm": "データ保存ディレクトリの変更には AionUi の再起動が必要です。AionUi は選択したフォルダーをスキャンして既存のファイルを削除せずにデータを読み込みます。今すぐ再起動しますか？",
+  "memberHandbookDir": "Member Handbooks Directory",
+  "memberHandbookDirDesc": "Storage folder for employee handbooks (<userData>/member-handbooks by default)",
+  "memberHandbookDirSaved": "Member handbooks directory updated",
+  "memberHandbookDirFailed": "Failed to update handbook directory: ",
+  "openFolder": "Open Folder",
+  "copyPath": "Copy Path",
+  "backfillHandbooks": "Create Missing Handbooks",
+  "memberHandbookPathCopied": "Path copied to clipboard",
+  "memberHandbookCopyFailed": "Failed to copy path",
+  "memberHandbookOpenFailed": "Failed to open handbooks folder",
+  "memberHandbookBackfillNone": "No members found to backfill",
+  "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
+  "memberHandbookBackfillFailed": "Backfill failed: "
 }

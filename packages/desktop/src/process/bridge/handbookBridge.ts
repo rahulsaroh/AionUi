@@ -33,9 +33,12 @@ export function registerHandbookBridge(): void {
     return handbookService.create(options);
   });
 
-  ipcMain.handle('memberHandbook:read', async (_event, memberKey: string, model?: string): Promise<HandbookDetail | null> => {
-    return handbookService.read(memberKey, model);
-  });
+  ipcMain.handle(
+    'memberHandbook:read',
+    async (_event, memberKey: string, model?: string): Promise<HandbookDetail | null> => {
+      return handbookService.read(memberKey, model);
+    }
+  );
 
   ipcMain.handle(
     'memberHandbook:update',

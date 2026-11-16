@@ -28,6 +28,7 @@ import { OrgDelegationEngine } from '../utils/orgDelegationEngine';
 import { validateWithinMaster } from '../utils/orgPathUtils';
 import { OrgModelSelector } from './OrgModelSelector';
 import { MemberKnowledgePanel, KnowledgeChip } from '@/renderer/components/knowledge';
+import { HandbookStatusRow } from '@/renderer/components/memberHandbook';
 import type { OrgProject, OrgAgentMember, OrgConversation, OrgConversationMessage } from '@/types/organization';
 
 export type OrgNodeType = 'ceo' | 'department' | 'team' | 'project' | 'member';
@@ -764,6 +765,16 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                     showWhenEmpty
                   />
                 </div>
+              </div>
+            )}
+            {targetAgentMember && (
+              <div className='pt-6px border-t border-[var(--color-border-2)]/60'>
+                <HandbookStatusRow
+                  memberKey={`org:${targetAgentMember.id}`}
+                  memberName={targetAgentMember.name}
+                  role={targetAgentMember.role}
+                  model={targetAgentMember.model?.modelId}
+                />
               </div>
             )}
           </div>

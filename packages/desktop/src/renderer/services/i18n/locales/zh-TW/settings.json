@@ -1437,5 +1437,18 @@
   "dataDir": "資料儲存目錄",
   "dataDirDesc": "儲存與備份所有資料（資料庫、工作區檔案、設定與記錄）的統一資料夾",
   "changeDataDir": "變更資料儲存目錄",
-  "dataDirRestartConfirm": "變更資料儲存目錄需要重新啟動 AionUi。AionUi 將首先掃描所選資料夾並載入資料，且不會刪除任何現有檔案。是否立即重新啟動？"
+  "dataDirRestartConfirm": "變更資料儲存目錄需要重新啟動 AionUi。AionUi 將首先掃描所選資料夾並載入資料，且不會刪除任何現有檔案。是否立即重新啟動？",
+  "memberHandbookDir": "成员手册目录",
+  "memberHandbookDirDesc": "员工手册存储目录（默认位于 <userData>/member-handbooks）",
+  "memberHandbookDirSaved": "成员手册目录已更新",
+  "memberHandbookDirFailed": "更新手册目录失败：",
+  "openFolder": "打开目录",
+  "copyPath": "复制路径",
+  "backfillHandbooks": "补全缺失的手册",
+  "memberHandbookPathCopied": "路径已复制到剪贴板",
+  "memberHandbookCopyFailed": "复制路径失败",
+  "memberHandbookOpenFailed": "打开手册文件夹失败",
+  "memberHandbookBackfillNone": "未找到需要补全手册的成员",
+  "memberHandbookBackfillSuccess": "补全完成：创建了 {{created}} 份，{{skipped}} 份已存在",
+  "memberHandbookBackfillFailed": "补全失败："
 }
