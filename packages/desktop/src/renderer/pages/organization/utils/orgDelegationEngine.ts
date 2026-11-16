@@ -18,6 +18,7 @@ import {
 import { createDepartmentShell, createTeamShell, createMemberShell } from './orgCoherence';
 import { getDefaultDeptPath, getDefaultTeamPath, getDefaultProjectPath, validateOrgFolder } from './orgPathUtils';
 import { getCeoToolSystemPrompt } from './rootCeoAgent';
+import { getOrgStoreSnapshot, type AutoApprovePermissionsMode } from '../store/useOrgStore';
 
 export interface DelegationStepLog {
   id: string;
@@ -639,6 +640,8 @@ export interface OrgPermissionRequest {
   description: string;
   options: OrgPermissionOption[];
   respond: (optionId?: string) => Promise<void>;
+  agentName?: string;
+  toolName?: string;
 }
 
 type PermissionRequestListener = (request: OrgPermissionRequest | null) => void;
@@ -683,7 +686,7 @@ export class OrgDelegationEngine {
   private updateNodeStatus?: UpdateNodeStatus;
   private simulationMode: boolean;
   private projects: OrgProject[] = [];
-  private autoApprovePermissions?: boolean;
+  private autoApprovePermissions?: boolean | AutoApprovePermissionsMode;
   public lastBackendConversationId?: string;
 
   constructor(
@@ -691,7 +694,11 @@ export class OrgDelegationEngine {
     onStepCallback?: (log: DelegationStepLog) => void,
     onAgentStream?: (text: string) => void,
     updateNodeStatus?: UpdateNodeStatus,
-    options?: { simulationMode?: boolean; projects?: OrgProject[]; autoApprovePermissions?: boolean }
+    options?: {
+      simulationMode?: boolean;
+      projects?: OrgProject[];
+      autoApprovePermissions?: boolean | AutoApprovePermissionsMode;
+    }
   ) {
     this.hierarchy = hierarchy;
     this.onStepCallback = onStepCallback;
@@ -1030,13 +1037,65 @@ export class OrgDelegationEngine {
             checkFinish();
           } else {
             const rawOptions = (Array.isArray(rawData?.options) ? rawData.options : []) as OrgPermissionOption[];
-            const autoApprove =
-              this.autoApprovePermissions ??
-              (typeof localStorage !== 'undefined'
-                ? localStorage.getItem('aionui:org-auto-approve-permissions') === 'true'
-                : false);
 
-            if (autoApprove) {
+            // Determine tool name from payload
+            const rawTool =
+              (toolCall?.tool_name as string) ||
+              (toolCall?.name as string) ||
+              (rawData?.tool as string) ||
+              (rawData?.tool_name as string) ||
+              (toolCall?.title as string) ||
+              '';
+            const toolName = rawTool.toLowerCase().trim();
+
+            // Extract identified command / shell
+            const isShell = Boolean(
+              rawInput?.command ||
+                rawData?.command ||
+                toolName.includes('bash') ||
+                toolName.includes('shell') ||
+                toolName.includes('terminal') ||
+                toolName.includes('exec')
+            );
+
+            // Read live store mode first, then class option, then localStorage
+            let autoApproveMode: AutoApprovePermissionsMode = 'off';
+            try {
+              const liveStore = getOrgStoreSnapshot();
+              if (liveStore?.autoApprovePermissions) {
+                autoApproveMode = liveStore.autoApprovePermissions;
+              }
+            } catch {}
+
+            if (this.autoApprovePermissions !== undefined) {
+              if (typeof this.autoApprovePermissions === 'boolean') {
+                autoApproveMode = this.autoApprovePermissions ? 'all' : 'off';
+              } else {
+                autoApproveMode = this.autoApprovePermissions;
+              }
+            } else if (autoApproveMode === 'off' && typeof localStorage !== 'undefined') {
+              const stored = localStorage.getItem('aionui:org-auto-approve-permissions');
+              if (stored === 'true' || stored === 'all') autoApproveMode = 'all';
+              else if (stored === 'read_only') autoApproveMode = 'read_only';
+            }
+
+            let shouldAutoApprove = false;
+            if (autoApproveMode === 'all') {
+              shouldAutoApprove = true;
+            } else if (autoApproveMode === 'read_only') {
+              const READ_ONLY_TOOLS = new Set([
+                'scan_folder',
+                'list_org',
+                'get_status',
+                'list_project_tasks',
+                'get_project_status',
+              ]);
+              if (!isShell && toolName && READ_ONLY_TOOLS.has(toolName)) {
+                shouldAutoApprove = true;
+              }
+            }
+
+            if (shouldAutoApprove) {
               let confirmData: unknown = { value: 'proceed_once' };
               if (m.type === 'acp_permission' && rawOptions.length > 0) {
                 const allowOpt =
@@ -1072,6 +1131,8 @@ export class OrgDelegationEngine {
                 msgId: m.msg_id || '',
                 description: String(desc || 'Permission requested by agent'),
                 options: rawOptions,
+                agentName: opts.agent.name,
+                toolName: toolName || undefined,
                 respond: async (chosenOptionId?: string) => {
                   lastActivity = Date.now();
                   emitOrgPermissionRequest(null);

@@ -4,6 +4,7 @@ import type { RefInputType } from '@arco-design/web-react/es/Input/interface';
 import { Plus } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { ipcBridge } from '@/common';
+import { memberHandbook } from '@/common/adapter/ipcBridge';
 import type { TTeam } from '@/common/types/team/teamTypes';
 import type { TeamAssistantInput, ICreateTeamParams } from '@/common/adapter/teamMapper';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
@@ -206,8 +207,20 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
               model,
             },
           });
-          if (isLeader && added?.slot_id) {
-            finalLeaderSlotId = added.slot_id;
+          if (added?.slot_id) {
+            if (isLeader) {
+              finalLeaderSlotId = added.slot_id;
+            }
+            try {
+              await memberHandbook.create({
+                memberKey: `team:${team.id}:${added.slot_id}`,
+                memberName: member.assistant.name,
+                role: isLeader ? 'leader' : 'teammate',
+                model,
+              });
+            } catch (hbErr) {
+              console.warn('[TeamCreateModal] Failed to create handbook for added teammate:', hbErr);
+            }
           }
         }
 
@@ -316,6 +329,22 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated, team, o
       if (result.__bridgeError) {
         Message.error(getConversationCreateErrorMessage(result.message ?? t('team.create.error'), t));
         return;
+      }
+
+      if (newTeam && Array.isArray(newTeam.assistants)) {
+        for (const ast of newTeam.assistants) {
+          if (!ast?.slot_id) continue;
+          try {
+            await memberHandbook.create({
+              memberKey: `team:${newTeam.id}:${ast.slot_id}`,
+              memberName: ast.assistant_name,
+              role: ast.role,
+              model: ast.model,
+            });
+          } catch (hbErr) {
+            console.warn('[TeamCreateModal] Failed to create handbook for teammate:', ast.assistant_name, hbErr);
+          }
+        }
       }
 
       onCreated?.({

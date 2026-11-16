@@ -33,6 +33,7 @@ import {
 } from '../utils/orgCoherence';
 import { migrateOrgStorageV2, reconcileConversationsWithProjects, ORG_STORAGE_VERSION } from '../utils/orgMigration';
 import { ipcBridge } from '@/common';
+import { memberHandbook } from '@/common/adapter/ipcBridge';
 import { resolveOrgChatTarget } from '../utils/openOrgChat';
 import { validateOrgFolder } from '../utils/orgPathUtils';
 import type { OrgChatTarget } from '../utils/agentTurn';
@@ -91,6 +92,8 @@ export type ApprovedLineupRecord = {
   approvedAt: number;
 };
 
+export type AutoApprovePermissionsMode = 'off' | 'read_only' | 'all';
+
 type OrgStoreState = {
   activeScope: OrgScope;
   hierarchy: OrgHierarchy;
@@ -99,7 +102,7 @@ type OrgStoreState = {
   conversations: OrgConversation[];
   cronJobs: OrgCronJob[];
   approvedLineups: ApprovedLineupRecord[];
-  autoApprovePermissions: boolean;
+  autoApprovePermissions: AutoApprovePermissionsMode;
   nodeStatuses: Record<string, OrgNodeStatus>;
   hoveredCanonicalAgentId: string | null;
   selectedCanonicalAgentId: string | null;
@@ -176,7 +179,7 @@ function createInitialState(): OrgStoreState {
     conversations: conversationReconciled.conversations,
     cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
     approvedLineups: loadStored<ApprovedLineupRecord[]>(STORAGE_KEYS.APPROVED_LINEUPS, () => []),
-    autoApprovePermissions: loadStored<boolean>(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, () => false),
+    autoApprovePermissions: loadStored<AutoApprovePermissionsMode>(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, () => 'off'),
     nodeStatuses: {},
     hoveredCanonicalAgentId: null,
     selectedCanonicalAgentId: null,
@@ -603,6 +606,17 @@ export function useOrgStore() {
     };
     globalState = { ...globalState, hierarchy: nextHierarchy };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    void memberHandbook
+      .create({
+        memberKey: `org:${member.id}`,
+        memberName: member.name,
+        role: member.role,
+        seedPrompt: member.systemPrompt,
+        model: member.model?.modelId,
+      })
+      .catch((err) => {
+        console.warn('[useOrgStore] Failed to create handbook for org member:', member.name, err);
+      });
     notify();
   }, []);
 
@@ -686,6 +700,16 @@ export function useOrgStore() {
     };
     globalState = { ...globalState, hierarchy: nextHierarchy };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    if (patch.name) {
+      void memberHandbook
+        .rename({
+          memberKey: `org:${memberId}`,
+          newMemberName: patch.name,
+        })
+        .catch((err) => {
+          console.warn('[useOrgStore] Failed to rename handbook for org member:', memberId, err);
+        });
+    }
     notify();
   }, []);
 
@@ -761,6 +785,9 @@ export function useOrgStore() {
     globalState = { ...globalState, members: nextMembers };
     saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
     void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
+    void memberHandbook.delete({ memberKey: `org:${memberId}`, archive: true }).catch((err) => {
+      console.warn('[useOrgStore] Failed to archive handbook for deleted member:', memberId, err);
+    });
     notify();
   }, []);
 
@@ -1080,12 +1107,13 @@ export function useOrgStore() {
     return id;
   }, []);
 
-  const setAutoApprovePermissions = useCallback((enabled: boolean) => {
+  const setAutoApprovePermissions = useCallback((mode: boolean | AutoApprovePermissionsMode) => {
+    const finalMode: AutoApprovePermissionsMode = typeof mode === 'boolean' ? (mode ? 'all' : 'off') : mode;
     globalState = {
       ...globalState,
-      autoApprovePermissions: enabled,
+      autoApprovePermissions: finalMode,
     };
-    saveStored(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, enabled);
+    saveStored(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, finalMode);
     notify();
   }, []);
 
@@ -1171,11 +1199,12 @@ export function updateApprovedLineupInStore(recordId: string, patch: Partial<App
   notify();
 }
 
-export function setAutoApprovePermissionsInStore(enabled: boolean): void {
+export function setAutoApprovePermissionsInStore(mode: boolean | AutoApprovePermissionsMode): void {
+  const finalMode: AutoApprovePermissionsMode = typeof mode === 'boolean' ? (mode ? 'all' : 'off') : mode;
   globalState = {
     ...globalState,
-    autoApprovePermissions: enabled,
+    autoApprovePermissions: finalMode,
   };
-  saveStored(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, enabled);
+  saveStored(STORAGE_KEYS.AUTO_APPROVE_PERMISSIONS, finalMode);
   notify();
 }

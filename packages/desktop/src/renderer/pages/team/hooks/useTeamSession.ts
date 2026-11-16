@@ -1,5 +1,6 @@
 // src/renderer/pages/team/hooks/useTeamSession.ts
 import { ipcBridge } from '@/common';
+import { memberHandbook } from '@/common/adapter/ipcBridge';
 import { normalizeTeamStatus } from '@/common/adapter/teamMapper';
 import type { TeamAssistantInput } from '@/common/adapter/teamMapper';
 import type {
@@ -130,6 +131,16 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
   const addAssistant = useCallback(
     async (assistant: TeamAssistantInput): Promise<TeamAssistant> => {
       const created = await ipcBridge.team.addAgent.invoke({ team_id: team.id, assistant });
+      try {
+        await memberHandbook.create({
+          memberKey: `team:${team.id}:${created.slot_id}`,
+          memberName: created.assistant_name,
+          role: created.role,
+          model: created.model,
+        });
+      } catch (hbErr) {
+        console.warn('[useTeamSession] Failed to create handbook for added teammate:', hbErr);
+      }
       await mutateTeam();
       return created;
     },
@@ -139,6 +150,14 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
   const renameAssistant = useCallback(
     async (slot_id: string, new_name: string) => {
       await ipcBridge.team.renameAgent.invoke({ team_id: team.id, slot_id, new_name });
+      try {
+        await memberHandbook.rename({
+          memberKey: `team:${team.id}:${slot_id}`,
+          newMemberName: new_name,
+        });
+      } catch (hbErr) {
+        console.warn('[useTeamSession] Failed to rename handbook for teammate:', hbErr);
+      }
       await mutateTeam();
     },
     [team.id, mutateTeam]
@@ -153,6 +172,11 @@ export function useTeamSession(team: TTeam, warmupPhase?: TeamWarmupPhase) {
         removeCronJob: (job_id) => ipcBridge.cron.removeJob.invoke({ job_id }),
         removeAgent: (params) => ipcBridge.team.removeAgent.invoke(params),
       });
+      try {
+        await memberHandbook.delete({ memberKey: `team:${team.id}:${slot_id}`, archive: true });
+      } catch (hbErr) {
+        console.warn('[useTeamSession] Failed to archive handbook for removed teammate:', hbErr);
+      }
       await mutateTeam();
     },
     [team, mutateTeam]
