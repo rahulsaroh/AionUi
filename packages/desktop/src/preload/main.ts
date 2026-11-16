@@ -203,6 +203,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   knowledgeRepoGetAssignment: (memberKey: string) => ipcRenderer.invoke('knowledgeRepo:getAssignment', memberKey),
   knowledgeRepoSetAssignment: (params: unknown) => ipcRenderer.invoke('knowledgeRepo:setAssignment', params),
   knowledgeRepoListAssignments: () => ipcRenderer.invoke('knowledgeRepo:listAssignments'),
+  // Member Handbook APIs
+  memberHandbookGetHandbookDir: () => ipcRenderer.invoke('memberHandbook:getHandbookDir'),
+  memberHandbookSetHandbookDir: (dir: string) => ipcRenderer.invoke('memberHandbook:setHandbookDir', dir),
+  memberHandbookOpenFolder: () => ipcRenderer.invoke('memberHandbook:openFolder'),
+  memberHandbookCreate: (options: unknown) => ipcRenderer.invoke('memberHandbook:create', options),
+  memberHandbookRead: (memberKey: string, model?: string) =>
+    ipcRenderer.invoke('memberHandbook:read', memberKey, model),
+  memberHandbookUpdate: (params: unknown) => ipcRenderer.invoke('memberHandbook:update', params),
+  memberHandbookRename: (params: unknown) => ipcRenderer.invoke('memberHandbook:rename', params),
+  memberHandbookDelete: (params: unknown) => ipcRenderer.invoke('memberHandbook:delete', params),
+  memberHandbookList: () => ipcRenderer.invoke('memberHandbook:list'),
+  memberHandbookGetStatus: (params: unknown) => ipcRenderer.invoke('memberHandbook:getStatus', params),
+  memberHandbookRevert: (params: unknown) => ipcRenderer.invoke('memberHandbook:revert', params),
+  memberHandbookListHistory: (memberKey: string) => ipcRenderer.invoke('memberHandbook:listHistory', memberKey),
+  memberHandbookSetKnowledgeSection: (params: unknown) =>
+    ipcRenderer.invoke('memberHandbook:setKnowledgeSection', params),
+  memberHandbookGetInjectedBlock: (params: unknown) =>
+    ipcRenderer.invoke('memberHandbook:getInjectedBlock', params),
   // Gateway & Combos APIs
   gatewayGetStatus: () => ipcRenderer.invoke('gateway:getStatus'),
   gatewayGetAccounts: () => ipcRenderer.invoke('gateway:getAccounts'),

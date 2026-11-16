@@ -259,6 +259,52 @@ export interface ElectronBridgeAPI {
     assignment: import('../knowledgeRepo').KnowledgeAssignment;
   }) => Promise<void>;
   knowledgeRepoListAssignments?: () => Promise<Record<string, import('../knowledgeRepo').KnowledgeAssignment>>;
+  // Member Handbook APIs
+  memberHandbookGetHandbookDir?: () => Promise<string>;
+  memberHandbookSetHandbookDir?: (dir: string) => Promise<boolean>;
+  memberHandbookOpenFolder?: () => Promise<boolean>;
+  memberHandbookCreate?: (
+    options: import('../team/handbookTypes').HandbookCreateOptions
+  ) => Promise<import('../team/handbookTypes').HandbookDetail>;
+  memberHandbookRead?: (
+    memberKey: string,
+    model?: string
+  ) => Promise<import('../team/handbookTypes').HandbookDetail | null>;
+  memberHandbookUpdate?: (params: {
+    memberKey: string;
+    content: string;
+  }) => Promise<{ success: boolean; fileHash: string }>;
+  memberHandbookRename?: (params: {
+    memberKey: string;
+    newMemberName: string;
+  }) => Promise<{ success: boolean; newFileName: string; newFilePath: string }>;
+  memberHandbookDelete?: (params: {
+    memberKey: string;
+    archive?: boolean;
+  }) => Promise<{ success: boolean }>;
+  memberHandbookList?: () => Promise<import('../team/handbookTypes').HandbookDetail[]>;
+  memberHandbookGetStatus?: (params: {
+    memberKey: string;
+    memberName?: string;
+  }) => Promise<import('../team/handbookTypes').HandbookStatus>;
+  memberHandbookRevert?: (params: {
+    memberKey: string;
+    historyId: string;
+  }) => Promise<import('../team/handbookTypes').HandbookDetail>;
+  memberHandbookListHistory?: (
+    memberKey: string
+  ) => Promise<import('../team/handbookTypes').HandbookHistoryItem[]>;
+  memberHandbookSetKnowledgeSection?: (params: {
+    memberKey: string;
+    repos: import('../team/handbookTypes').HandbookAssignedRepo[];
+    digest?: string;
+  }) => Promise<{ success: boolean }>;
+  memberHandbookGetInjectedBlock?: (params: {
+    memberKey: string;
+    conversationId?: string;
+    isFirstMessage?: boolean;
+    model?: string;
+  }) => Promise<import('../team/handbookTypes').HandbookInjectionResult | null>;
   // Gateway & Combos APIs
   gatewayGetStatus?: () => Promise<{
     success: boolean;

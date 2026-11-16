@@ -2970,3 +2970,127 @@ export const org = {
     return () => {};
   },
 };
+
+export const memberHandbook = {
+  getHandbookDir: async (): Promise<string> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookGetHandbookDir) {
+      return window.electronAPI.memberHandbookGetHandbookDir();
+    }
+    return '';
+  },
+  setHandbookDir: async (dir: string): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookSetHandbookDir) {
+      return window.electronAPI.memberHandbookSetHandbookDir(dir);
+    }
+    return false;
+  },
+  openFolder: async (): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookOpenFolder) {
+      return window.electronAPI.memberHandbookOpenFolder();
+    }
+    return false;
+  },
+  create: async (
+    options: import('../types/team/handbookTypes').HandbookCreateOptions
+  ): Promise<import('../types/team/handbookTypes').HandbookDetail> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookCreate) {
+      return window.electronAPI.memberHandbookCreate(options);
+    }
+    throw new Error('memberHandbookCreate is only supported in desktop mode');
+  },
+  read: async (
+    memberKey: string,
+    model?: string
+  ): Promise<import('../types/team/handbookTypes').HandbookDetail | null> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookRead) {
+      return window.electronAPI.memberHandbookRead(memberKey, model);
+    }
+    return null;
+  },
+  update: async (params: {
+    memberKey: string;
+    content: string;
+  }): Promise<{ success: boolean; fileHash: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookUpdate) {
+      return window.electronAPI.memberHandbookUpdate(params);
+    }
+    throw new Error('memberHandbookUpdate is only supported in desktop mode');
+  },
+  rename: async (params: {
+    memberKey: string;
+    newMemberName: string;
+  }): Promise<{ success: boolean; newFileName: string; newFilePath: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookRename) {
+      return window.electronAPI.memberHandbookRename(params);
+    }
+    throw new Error('memberHandbookRename is only supported in desktop mode');
+  },
+  delete: async (params: {
+    memberKey: string;
+    archive?: boolean;
+  }): Promise<{ success: boolean }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookDelete) {
+      return window.electronAPI.memberHandbookDelete(params);
+    }
+    return { success: false };
+  },
+  list: async (): Promise<import('../types/team/handbookTypes').HandbookDetail[]> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookList) {
+      return window.electronAPI.memberHandbookList();
+    }
+    return [];
+  },
+  getStatus: async (params: {
+    memberKey: string;
+    memberName?: string;
+  }): Promise<import('../types/team/handbookTypes').HandbookStatus> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookGetStatus) {
+      return window.electronAPI.memberHandbookGetStatus(params);
+    }
+    return {
+      memberKey: params.memberKey,
+      memberName: params.memberName || 'teammate',
+      exists: false,
+      status: 'not_created',
+      reason: 'Handbook API unavailable',
+    };
+  },
+  revert: async (params: {
+    memberKey: string;
+    historyId: string;
+  }): Promise<import('../types/team/handbookTypes').HandbookDetail> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookRevert) {
+      return window.electronAPI.memberHandbookRevert(params);
+    }
+    throw new Error('memberHandbookRevert is only supported in desktop mode');
+  },
+  listHistory: async (
+    memberKey: string
+  ): Promise<import('../types/team/handbookTypes').HandbookHistoryItem[]> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookListHistory) {
+      return window.electronAPI.memberHandbookListHistory(memberKey);
+    }
+    return [];
+  },
+  setKnowledgeSection: async (params: {
+    memberKey: string;
+    repos: import('../types/team/handbookTypes').HandbookAssignedRepo[];
+    digest?: string;
+  }): Promise<{ success: boolean }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookSetKnowledgeSection) {
+      return window.electronAPI.memberHandbookSetKnowledgeSection(params);
+    }
+    return { success: false };
+  },
+  getInjectedBlock: async (params: {
+    memberKey: string;
+    conversationId?: string;
+    isFirstMessage?: boolean;
+    model?: string;
+  }): Promise<import('../types/team/handbookTypes').HandbookInjectionResult | null> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.memberHandbookGetInjectedBlock) {
+      return window.electronAPI.memberHandbookGetInjectedBlock(params);
+    }
+    return null;
+  },
+};
