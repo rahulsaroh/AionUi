@@ -19,6 +19,7 @@ import type { OrgProject, OrgHierarchy } from '@/types/organization';
 
 describe('Organization Backend Teams Integration (Real AionCore Team Engine)', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     // Reset global state to clean testing baseline
     setOrgStoreSnapshot({
       hierarchy: {
