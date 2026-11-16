@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import path from 'path';
 import type { KnowledgeRepo, EffectiveInstructionResult, TeammateCapabilityCard } from '@/common/types/knowledgeRepo';
 
 const DEFAULT_TOKEN_BUDGET = 8000; // max budget for injected knowledge repo content
@@ -22,17 +23,54 @@ export class KnowledgeRepoPromptBuilder {
     repos: KnowledgeRepo[];
     whenToUseHint?: string;
     tokenBudget?: number;
+    workingCopyPaths?: Record<string, string>;
+    isReminder?: boolean;
   }): EffectiveInstructionResult {
-    const { memberName, rolePrompt = '', repos, whenToUseHint, tokenBudget = DEFAULT_TOKEN_BUDGET } = params;
+    const {
+      memberName,
+      rolePrompt = '',
+      repos,
+      whenToUseHint,
+      tokenBudget = DEFAULT_TOKEN_BUDGET,
+      workingCopyPaths = {},
+      isReminder = false,
+    } = params;
+
+    // Filter to only trusted repos with manifests (never inject untrusted or reapproval_required)
+    const validRepos = repos.filter((r) => Boolean(r.manifest && r.trustStatus === 'trusted'));
+
+    if (validRepos.length === 0) {
+      return {
+        instructions: rolePrompt.trim(),
+        estimatedTokens: Math.ceil(rolePrompt.length / 4),
+        budgetExceeded: false,
+        budgetLimitTokens: tokenBudget,
+        conflicts: [],
+      };
+    }
+
+    // When reminder mode is active, send a concise one-line reminder with repo names
+    if (isReminder) {
+      const repoNames = validRepos.map((r) => r.name).join(', ');
+      const reminder = `[Knowledge Reminder] Active knowledge repositories: ${repoNames}. Follow their documented rules and pipelines.`;
+      return {
+        instructions: reminder,
+        estimatedTokens: Math.ceil(reminder.length / 4),
+        budgetExceeded: false,
+        budgetLimitTokens: tokenBudget,
+        conflicts: [],
+      };
+    }
 
     const conflicts: Array<{ ruleA: string; ruleB: string; resolvedInFavorOf: string }> = [];
     const seenRuleNames = new Map<string, string>(); // name -> repoId
 
-    // 1. Authoritative Playbook Preamble
+    // 1. Authoritative Playbook Preamble with mandatory read-only instruction
     const hintText = whenToUseHint ? `for ${whenToUseHint}` : 'for tasks assigned to you';
     const preamble = [
       `### Authoritative Knowledge Playbook for ${memberName}`,
       `You are operating with these repositories as your authoritative playbook ${hintText}. Follow their documented pipelines and rules step by step. Do not invent a different workflow. If a step cannot be performed, say so and ask the user instead of improvising.`,
+      `Read the skill file from the given path before doing the task. Do not modify these files.`,
       '',
     ].join('\n');
 
@@ -44,10 +82,9 @@ export class KnowledgeRepoPromptBuilder {
     let estimatedTokens = Math.ceil((preamble.length + roleSection.length) / 4);
     let budgetExceeded = false;
 
-    for (const repo of repos) {
-      if (!repo.manifest || repo.trustStatus === 'untrusted') continue;
-
-      const repoHeader = `#### Rules from Repository: ${repo.name} (ref: ${repo.ref})`;
+    for (const repo of validRepos) {
+      const workingDir = workingCopyPaths[repo.id] || repo.cachePath;
+      const repoHeader = `#### Rules from Repository: ${repo.name} (ref: ${repo.ref}, root: ${workingDir})`;
       const repoRulesText: string[] = [repoHeader];
 
       for (const rule of repo.manifest.alwaysOnRules) {
@@ -62,7 +99,8 @@ export class KnowledgeRepoPromptBuilder {
         }
         seenRuleNames.set(rule.name, repo.name);
 
-        const ruleText = `<!-- Rule: ${rule.relativePath} -->\n${rule.content}\n`;
+        const absPath = path.resolve(workingDir, rule.relativePath);
+        const ruleText = `<!-- Rule: ${rule.relativePath} (Path: ${absPath}) -->\n${rule.content}\n`;
         const ruleTokens = Math.ceil(ruleText.length / 4);
 
         if (estimatedTokens + ruleTokens > tokenBudget) {
@@ -88,19 +126,21 @@ export class KnowledgeRepoPromptBuilder {
       if (budgetExceeded) break;
     }
 
-    // 4. On-Demand Skills Index (Progressive Disclosure)
+    // 4. On-Demand Skills Index (Progressive Disclosure) with absolute paths
     const skillIndexBlocks: string[] = [];
-    for (const repo of repos) {
+    for (const repo of validRepos) {
       if (!repo.manifest?.onDemandSkills?.length) continue;
-      const skillsLines = repo.manifest.onDemandSkills.map(
-        (s) => `- \`${repo.name}/${s.name}\`: ${s.description} (File: ${s.relativePath})`
-      );
+      const workingDir = workingCopyPaths[repo.id] || repo.cachePath;
+      const skillsLines = repo.manifest.onDemandSkills.map((s) => {
+        const absSkillPath = path.resolve(workingDir, s.relativePath);
+        return `- \`${repo.name}/${s.name}\`: ${s.description} (File: ${absSkillPath})`;
+      });
       skillIndexBlocks.push(`#### Available On-Demand Skills & Pipelines (${repo.name}):\n${skillsLines.join('\n')}`);
     }
 
     const onDemandSection =
       skillIndexBlocks.length > 0
-        ? `### Available Skills & Pipelines (Read full files only when relevant):\n${skillIndexBlocks.join('\n\n')}\n\n`
+        ? `### Available Skills & Pipelines (Read the skill file from the given path before doing the task. Do not modify these files):\n${skillIndexBlocks.join('\n\n')}\n\n`
         : '';
 
     const instructions = [
@@ -134,12 +174,14 @@ export class KnowledgeRepoPromptBuilder {
     return {
       memberSlotId,
       memberName,
-      repos: repos.map((r) => ({
-        repoId: r.id,
-        repoName: r.name,
-        whenToUseHint,
-        keySkills: (r.manifest?.onDemandSkills || []).map((s) => s.name).slice(0, 10),
-      })),
+      repos: repos
+        .filter((r) => r.trustStatus === 'trusted')
+        .map((r) => ({
+          repoId: r.id,
+          repoName: r.name,
+          whenToUseHint,
+          keySkills: (r.manifest?.onDemandSkills || []).map((s) => s.name).slice(0, 10),
+        })),
     };
   }
 }

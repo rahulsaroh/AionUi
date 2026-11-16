@@ -230,6 +230,9 @@ export interface ElectronBridgeAPI {
     repoIds: string[];
     whenToUseHint?: string;
     tokenBudget?: number;
+    conversationId?: string;
+    memberKey?: string;
+    forceFullPlaybook?: boolean;
   }) => Promise<import('../knowledgeRepo').EffectiveInstructionResult>;
   knowledgeRepoBuildTeamCapabilityCards?: (
     members: Array<{

@@ -146,7 +146,7 @@ export function synthesizeOriginalRequestDoc(
 
   let repoInstructionsBlock = '';
   if (knowledgeRepoIds && knowledgeRepoIds.length > 0) {
-    const built = knowledgeRepoService.buildEffectiveInstructions({
+    const built = knowledgeRepoService.buildEffectiveInstructionsSync({
       memberName: 'Teammate',
       rolePrompt: 'Autonomous multi-agent milestone execution',
       repoIds: knowledgeRepoIds,

@@ -31,6 +31,7 @@ export class KnowledgeRepoService {
   private authTokens: Map<string, string> = new Map(); // Encrypted / session tokens
   private repoEnvVars: Map<string, Record<string, string>> = new Map(); // Encrypted per-repo env vars
   private assignments: Map<string, KnowledgeAssignment> = new Map(); // memberKey -> { repoIds, whenToUseHint }
+  private conversationInjectedShas: Map<string, Record<string, string>> = new Map(); // conversationId -> repoId: sha
   private activeAgentsRunning: Set<string> = new Set(); // repoId -> active task
   private pendingUpdates: Map<string, { newSha: string }> = new Map();
   private syncTimer: NodeJS.Timeout | null = null;
@@ -210,13 +211,24 @@ export class KnowledgeRepoService {
     try {
       const stat = await fs.stat(worktreeDir);
       if (stat.isDirectory()) {
-        return worktreeDir;
+        try {
+          const currentSha = await knowledgeRepoGitService.getHeadSha(worktreeDir);
+          if (currentSha === repo.currentCommitSha) {
+            return worktreeDir;
+          }
+        } catch {
+          // Re-create worktree on commit mismatch or stat error
+        }
       }
     } catch {
       // Create worktree
     }
 
-    await knowledgeRepoGitService.createWorktree(repo.cachePath, worktreeDir, repo.currentCommitSha);
+    try {
+      await knowledgeRepoGitService.createWorktree(repo.cachePath, worktreeDir, repo.currentCommitSha);
+    } catch {
+      await fs.mkdir(worktreeDir, { recursive: true });
+    }
     return worktreeDir;
   }
 
@@ -515,21 +527,100 @@ export class KnowledgeRepoService {
     }
   }
 
-  buildEffectiveInstructions(params: {
+  async buildEffectiveInstructions(params: {
+    conversationId?: string;
+    memberKey?: string;
     memberName: string;
     rolePrompt?: string;
     repoIds: string[];
     whenToUseHint?: string;
     tokenBudget?: number;
+    forceFullPlaybook?: boolean;
+  }): Promise<EffectiveInstructionResult> {
+    const trustedRepos = params.repoIds
+      .map((id) => this.repos.get(id))
+      .filter((r): r is KnowledgeRepo => Boolean(r && r.manifest && r.trustStatus === 'trusted'));
+
+    if (trustedRepos.length === 0) {
+      return {
+        instructions: '',
+        estimatedTokens: 0,
+        budgetExceeded: false,
+        budgetLimitTokens: params.tokenBudget || 8000,
+        conflicts: [],
+      };
+    }
+
+    const convId = params.conversationId;
+    let isReminder = false;
+
+    if (convId && !params.forceFullPlaybook) {
+      const recorded = this.conversationInjectedShas.get(convId);
+      if (recorded) {
+        const allMatch = trustedRepos.every(
+          (repo) => repo.currentCommitSha && recorded[repo.id] === repo.currentCommitSha
+        );
+        if (allMatch) {
+          isReminder = true;
+        }
+      }
+    }
+
+    // Provision project/member isolated read-only working copy for every trusted repository
+    const workingCopyPaths: Record<string, string> = {};
+    const contextKey = params.memberKey || convId || 'default';
+    for (const repo of trustedRepos) {
+      try {
+        workingCopyPaths[repo.id] = await this.provisionWorkingCopy(repo.id, contextKey);
+      } catch {
+        workingCopyPaths[repo.id] = repo.cachePath;
+      }
+    }
+
+    const result = knowledgeRepoPromptBuilder.buildInstructions({
+      memberName: params.memberName,
+      rolePrompt: params.rolePrompt,
+      repos: trustedRepos,
+      whenToUseHint: params.whenToUseHint,
+      tokenBudget: params.tokenBudget,
+      workingCopyPaths,
+      isReminder,
+    });
+
+    if (convId && !isReminder) {
+      const shas: Record<string, string> = {};
+      for (const repo of trustedRepos) {
+        if (repo.currentCommitSha) {
+          shas[repo.id] = repo.currentCommitSha;
+        }
+      }
+      this.conversationInjectedShas.set(convId, shas);
+    }
+
+    return result;
+  }
+
+  buildEffectiveInstructionsSync(params: {
+    memberName: string;
+    rolePrompt?: string;
+    repoIds: string[];
+    whenToUseHint?: string;
+    tokenBudget?: number;
+    workingCopyPaths?: Record<string, string>;
+    isReminder?: boolean;
   }): EffectiveInstructionResult {
-    const repos = params.repoIds.map((id) => this.repos.get(id)).filter((r): r is KnowledgeRepo => Boolean(r));
+    const trustedRepos = params.repoIds
+      .map((id) => this.repos.get(id))
+      .filter((r): r is KnowledgeRepo => Boolean(r && r.manifest && r.trustStatus === 'trusted'));
 
     return knowledgeRepoPromptBuilder.buildInstructions({
       memberName: params.memberName,
       rolePrompt: params.rolePrompt,
-      repos,
+      repos: trustedRepos,
       whenToUseHint: params.whenToUseHint,
       tokenBudget: params.tokenBudget,
+      workingCopyPaths: params.workingCopyPaths,
+      isReminder: params.isReminder,
     });
   }
 
@@ -544,7 +635,7 @@ export class KnowledgeRepoService {
     return teamMembers.map((member) => {
       const repos = (member.knowledgeRepoIds || [])
         .map((id) => this.repos.get(id))
-        .filter((r): r is KnowledgeRepo => Boolean(r));
+        .filter((r): r is KnowledgeRepo => Boolean(r && r.trustStatus === 'trusted'));
 
       return knowledgeRepoPromptBuilder.buildCapabilityCard({
         memberSlotId: member.slot_id,

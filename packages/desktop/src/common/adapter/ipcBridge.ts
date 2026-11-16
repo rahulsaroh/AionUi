@@ -2685,6 +2685,9 @@ export const knowledgeRepo = {
     repoIds: string[];
     whenToUseHint?: string;
     tokenBudget?: number;
+    conversationId?: string;
+    memberKey?: string;
+    forceFullPlaybook?: boolean;
   }) => {
     if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoBuildInstructions) {
       return window.electronAPI.knowledgeRepoBuildInstructions(params);

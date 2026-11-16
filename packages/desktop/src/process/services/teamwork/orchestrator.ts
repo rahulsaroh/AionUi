@@ -399,7 +399,7 @@ export class TeamworkOrchestrator {
           const repoIds = session.knowledgeRepoIds || [];
           let effectiveInstructions: string | undefined;
           if (repoIds.length > 0) {
-            const instrResult = knowledgeRepoService.buildEffectiveInstructions({
+            const instrResult = await knowledgeRepoService.buildEffectiveInstructions({
               memberName: 'Worker',
               rolePrompt: 'Targeted file generation, editing, refactoring, and feature implementation per milestone.',
               repoIds,

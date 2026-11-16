@@ -9,6 +9,31 @@ function isWithinRoot(target: string, root: string): boolean {
   return normTarget === normRoot || normTarget.startsWith(normRoot + path.sep);
 }
 
+function getKnowledgeWorktreesDir(): string[] {
+  const paths: string[] = [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require('electron');
+    if (electron.app?.getPath) {
+      paths.push(path.join(electron.app.getPath('userData'), 'knowledge_worktrees'));
+      paths.push(path.join(electron.app.getPath('userData'), 'knowledge_repos'));
+    }
+  } catch {
+    // Ignore when running outside Electron main process
+  }
+  paths.push(path.join(process.cwd(), '.cache', 'knowledge_worktrees'));
+  paths.push(path.join(process.cwd(), '.cache', 'knowledge_repos'));
+  return paths;
+}
+
+function isKnowledgeWorktreePath(target: string): boolean {
+  const dirs = getKnowledgeWorktreesDir();
+  for (const d of dirs) {
+    if (isWithinRoot(target, d)) return true;
+  }
+  return target.toLowerCase().includes('knowledge_worktrees') || target.toLowerCase().includes('knowledge_repos');
+}
+
 /**
  * Resolve symlinks for a path that may not exist yet by realpath-ing the nearest
  * existing ancestor and appending the remaining segments. This prevents symlink
@@ -38,7 +63,11 @@ function resolveWithExistingParent(targetPath: string): string {
   }
 }
 
-export async function assertWithinScope(targetPath: string, allowedRoot: string): Promise<ScopeCheckResult> {
+export async function assertWithinScope(
+  targetPath: string,
+  allowedRoot: string,
+  options?: { allowReadOnlyKnowledge?: boolean; isReadOnly?: boolean }
+): Promise<ScopeCheckResult> {
   if (!targetPath || !allowedRoot) {
     return { allowed: false, reason: 'empty path', resolved: targetPath };
   }
@@ -64,5 +93,10 @@ export async function assertWithinScope(targetPath: string, allowedRoot: string)
   if (isWithinRoot(realTarget, realRoot)) {
     return { allowed: true, resolved: realTarget };
   }
+
+  if ((options?.allowReadOnlyKnowledge || options?.isReadOnly) && isKnowledgeWorktreePath(realTarget)) {
+    return { allowed: true, resolved: realTarget };
+  }
+
   return { allowed: false, reason: 'path outside allowed root', resolved: realTarget };
 }

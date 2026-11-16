@@ -23,7 +23,10 @@ import { getBuiltinMcpScriptPath } from '../utils/initStorage';
 export function registerOrgBridge(): void {
   ipcMain.handle(
     'org:assertWithinScope',
-    async (_event, params: { targetPath: string; allowedRoot?: string }): Promise<ScopeCheckResult> => {
+    async (
+      _event,
+      params: { targetPath: string; allowedRoot?: string; isReadOnly?: boolean }
+    ): Promise<ScopeCheckResult> => {
       try {
         if (
           !params ||
@@ -42,7 +45,7 @@ export function registerOrgBridge(): void {
         // Enforce main-process master root. The allowedRoot parameter is kept for backward
         // compatibility but cannot widen scope; if valid, it may only narrow it.
         const effectiveRoot = await resolveEffectiveScope(params.allowedRoot);
-        return await assertWithinScope(params.targetPath, effectiveRoot);
+        return await assertWithinScope(params.targetPath, effectiveRoot, { isReadOnly: params.isReadOnly });
       } catch (err) {
         return {
           allowed: false,
@@ -415,7 +418,7 @@ export function registerOrgBridge(): void {
     if (!masterRoot) {
       throw new Error('No master root configured');
     }
-    const check = await assertWithinScope(params.targetFilePath, masterRoot);
+    const check = await assertWithinScope(params.targetFilePath, masterRoot, { isReadOnly: true });
     if (!check.allowed) {
       throw new Error(`Cannot approve file read outside master root: ${params.targetFilePath}`);
     }

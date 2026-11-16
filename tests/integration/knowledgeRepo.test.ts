@@ -438,7 +438,7 @@ describe('Knowledge Repos Integration & Safety Tests', () => {
     (service as unknown as { repos: Map<string, typeof repo> }).repos.set('repo-subagent-1', repo);
 
     // Call buildEffectiveInstructions
-    const result = service.buildEffectiveInstructions({
+    const result = await service.buildEffectiveInstructions({
       memberName: 'Worker',
       rolePrompt: 'Primary coding and implementation agent',
       repoIds: ['repo-subagent-1'],
@@ -450,6 +450,102 @@ describe('Knowledge Repos Integration & Safety Tests', () => {
     expect(result.instructions).toContain('Rule 1: Always follow the pipeline step by step.');
     expect(result.instructions).toContain('Available Skills & Pipelines');
     expect(result.instructions).toContain('explainer-video');
+    expect(result.instructions).toContain(
+      'Read the skill file from the given path before doing the task. Do not modify these files.'
+    );
+    expect(result.instructions).toMatch(/File: [^)]+SKILL\.md/);
+  });
+
+  it('enforces injection policy: full playbook on first turn, reminder on subsequent turn, and re-injection on commit update', async () => {
+    const repo = {
+      id: 'repo-inject-1',
+      name: 'GuideRepo',
+      gitUrl: 'https://github.com/org/guiderepo',
+      ref: 'main',
+      cachePath: path.join(tempDir, 'remote-work'),
+      currentCommitSha: 'sha_v1',
+      syncStatus: 'idle' as const,
+      updatePolicy: 'auto' as const,
+      trustStatus: 'trusted' as const,
+      manifest: {
+        alwaysOnRules: [{ id: 'r1', name: 'Rule 1', relativePath: 'RULE.md', content: 'Follow guidelines', sizeBytes: 50, priority: 1 }],
+        onDemandSkills: [{ id: 's1', name: 'skill-alpha', description: 'Alpha workflow', relativePath: 'skills/alpha/SKILL.md' }],
+        setupFiles: [],
+        estimatedTokens: 100,
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    (service as unknown as { repos: Map<string, typeof repo> }).repos.set('repo-inject-1', repo);
+
+    const convId = 'conv-test-123';
+
+    // 1. First message: receives full playbook
+    const turn1 = await service.buildEffectiveInstructions({
+      conversationId: convId,
+      memberName: 'DevAgent',
+      repoIds: ['repo-inject-1'],
+    });
+    expect(turn1.instructions).toContain('Authoritative Knowledge Playbook for DevAgent');
+    expect(turn1.instructions).toContain('Read the skill file from the given path before doing the task');
+    expect(turn1.instructions).toContain('GuideRepo');
+    expect(turn1.instructions).toContain('skill-alpha');
+
+    // 2. Second message on same conversation without repo update: receives one-line reminder
+    const turn2 = await service.buildEffectiveInstructions({
+      conversationId: convId,
+      memberName: 'DevAgent',
+      repoIds: ['repo-inject-1'],
+    });
+    expect(turn2.instructions).toContain('[Knowledge Reminder]');
+    expect(turn2.instructions).toContain('GuideRepo');
+    expect(turn2.instructions).not.toContain('### Authoritative Knowledge Playbook');
+
+    // 3. Update repo commit SHA (simulate git auto-update)
+    repo.currentCommitSha = 'sha_v2';
+
+    // 4. Third message after commit update: full playbook is re-injected
+    const turn3 = await service.buildEffectiveInstructions({
+      conversationId: convId,
+      memberName: 'DevAgent',
+      repoIds: ['repo-inject-1'],
+    });
+    expect(turn3.instructions).toContain('### Authoritative Knowledge Playbook for DevAgent');
+    expect(turn3.instructions).toContain('skill-alpha');
+    expect(turn3.instructions).not.toContain('[Knowledge Reminder]');
+
+    // 5. Untrusted or reapproval_required repos are NEVER injected
+    repo.trustStatus = 'untrusted';
+    const untrustedRes = await service.buildEffectiveInstructions({
+      conversationId: 'conv-untrusted',
+      memberName: 'DevAgent',
+      repoIds: ['repo-inject-1'],
+    });
+    expect(untrustedRes.instructions).toBe('');
+
+    repo.trustStatus = 'reapproval_required';
+    const reapprovalRes = await service.buildEffectiveInstructions({
+      conversationId: 'conv-reapproval',
+      memberName: 'DevAgent',
+      repoIds: ['repo-inject-1'],
+    });
+    expect(reapprovalRes.instructions).toBe('');
+  });
+
+  it('allows read-only access to knowledge worktrees under org pathGuard', async () => {
+    const { assertWithinScope } = await import('@/process/services/org/pathGuard');
+    const masterRoot = path.join(tempDir, 'org-root');
+    await fs.mkdir(masterRoot, { recursive: true });
+
+    // Path outside root should be blocked for normal access
+    const outsidePath = path.join(tempDir, 'outside', 'file.txt');
+    const normalCheck = await assertWithinScope(outsidePath, masterRoot);
+    expect(normalCheck.allowed).toBe(false);
+
+    // Path in knowledge_worktrees should be allowed when read-only
+    const knowledgeWorktreeFile = path.join(tempDir, 'knowledge_worktrees', 'repo_1', 'SKILL.md');
+    const readOnlyKnowledgeCheck = await assertWithinScope(knowledgeWorktreeFile, masterRoot, { isReadOnly: true });
+    expect(readOnlyKnowledgeCheck.allowed).toBe(true);
   });
 
   it('persists member assignments across restarts and handles dangling repo IDs', async () => {
