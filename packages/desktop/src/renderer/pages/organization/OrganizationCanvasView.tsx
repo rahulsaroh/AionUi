@@ -659,7 +659,7 @@ const CanvasInner: React.FC = () => {
   return (
     <div
       ref={canvasContainerRef}
-      className='relative size-full overflow-hidden'
+      className='org-canvas-container relative size-full overflow-hidden'
       style={{
         background: 'radial-gradient(ellipse at 50% 15%, #0d1a38 0%, #070c1a 60%, #030712 100%)',
       }}

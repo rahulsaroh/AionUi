@@ -188,3 +188,35 @@
     stroke-dasharray: none !important;
   }
 }
+
+/* Light Theme Contrast Enhancements */
+body[arco-theme='light'] .org-canvas-container {
+  background: radial-gradient(ellipse at 50% 15%, #e0e7ff 0%, #cbd5e1 60%, #94a3b8 100%) !important;
+}
+
+body[arco-theme='light'] .org-canvas-container .bg-slate-900\/80,
+body[arco-theme='light'] .org-canvas-container .bg-slate-900\/90,
+body[arco-theme='light'] .org-canvas-container .bg-slate-950\/85,
+body[arco-theme='light'] .org-canvas-container .bg-slate-900\/95 {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  color: #0f172a !important;
+  border-color: rgba(148, 163, 184, 0.5) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+body[arco-theme='light'] .org-canvas-container .text-slate-100,
+body[arco-theme='light'] .org-canvas-container .text-slate-200 {
+  color: #0f172a !important;
+}
+
+body[arco-theme='light'] .org-canvas-container .text-slate-300,
+body[arco-theme='light'] .org-canvas-container .text-slate-400 {
+  color: #334155 !important;
+}
+
+body[arco-theme='light'] .org-canvas-container .bg-slate-800\/60,
+body[arco-theme='light'] .org-canvas-container .bg-slate-800\/80,
+body[arco-theme='light'] .org-canvas-container .bg-slate-800\/40,
+body[arco-theme='light'] .org-canvas-container .bg-slate-900\/60 {
+  background-color: rgba(241, 245, 249, 0.92) !important;
+}
