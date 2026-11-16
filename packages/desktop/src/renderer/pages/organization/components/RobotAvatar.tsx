@@ -72,19 +72,20 @@ export const RobotAvatar: React.FC<RobotAvatarProps> = ({
         <rect x='30.5' y='18' width='2.5' height='7' rx='1' fill={accentColor} opacity='0.8' />
 
         {/* Robot Head Outer Box */}
-        <rect
-          x='10'
-          y='12'
-          width='20'
-          height='18'
-          rx='4'
-          fill='#1E293B'
-          stroke={accentColor}
-          strokeWidth='1.5'
-        />
+        <rect x='10' y='12' width='20' height='18' rx='4' fill='#1E293B' stroke={accentColor} strokeWidth='1.5' />
 
         {/* Visor Area */}
-        <rect x='13' y='16' width='14' height='6' rx='2.5' fill='#0B1120' stroke={accentColor} strokeWidth='0.8' strokeOpacity='0.6' />
+        <rect
+          x='13'
+          y='16'
+          width='14'
+          height='6'
+          rx='2.5'
+          fill='#0B1120'
+          stroke={accentColor}
+          strokeWidth='0.8'
+          strokeOpacity='0.6'
+        />
 
         {/* Expressive Glowing Eyes */}
         <circle cx='16.5' cy='19' r='1.8' fill={accentColor}>
@@ -95,9 +96,36 @@ export const RobotAvatar: React.FC<RobotAvatarProps> = ({
         </circle>
 
         {/* Mouth Grille */}
-        <line x1='15' y1='26' x2='17' y2='26' stroke={accentColor} strokeWidth='1' strokeLinecap='round' opacity='0.7' />
-        <line x1='19' y1='26' x2='21' y2='26' stroke={accentColor} strokeWidth='1' strokeLinecap='round' opacity='0.7' />
-        <line x1='23' y1='26' x2='25' y2='26' stroke={accentColor} strokeWidth='1' strokeLinecap='round' opacity='0.7' />
+        <line
+          x1='15'
+          y1='26'
+          x2='17'
+          y2='26'
+          stroke={accentColor}
+          strokeWidth='1'
+          strokeLinecap='round'
+          opacity='0.7'
+        />
+        <line
+          x1='19'
+          y1='26'
+          x2='21'
+          y2='26'
+          stroke={accentColor}
+          strokeWidth='1'
+          strokeLinecap='round'
+          opacity='0.7'
+        />
+        <line
+          x1='23'
+          y1='26'
+          x2='25'
+          y2='26'
+          stroke={accentColor}
+          strokeWidth='1'
+          strokeLinecap='round'
+          opacity='0.7'
+        />
       </svg>
     </div>
   );

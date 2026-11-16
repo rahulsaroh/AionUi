@@ -38,11 +38,7 @@ export const SharedMemberNode: React.FC<{ data: SharedMemberNodeData; selected?:
         onHover={data.onHoverMember}
         onClick={() => data.onSelectMember?.(data.member.id)}
       />
-      <Handle
-        type='target'
-        position={Position.Bottom}
-        className='!opacity-0 !pointer-events-none'
-      />
+      <Handle type='target' position={Position.Bottom} className='!opacity-0 !pointer-events-none' />
     </div>
   );
 };

@@ -43,6 +43,8 @@ import OrgCanvasLegend from './components/OrgCanvasLegend';
 import { layoutOrgChart } from './utils/layoutOrgChart';
 import { generateSharedMemberTethers } from './utils/orgTethers';
 import { createDepartmentShell, createTeamShell } from './utils/orgCoherence';
+import './orgGlow.css';
+import { computeOrgStatusPropagation } from './utils/orgStatusPropagation';
 import { useOrgStore } from './store/useOrgStore';
 import type { OrgProject, RootCEO, OrgAgentMember } from '@/types/organization';
 
@@ -80,6 +82,7 @@ const CanvasInner: React.FC = () => {
     updateDepartment,
     updateTeamNode,
     projects,
+    nodeStatuses,
     setOrgViewMode,
     setSelectedConversationId,
   } = useOrgStore();
@@ -146,6 +149,12 @@ const CanvasInner: React.FC = () => {
 
     return { sharedCountsMap: counts, agentLocationMap: locations, sharedPoolMembers: pool };
   }, [hierarchy]);
+
+  // Compute live upward propagation of working and error states
+  const propagation = useMemo(
+    () => computeOrgStatusPropagation(hierarchy, projects, nodeStatuses),
+    [hierarchy, projects, nodeStatuses]
+  );
 
   const handleToggleCollapse = useCallback((deptId: string) => {
     setCollapsedBranchIds((prev) => {
@@ -245,6 +254,7 @@ const CanvasInner: React.FC = () => {
       data: {
         rootCeo: hierarchy.rootCeo,
         orientation: direction,
+        isDescendantWorking: propagation.workingNodeIds.has(hierarchy.rootCeo.id),
         onDispatchToCeo: handleDispatchToCeo,
         onSelectNode: (id: string, type: 'ceo') => handleSelectNode(id, type),
         onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
@@ -268,6 +278,7 @@ const CanvasInner: React.FC = () => {
           deptIndex: deptIdx,
           isCollapsed: isDeptCollapsed,
           orientation: direction,
+          isDescendantWorking: propagation.workingNodeIds.has(dept.id),
           onToggleCollapse: handleToggleCollapse,
           onAddSubTeam: (deptId: string) => {
             addSubTeam(
@@ -295,8 +306,7 @@ const CanvasInner: React.FC = () => {
           },
         },
         position: { x: 0, y: 0 },
-        className:
-          focusedNodeId === dept.id ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-slate-950' : undefined,
+        className: focusedNodeId === dept.id ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-slate-950' : undefined,
       });
 
       rawEdges.push({
@@ -320,6 +330,7 @@ const CanvasInner: React.FC = () => {
               project: proj,
               department: dept,
               orientation: direction,
+              isDescendantWorking: propagation.workingNodeIds.has(`project-${proj.id}`),
               onSelectNode: (id: string, _type: 'project') => {
                 const cleanId = id.replace(/^project-/, '');
                 handleSelectNode(cleanId, 'project');
@@ -343,9 +354,7 @@ const CanvasInner: React.FC = () => {
           });
 
           // Tier 4: Team node(s) under this project
-          const projectTeams = dept.teams.filter(
-            (t) => proj.teamIds?.includes(t.id) || t.linkedProjectId === proj.id
-          );
+          const projectTeams = dept.teams.filter((t) => proj.teamIds?.includes(t.id) || t.linkedProjectId === proj.id);
 
           projectTeams.forEach((team) => {
             placedTeamIds.add(team.id);
@@ -357,6 +366,7 @@ const CanvasInner: React.FC = () => {
                 departmentName: dept.name,
                 orientation: direction,
                 sharedCountsMap,
+                isDescendantWorking: propagation.workingNodeIds.has(team.id),
                 onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
                 onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
                 onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'team'),
@@ -372,9 +382,7 @@ const CanvasInner: React.FC = () => {
               },
               position: { x: 0, y: 0 },
               className:
-                focusedNodeId === team.id
-                  ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
-                  : undefined,
+                focusedNodeId === team.id ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : undefined,
             });
 
             rawEdges.push({
@@ -398,6 +406,7 @@ const CanvasInner: React.FC = () => {
               departmentName: dept.name,
               orientation: direction,
               sharedCountsMap,
+              isDescendantWorking: propagation.workingNodeIds.has(team.id),
               onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
               onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
               onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'team'),
@@ -413,9 +422,7 @@ const CanvasInner: React.FC = () => {
             },
             position: { x: 0, y: 0 },
             className:
-              focusedNodeId === team.id
-                ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
-                : undefined,
+              focusedNodeId === team.id ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : undefined,
           });
 
           rawEdges.push({
@@ -451,7 +458,6 @@ const CanvasInner: React.FC = () => {
           },
           position: { x: 0, y: 0 },
         });
-
       });
 
       // Generate tethers cleanly connecting each shared member to their teams
@@ -474,6 +480,7 @@ const CanvasInner: React.FC = () => {
     sharedCountsMap,
     agentLocationMap,
     sharedPoolMembers,
+    propagation,
     handleToggleCollapse,
     handleSelectNode,
     handleDispatchToCeo,
@@ -512,19 +519,22 @@ const CanvasInner: React.FC = () => {
     return edgeSet;
   }, [hoveredNodeId, edges]);
 
-  // Derived edges with path highlighting and tether focus
+  // Derived edges with path highlighting, working glow, and tether focus
   const displayEdges = useMemo(() => {
     return edges.map((edge) => {
       if (edge.type === 'delegation') {
         const isPathHighlighted = highlightedEdgeIdSet.has(edge.id);
-        const isDimmed = Boolean(hoveredNodeId) && !isPathHighlighted;
+        const isWorkingPath = propagation.workingEdgeIds.has(edge.id);
+        const isDimmed = Boolean(hoveredNodeId) && !isPathHighlighted && !isWorkingPath;
         return {
           ...edge,
-          zIndex: isPathHighlighted ? 10 : 1,
+          zIndex: isPathHighlighted ? 10 : isWorkingPath ? 6 : 1,
           data: {
             ...edge.data,
             isPathHighlighted,
             isDimmed,
+            isWorkingPath,
+            exceedsAnimationLimit: propagation.exceedsAnimationLimit,
           },
         };
       }
@@ -532,21 +542,23 @@ const CanvasInner: React.FC = () => {
       if (edge.type === 'tether') {
         const edgeCanonicalId = (edge.data as any)?.canonicalId;
         const isHighlighted = Boolean(activeSharedAgentId && edgeCanonicalId === activeSharedAgentId);
-        const isDimmed = Boolean(activeSharedAgentId && edgeCanonicalId !== activeSharedAgentId);
+        const isWorkingTether = propagation.workingEdgeIds.has(edge.id);
+        const isDimmed = Boolean(activeSharedAgentId && edgeCanonicalId !== activeSharedAgentId) && !isWorkingTether;
         return {
           ...edge,
-          zIndex: isHighlighted ? 8 : -1,
+          zIndex: isHighlighted ? 8 : isWorkingTether ? 5 : -1,
           data: {
             ...edge.data,
             isHighlighted,
             isDimmed,
+            isWorking: isWorkingTether,
           },
         };
       }
 
       return edge;
     });
-  }, [edges, highlightedEdgeIdSet, hoveredNodeId, activeSharedAgentId]);
+  }, [edges, highlightedEdgeIdSet, hoveredNodeId, activeSharedAgentId, propagation]);
 
   // Center canvas on the focused node when sidebar-driven selection changes
   useEffect(() => {

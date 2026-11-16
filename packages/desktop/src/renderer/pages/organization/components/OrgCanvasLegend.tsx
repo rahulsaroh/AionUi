@@ -34,31 +34,19 @@ export const OrgCanvasLegend: React.FC = () => {
         {/* Project */}
         <div className='flex items-center gap-5px'>
           <span className='size-8px rounded-full bg-purple-400 shadow-[0_0_8px_#A855F7]' />
-          <span className='text-slate-300'>
-            {t('team.organization.legendProject', { defaultValue: 'Project' })}
-          </span>
+          <span className='text-slate-300'>{t('team.organization.legendProject', { defaultValue: 'Project' })}</span>
         </div>
 
         {/* Team */}
         <div className='flex items-center gap-5px'>
           <span className='size-8px rounded-full bg-emerald-400 shadow-[0_0_8px_#34D399]' />
-          <span className='text-slate-300'>
-            {t('team.organization.legendTeam', { defaultValue: 'Team' })}
-          </span>
+          <span className='text-slate-300'>{t('team.organization.legendTeam', { defaultValue: 'Team' })}</span>
         </div>
 
         {/* Dashed Tether Line */}
         <div className='flex items-center gap-6px'>
           <svg width='20' height='6' className='overflow-visible'>
-            <line
-              x1='0'
-              y1='3'
-              x2='20'
-              y2='3'
-              stroke='#818CF8'
-              strokeWidth='2'
-              strokeDasharray='4 2'
-            />
+            <line x1='0' y1='3' x2='20' y2='3' stroke='#818CF8' strokeWidth='2' strokeDasharray='4 2' />
           </svg>
           <span className='text-indigo-300 text-9px'>
             {t('team.organization.legendShared', { defaultValue: 'Works in multiple areas' })}

@@ -28,7 +28,15 @@ export interface RootCeoNodeData {
 
 export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }> = ({ data, selected = false }) => {
   const { t } = useTranslation();
-  const { rootCeo, orientation = 'TB', isDescendantWorking, onDispatchToCeo, onSelectNode, onSetFolder, onEditCeo } = data;
+  const {
+    rootCeo,
+    orientation = 'TB',
+    isDescendantWorking,
+    onDispatchToCeo,
+    onSelectNode,
+    onSetFolder,
+    onEditCeo,
+  } = data;
   const { nodeStatuses, isSimulating, updateAgentModel } = useOrgStore();
 
   const currentStatus: OrgNodeStatus = nodeStatuses[rootCeo.id] || rootCeo.status || 'idle';
@@ -38,9 +46,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
   const sourceHandlePos = orientation === 'LR' ? Position.Right : Position.Bottom;
 
   const cyanBorder = TIER_NEON_THEMES.ceo.border;
-  const cyanGlow = isWorking
-    ? '0 0 24px rgba(6, 182, 212, 0.65), 0 0 4px #06B6D4'
-    : '0 0 16px rgba(6, 182, 212, 0.35)';
+  const cyanGlow = isWorking ? '0 0 24px rgba(6, 182, 212, 0.65), 0 0 4px #06B6D4' : '0 0 16px rgba(6, 182, 212, 0.35)';
 
   return (
     <div
@@ -132,9 +138,7 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
         <div className='flex items-center justify-between gap-8px px-8px py-4px rounded-8px bg-slate-800/50 border border-slate-700/60 text-11px'>
           <div className='flex items-center gap-6px text-slate-300 truncate'>
             <Lightning size={12} className='text-cyan-400 shrink-0' />
-            <span className='truncate text-10px font-mono'>
-              {rootCeo.ceoAgent.title || 'Executive Command'}
-            </span>
+            <span className='truncate text-10px font-mono'>{rootCeo.ceoAgent.title || 'Executive Command'}</span>
           </div>
           <div className='shrink-0' onClick={(e) => e.stopPropagation()}>
             <OrgModelSelector
@@ -193,7 +197,11 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
             style={{ backgroundColor: isWorking ? '#06B6D4' : theme.borderColor }}
           />
           <span className='truncate text-slate-300'>
-            {isSimulating ? 'Autonomous delegation in flight' : isWorking ? 'Coordinating Organization' : 'Ready for directives'}
+            {isSimulating
+              ? 'Autonomous delegation in flight'
+              : isWorking
+                ? 'Coordinating Organization'
+                : 'Ready for directives'}
           </span>
         </div>
         <span className='text-slate-500 shrink-0'>

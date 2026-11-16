@@ -43,10 +43,17 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
     (selectedCanonicalAgentId && selectedCanonicalAgentId === member.canonicalAgentId);
 
   // Check live status
-  const currentStatus: OrgNodeStatus = nodeStatuses[member.id] || member.status || 'idle';
+  const currentStatus: OrgNodeStatus =
+    nodeStatuses[member.id] || nodeStatuses[member.canonicalAgentId] || member.status || 'idle';
   const effectiveStatus = computeLifecycleStatus(member.lastActiveAt, currentStatus);
   const theme = ORG_THEME_PALETTE[effectiveStatus];
+
   const isWorking = effectiveStatus === 'working';
+  const isError = effectiveStatus === 'error';
+  const isQueued = effectiveStatus === 'queued_next';
+  const isFinished = effectiveStatus === 'recently_finished';
+  const isDormant = effectiveStatus === 'dormant';
+
   const memberAccent = getMemberAccentColor(member.canonicalAgentId || member.id);
 
   // If busy in another department
@@ -80,12 +87,24 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
         </span>
       )}
       {isBusyElsewhere && (
-        <span className='text-emerald-400 font-semibold text-10px'>Busy working in [{member.busyInDepartmentName}]</span>
+        <span className='text-emerald-400 font-semibold text-10px'>
+          Busy working in [{member.busyInDepartmentName}]
+        </span>
       )}
       <div className='flex items-center gap-4px text-10px text-t-tertiary mt-2px'>
         <span
           className='size-6px rounded-full'
-          style={{ backgroundColor: isWorking ? '#34D399' : theme.borderColor }}
+          style={{
+            backgroundColor: isWorking
+              ? memberAccent
+              : isError
+                ? '#EF4444'
+                : isQueued
+                  ? '#F59E0B'
+                  : isFinished
+                    ? '#10B981'
+                    : theme.borderColor,
+          }}
         />
         <span className='capitalize'>Status: {isWorking ? 'Working' : theme.label}</span>
       </div>
@@ -94,6 +113,12 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
 
   // Card Variant: Used in bottom strip for shared members
   if (variant === 'card') {
+    let glowClass = '';
+    if (isWorking) glowClass = 'org-glow-working';
+    else if (isError) glowClass = 'org-glow-error';
+    else if (isQueued) glowClass = 'org-glow-queued';
+    else if (isFinished) glowClass = 'org-glow-finished';
+
     return (
       <Tooltip content={tooltipContent} position='top'>
         <div
@@ -104,15 +129,20 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
             onClick?.(member.canonicalAgentId);
           }}
           style={{
-            borderColor: isHighlighted ? memberAccent : `${memberAccent}88`,
-            boxShadow: isHighlighted
-              ? `0 0 20px ${memberAccent}88, inset 0 0 12px ${memberAccent}22`
-              : `0 0 10px ${memberAccent}33`,
-            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            borderColor: isError ? '#EF4444' : isWorking || isHighlighted ? memberAccent : `${memberAccent}88`,
+            boxShadow: isWorking
+              ? `0 0 22px ${memberAccent}, inset 0 0 8px ${memberAccent}33`
+              : isHighlighted
+                ? `0 0 20px ${memberAccent}88, inset 0 0 12px ${memberAccent}22`
+                : `0 0 10px ${memberAccent}33`,
+            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+            opacity: isDormant ? 0.55 : 1,
+            ['--glow-color' as any]: memberAccent,
+            ['--avatar-glow' as any]: memberAccent,
           }}
           className={`relative w-220px p-10px rounded-12px cursor-pointer select-none backdrop-blur-md border border-solid transition-all duration-300 flex flex-col gap-6px ${
             isHighlighted ? 'scale-105 z-20' : 'hover:scale-102'
-          }`}
+          } ${glowClass}`}
         >
           {/* Top handle for upward tether edges */}
           <Handle
@@ -124,25 +154,37 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
 
           <div className='flex items-center gap-8px min-w-0'>
             <div
-              className='relative rounded-full p-2px transition-all duration-300'
+              className={`relative rounded-full p-2px transition-all duration-300 ${
+                isWorking ? 'org-glow-avatar-working' : ''
+              }`}
               style={{
-                border: `1.5px solid ${memberAccent}`,
-                boxShadow: isWorking ? `0 0 10px ${memberAccent}` : undefined,
+                border: `1.5px solid ${isError ? '#EF4444' : memberAccent}`,
+                boxShadow: isWorking ? `0 0 12px ${memberAccent}` : undefined,
+                ['--avatar-glow' as any]: memberAccent,
               }}
             >
               <RobotAvatar
                 name={member.name}
                 icon={member.icon}
                 size={28}
-                accentColor={memberAccent}
+                accentColor={isError ? '#EF4444' : memberAccent}
                 isWorking={isWorking}
               />
             </div>
 
             <div className='flex flex-col min-w-0 flex-1'>
-              <span className='text-12px font-bold text-slate-100 truncate' title={member.name}>
-                {member.name}
-              </span>
+              <div className='flex items-center gap-4px min-w-0'>
+                <span className='text-12px font-bold text-slate-100 truncate' title={member.name}>
+                  {member.name}
+                </span>
+                {isWorking && (
+                  <span className='org-typing-dots'>
+                    <span className='org-typing-dot' style={{ backgroundColor: memberAccent }} />
+                    <span className='org-typing-dot' style={{ backgroundColor: memberAccent }} />
+                    <span className='org-typing-dot' style={{ backgroundColor: memberAccent }} />
+                  </span>
+                )}
+              </div>
               <span className='text-10px text-slate-400 truncate'>{member.title || member.role}</span>
             </div>
 
@@ -153,7 +195,7 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
                 color: memberAccent,
                 backgroundColor: `${memberAccent}18`,
               }}
-              className='text-9px font-semibold px-4px py-0 rounded shrink-0'
+              className='text-9px font-semibold px-4px py-0 rounded shrink-0 font-mono'
             >
               Shared
             </Tag>
@@ -184,6 +226,12 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
   }
 
   // Chip Variant: Used in TeamNode cards
+  let chipGlowClass = '';
+  if (isWorking) chipGlowClass = 'org-glow-avatar-working';
+  else if (isError) chipGlowClass = 'org-glow-error';
+  else if (isQueued) chipGlowClass = 'org-glow-queued';
+  else if (isFinished) chipGlowClass = 'org-glow-finished';
+
   return (
     <Tooltip content={tooltipContent} position='top'>
       <div
@@ -198,28 +246,37 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
           onClick?.(member.canonicalAgentId);
         }}
         style={{
-          borderColor: isHighlighted ? memberAccent : isShared ? `${memberAccent}88` : theme.borderColor,
-          backgroundColor: isHighlighted ? `${memberAccent}22` : 'rgba(15, 23, 42, 0.65)',
-          boxShadow: isHighlighted ? `0 0 12px ${memberAccent}66` : undefined,
-          opacity: theme.opacity,
+          borderColor: isError
+            ? '#EF4444'
+            : isWorking || isHighlighted
+              ? memberAccent
+              : isShared
+                ? `${memberAccent}88`
+                : theme.borderColor,
+          backgroundColor: isHighlighted || isWorking ? `${memberAccent}22` : 'rgba(15, 23, 42, 0.65)',
+          boxShadow: isWorking ? `0 0 14px ${memberAccent}` : isHighlighted ? `0 0 12px ${memberAccent}66` : undefined,
+          opacity: isDormant ? 0.55 : theme.opacity,
           transition: 'all 0.25s ease',
+          ['--avatar-glow' as any]: memberAccent,
+          ['--glow-color' as any]: memberAccent,
         }}
         className={`group relative flex items-center gap-4px p-2px pr-6px rounded-full select-none cursor-pointer border border-solid backdrop-blur-sm ${
           isHighlighted ? 'scale-108 z-10' : 'hover:scale-105'
-        }`}
+        } ${chipGlowClass}`}
       >
-        {/* Avatar with accent ring */}
+        {/* Avatar with animated accent ring when working */}
         <div
-          className='relative rounded-full'
+          className={`relative rounded-full transition-all duration-300 ${isWorking ? 'org-glow-avatar-working' : ''}`}
           style={{
-            border: isShared ? `1.5px solid ${memberAccent}` : undefined,
+            border: isShared || isWorking ? `1.5px solid ${isError ? '#EF4444' : memberAccent}` : undefined,
+            ['--avatar-glow' as any]: memberAccent,
           }}
         >
           <RobotAvatar
             name={member.name}
             icon={member.icon}
             size={20}
-            accentColor={memberAccent}
+            accentColor={isError ? '#EF4444' : memberAccent}
             isWorking={isWorking}
           />
         </div>
@@ -227,28 +284,25 @@ export const AgentMemberPill: React.FC<AgentMemberPillProps> = ({
         {/* Member Name */}
         <span
           className='max-w-72px truncate text-10px font-medium'
-          style={{ color: isHighlighted ? '#FFFFFF' : theme.textColor }}
+          style={{ color: isHighlighted || isWorking ? '#FFFFFF' : theme.textColor }}
         >
           {member.name.split(' ')[0]}
         </span>
 
         {/* Shared Link Icon */}
         {isShared && (
-          <span
-            style={{ color: memberAccent }}
-            className='flex items-center text-8px'
-            title={`Works in multiple areas`}
-          >
+          <span style={{ color: memberAccent }} className='flex items-center text-8px' title='Works in multiple areas'>
             <LinkOne size={9} theme='outline' />
           </span>
         )}
 
-        {/* Working dot indicator */}
+        {/* Animated Typing Dots Indicator */}
         {isWorking && (
-          <span
-            style={{ backgroundColor: memberAccent, boxShadow: `0 0 6px ${memberAccent}` }}
-            className='size-4px rounded-full animate-pulse shrink-0'
-          />
+          <span className='org-typing-dots ml-1px'>
+            <span className='org-typing-dot' style={{ backgroundColor: memberAccent }} />
+            <span className='org-typing-dot' style={{ backgroundColor: memberAccent }} />
+            <span className='org-typing-dot' style={{ backgroundColor: memberAccent }} />
+          </span>
         )}
       </div>
     </Tooltip>

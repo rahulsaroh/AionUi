@@ -76,9 +76,7 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
               <span className='font-bold text-12px text-slate-100 truncate' title={project.name}>
                 {project.name}
               </span>
-              <span className='text-10px text-purple-300 font-mono shrink-0 truncate max-w-100px'>
-                ({scopeText})
-              </span>
+              <span className='text-10px text-purple-300 font-mono shrink-0 truncate max-w-100px'>({scopeText})</span>
             </div>
           </div>
         </div>

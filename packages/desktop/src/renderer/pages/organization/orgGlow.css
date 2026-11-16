@@ -1,0 +1,190 @@
+/**
+ * @license
+ * Copyright 2025 AionUi (aionui.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Keyframe animations for live working glow and upward propagation */
+
+@keyframes pulseWorkingGlow {
+  0% {
+    box-shadow:
+      0 0 10px var(--glow-color, rgba(52, 211, 153, 0.4)),
+      inset 0 0 4px var(--glow-color, rgba(52, 211, 153, 0.2));
+  }
+  50% {
+    box-shadow:
+      0 0 24px var(--glow-color, rgba(52, 211, 153, 0.8)),
+      inset 0 0 10px var(--glow-color, rgba(52, 211, 153, 0.4));
+  }
+  100% {
+    box-shadow:
+      0 0 10px var(--glow-color, rgba(52, 211, 153, 0.4)),
+      inset 0 0 4px var(--glow-color, rgba(52, 211, 153, 0.2));
+  }
+}
+
+@keyframes pulseAvatarRing {
+  0% {
+    box-shadow: 0 0 0 0 var(--avatar-glow, rgba(56, 189, 248, 0.7));
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(56, 189, 248, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+}
+
+@keyframes pulseQueued {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.7);
+  }
+}
+
+@keyframes flashFinished {
+  0% {
+    box-shadow:
+      0 0 24px rgba(16, 185, 129, 0.9),
+      0 0 4px #10b981;
+    border-color: #10b981;
+  }
+  40% {
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes travelingEdgeLight {
+  from {
+    stroke-dashoffset: 32;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes tetherDash {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes typingDotPulse {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.35;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+/* Status Classes */
+.org-glow-working {
+  animation: pulseWorkingGlow 2s ease-in-out infinite;
+}
+
+.org-glow-avatar-working {
+  animation: pulseAvatarRing 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.org-glow-queued {
+  animation: pulseQueued 3s ease-in-out infinite;
+}
+
+.org-glow-finished {
+  animation: flashFinished 2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.org-glow-error {
+  box-shadow:
+    0 0 14px rgba(239, 68, 68, 0.75),
+    inset 0 0 6px rgba(239, 68, 68, 0.3) !important;
+  border-color: #ef4444 !important;
+}
+
+.org-glow-descendant-working {
+  box-shadow: 0 0 16px var(--descendant-glow, rgba(56, 189, 248, 0.45)) !important;
+}
+
+/* Edge Traveling Light */
+.org-edge-traveling {
+  stroke-dasharray: 8 6;
+  animation: travelingEdgeLight 1.2s linear infinite;
+}
+
+.org-edge-tether-active {
+  animation: tetherDash 1.2s linear infinite;
+}
+
+/* Typing / Working Indicator Dots */
+.org-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.org-typing-dot {
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  animation: typingDotPulse 1.4s infinite ease-in-out both;
+}
+
+.org-typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.org-typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.org-typing-dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+/* Accessibility: Reduced Motion fallback */
+@media (prefers-reduced-motion: reduce) {
+  .org-glow-working,
+  .org-glow-avatar-working,
+  .org-glow-queued,
+  .org-glow-finished,
+  .org-edge-traveling,
+  .org-edge-tether-active,
+  .org-typing-dot {
+    animation: none !important;
+  }
+
+  .org-glow-working {
+    box-shadow: 0 0 18px var(--glow-color, rgba(52, 211, 153, 0.7)) !important;
+  }
+
+  .org-glow-avatar-working {
+    box-shadow: 0 0 0 3px var(--avatar-glow, rgba(56, 189, 248, 0.8)) !important;
+  }
+
+  .org-glow-queued {
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.6) !important;
+  }
+
+  .org-glow-descendant-working {
+    box-shadow: 0 0 14px var(--descendant-glow, rgba(56, 189, 248, 0.45)) !important;
+  }
+
+  .org-edge-traveling {
+    stroke-dasharray: none !important;
+  }
+}

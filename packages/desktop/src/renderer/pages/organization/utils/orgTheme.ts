@@ -178,13 +178,55 @@ export interface DepartmentAccent {
 }
 
 export const DEPARTMENT_PALETTE: DepartmentAccent[] = [
-  { name: 'blue', border: '#38BDF8', glow: 'rgba(56, 189, 248, 0.35)', bg: 'rgba(14, 165, 233, 0.08)', text: '#7DD3FC' },
-  { name: 'teal', border: '#2DD4BF', glow: 'rgba(45, 212, 191, 0.35)', bg: 'rgba(20, 184, 166, 0.08)', text: '#5EEAD4' },
-  { name: 'purple', border: '#A855F7', glow: 'rgba(168, 85, 247, 0.35)', bg: 'rgba(168, 85, 247, 0.08)', text: '#D8B4FE' },
-  { name: 'emerald', border: '#34D399', glow: 'rgba(52, 211, 153, 0.35)', bg: 'rgba(16, 185, 129, 0.08)', text: '#6EE7B7' },
-  { name: 'amber', border: '#FBBF24', glow: 'rgba(251, 191, 36, 0.35)', bg: 'rgba(245, 158, 11, 0.08)', text: '#FDE68A' },
-  { name: 'rose', border: '#FB7185', glow: 'rgba(251, 113, 133, 0.35)', bg: 'rgba(244, 63, 94, 0.08)', text: '#FDA4AF' },
-  { name: 'indigo', border: '#818CF8', glow: 'rgba(129, 140, 248, 0.35)', bg: 'rgba(99, 102, 241, 0.08)', text: '#C7D2FE' },
+  {
+    name: 'blue',
+    border: '#38BDF8',
+    glow: 'rgba(56, 189, 248, 0.35)',
+    bg: 'rgba(14, 165, 233, 0.08)',
+    text: '#7DD3FC',
+  },
+  {
+    name: 'teal',
+    border: '#2DD4BF',
+    glow: 'rgba(45, 212, 191, 0.35)',
+    bg: 'rgba(20, 184, 166, 0.08)',
+    text: '#5EEAD4',
+  },
+  {
+    name: 'purple',
+    border: '#A855F7',
+    glow: 'rgba(168, 85, 247, 0.35)',
+    bg: 'rgba(168, 85, 247, 0.08)',
+    text: '#D8B4FE',
+  },
+  {
+    name: 'emerald',
+    border: '#34D399',
+    glow: 'rgba(52, 211, 153, 0.35)',
+    bg: 'rgba(16, 185, 129, 0.08)',
+    text: '#6EE7B7',
+  },
+  {
+    name: 'amber',
+    border: '#FBBF24',
+    glow: 'rgba(251, 191, 36, 0.35)',
+    bg: 'rgba(245, 158, 11, 0.08)',
+    text: '#FDE68A',
+  },
+  {
+    name: 'rose',
+    border: '#FB7185',
+    glow: 'rgba(251, 113, 133, 0.35)',
+    bg: 'rgba(244, 63, 94, 0.08)',
+    text: '#FDA4AF',
+  },
+  {
+    name: 'indigo',
+    border: '#818CF8',
+    glow: 'rgba(129, 140, 248, 0.35)',
+    bg: 'rgba(99, 102, 241, 0.08)',
+    text: '#C7D2FE',
+  },
   { name: 'cyan', border: '#22D3EE', glow: 'rgba(34, 211, 238, 0.35)', bg: 'rgba(6, 182, 212, 0.08)', text: '#67E8F9' },
 ];
 
@@ -242,4 +284,3 @@ export const TIER_NEON_THEMES = {
     text: '#6EE7B7',
   },
 };
-

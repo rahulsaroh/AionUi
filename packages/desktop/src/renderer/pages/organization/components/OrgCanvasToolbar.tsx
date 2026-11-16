@@ -4,11 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { Button, Tooltip } from '@arco-design/web-react';
-import { FullScreen, Plus, NetworkTree, Lightning, Refresh, Upload, FolderPlus, MessageOne } from '@icon-park/react';
+import React, { useCallback } from 'react';
+import { Button, Tooltip, Dropdown, Menu, Message } from '@arco-design/web-react';
+import {
+  FullScreen,
+  Plus,
+  NetworkTree,
+  Lightning,
+  Refresh,
+  Upload,
+  FolderPlus,
+  MessageOne,
+  Play,
+} from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { useOrgStore } from '../store/useOrgStore';
+import type { OrgNodeStatus } from '@/types/organization';
 
 type OrgCanvasToolbarProps = {
   direction: 'TB' | 'LR';
@@ -32,8 +43,114 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
   onOpenSeedModal,
 }) => {
   const { t } = useTranslation();
-  const { runSimulation, isSimulating, simulationStep, simulationMessage, resetToDefault, setOrgViewMode } =
-    useOrgStore();
+  const {
+    hierarchy,
+    nodeStatuses,
+    updateNodeStatus,
+    runSimulation,
+    isSimulating,
+    simulationStep,
+    simulationMessage,
+    resetToDefault,
+    setOrgViewMode,
+  } = useOrgStore();
+
+  const handleSimulateStatus = useCallback(
+    (status: OrgNodeStatus, targetShared = false) => {
+      // Find all specialist members across teams
+      const allSpecialists = hierarchy.departments.flatMap((d) =>
+        d.teams.flatMap((t) => t.specialistMembers.map((m) => ({ member: m, teamId: t.id, deptName: d.name })))
+      );
+
+      if (allSpecialists.length === 0) {
+        Message.warning('No specialist members found in hierarchy to simulate.');
+        return;
+      }
+
+      let target = allSpecialists[0];
+      if (targetShared) {
+        // Find one appearing in multiple teams
+        const counts: Record<string, number> = {};
+        allSpecialists.forEach((s) => {
+          counts[s.member.canonicalAgentId] = (counts[s.member.canonicalAgentId] || 0) + 1;
+        });
+        const sharedTarget = allSpecialists.find((s) => counts[s.member.canonicalAgentId] > 1);
+        if (sharedTarget) {
+          target = sharedTarget;
+        }
+      }
+
+      const memberId = target.member.id;
+      const canonicalId = target.member.canonicalAgentId;
+      const memberName = target.member.name;
+
+      updateNodeStatus(memberId, status);
+      if (canonicalId && canonicalId !== memberId) {
+        updateNodeStatus(canonicalId, status);
+      }
+      Message.info(`Simulated "${status}" on ${memberName} (${target.deptName})`);
+
+      // If recently_finished, return to idle after 2s
+      if (status === 'recently_finished') {
+        setTimeout(() => {
+          updateNodeStatus(memberId, 'idle');
+          if (canonicalId && canonicalId !== memberId) {
+            updateNodeStatus(canonicalId, 'idle');
+          }
+          Message.success(`${memberName} completed task, returned to idle`);
+        }, 2000);
+      }
+    },
+    [hierarchy, updateNodeStatus]
+  );
+
+  const handleClearAllSimulation = useCallback(() => {
+    Object.keys(nodeStatuses).forEach((id) => {
+      updateNodeStatus(id, 'idle');
+    });
+    Message.success('Cleared all simulated statuses. All members idle.');
+  }, [nodeStatuses, updateNodeStatus]);
+
+  const simulationMenu = (
+    <Menu className='!bg-slate-900 !border-slate-700 !text-slate-200 text-11px'>
+      <Menu.Item key='work-single' onClick={() => handleSimulateStatus('working', false)}>
+        <span className='flex items-center gap-6px'>
+          <span className='size-6px rounded-full bg-emerald-400 animate-ping' />
+          <span>Simulate Working (Pulsing Glow)</span>
+        </span>
+      </Menu.Item>
+      <Menu.Item key='work-shared' onClick={() => handleSimulateStatus('working', true)}>
+        <span className='flex items-center gap-6px'>
+          <span className='size-6px rounded-full bg-indigo-400 animate-ping' />
+          <span>Simulate Shared Working (Multi-Team Glow)</span>
+        </span>
+      </Menu.Item>
+      <Menu.Item key='queued' onClick={() => handleSimulateStatus('queued_next', false)}>
+        <span className='flex items-center gap-6px'>
+          <span className='size-6px rounded-full bg-amber-400' />
+          <span>Simulate Queued (Amber Pulse)</span>
+        </span>
+      </Menu.Item>
+      <Menu.Item key='error' onClick={() => handleSimulateStatus('error', false)}>
+        <span className='flex items-center gap-6px'>
+          <span className='size-6px rounded-full bg-rose-500' />
+          <span>Simulate Error (Static Red Glow)</span>
+        </span>
+      </Menu.Item>
+      <Menu.Item key='finished' onClick={() => handleSimulateStatus('recently_finished', false)}>
+        <span className='flex items-center gap-6px'>
+          <span className='size-6px rounded-full bg-teal-400' />
+          <span>Simulate Finished (Green Flash 2s)</span>
+        </span>
+      </Menu.Item>
+      <Menu.Item key='clear' onClick={handleClearAllSimulation} className='border-t border-slate-700'>
+        <span className='flex items-center gap-6px text-slate-400 hover:text-slate-200'>
+          <Refresh size={11} />
+          <span>Clear / Reset All to Idle</span>
+        </span>
+      </Menu.Item>
+    </Menu>
+  );
 
   return (
     <div className='absolute bottom-20px left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-8px select-none pointer-events-auto'>
@@ -105,18 +222,29 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
 
         <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
 
-        {/* Simulation & reset */}
+        {/* Dev Status Simulation Control */}
         <div className='flex items-center gap-6px'>
-          <Tooltip content='Demo animation of simulated delegation across hierarchy' position='bottom'>
+          <Dropdown droplist={simulationMenu} position='top'>
+            <Button
+              size='small'
+              type='outline'
+              className='text-12px !text-cyan-400 !border-cyan-500/50 hover:!bg-cyan-950/40 font-mono'
+              icon={<Lightning size={13} theme='outline' />}
+            >
+              Simulate Glow
+            </Button>
+          </Dropdown>
+
+          <Tooltip content='Demo autonomous delegation flow' position='bottom'>
             <Button
               size='small'
               type='primary'
               loading={isSimulating}
               className='!bg-emerald-600 hover:!bg-emerald-500 !border-none !font-medium !text-12px shadow-sm'
-              icon={<Lightning size={13} theme='outline' />}
+              icon={<Play size={12} theme='outline' />}
               onClick={() => void runSimulation()}
             >
-              {isSimulating ? `Step ${simulationStep}/4...` : 'Demo animation'}
+              {isSimulating ? `Step ${simulationStep}/4...` : 'Demo Tour'}
             </Button>
           </Tooltip>
 
@@ -137,7 +265,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
               }}
               className='text-12px'
             >
-              Reset to Blank Canvas
+              Reset
             </Button>
           </Tooltip>
         </div>

@@ -16,6 +16,7 @@ export interface DelegationEdgeData {
   isPathHighlighted?: boolean;
   isDimmed?: boolean;
   isWorkingPath?: boolean;
+  exceedsAnimationLimit?: boolean;
 }
 
 export const DelegationEdge: React.FC<EdgeProps> = ({
@@ -59,9 +60,8 @@ export const DelegationEdge: React.FC<EdgeProps> = ({
   // Department-tinted color with soft glow
   let strokeColor = isCompleted ? '#10B981' : baseColor;
   let strokeWidth = isHighlighted || isWorking ? 3 : 2;
-  let filterGlow = isHighlighted || isWorking
-    ? `drop-shadow(0 0 8px ${baseColor})`
-    : `drop-shadow(0 0 3px ${deptAccent.glow})`;
+  let filterGlow =
+    isHighlighted || isWorking ? `drop-shadow(0 0 8px ${baseColor})` : `drop-shadow(0 0 3px ${deptAccent.glow})`;
 
   if (isInFlight) {
     strokeColor = '#F59E0B';
@@ -69,13 +69,19 @@ export const DelegationEdge: React.FC<EdgeProps> = ({
     filterGlow = 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.7))';
   }
 
+  // Precedence: a working path is never dimmed below 0.85
+  const edgeOpacity = isWorking ? 1 : isDimmed ? 0.25 : 0.85;
+
   const edgeStyle: React.CSSProperties = {
     ...style,
     stroke: strokeColor,
     strokeWidth,
-    opacity: isDimmed ? 0.25 : 0.85,
+    opacity: edgeOpacity,
     strokeDasharray: isWorking || isInFlight ? '8 6' : undefined,
-    animation: isWorking || isInFlight ? 'delegationPulse 1.2s linear infinite' : undefined,
+    animation:
+      (isWorking || isInFlight) && !edgeData.exceedsAnimationLimit
+        ? 'travelingEdgeLight 1.2s linear infinite'
+        : undefined,
     filter: filterGlow,
     pointerEvents: 'none',
     transition: 'stroke 0.3s ease, stroke-width 0.3s ease, opacity 0.3s ease, filter 0.3s ease',

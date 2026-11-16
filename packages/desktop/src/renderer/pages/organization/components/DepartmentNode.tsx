@@ -7,14 +7,7 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Tag, Tooltip, Button } from '@arco-design/web-react';
-import {
-  Peoples,
-  Down,
-  Right,
-  Plus,
-  Edit,
-  FolderPlus,
-} from '@icon-park/react';
+import { Peoples, Down, Right, Plus, Edit, FolderPlus } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
 import { ORG_THEME_PALETTE, computeLifecycleStatus, getDepartmentAccent } from '../utils/orgTheme';
@@ -63,9 +56,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
   const isWorking = effectiveStatus === 'working' || isDescendantWorking;
 
   const accent = getDepartmentAccent(deptIndex, department.color);
-  const borderGlow = isWorking
-    ? `0 0 22px ${accent.glow}, 0 0 4px ${accent.border}`
-    : `0 0 14px ${accent.glow}`;
+  const borderGlow = isWorking ? `0 0 22px ${accent.glow}, 0 0 4px ${accent.border}` : `0 0 14px ${accent.glow}`;
 
   const targetHandlePos = orientation === 'LR' ? Position.Left : Position.Top;
   const sourceHandlePos = orientation === 'LR' ? Position.Right : Position.Bottom;
@@ -231,9 +222,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
             {isWorking ? 'Department Active' : isCollapsed ? 'Branch Collapsed' : 'Ready'}
           </span>
         </div>
-        <span className='text-slate-500 text-8px'>
-          {department.teams.length} Teams
-        </span>
+        <span className='text-slate-500 text-8px'>{department.teams.length} Teams</span>
       </div>
 
       <Handle

@@ -14,12 +14,15 @@ export const OrgCanvasTitleBlock: React.FC = () => {
   const { t } = useTranslation();
   const { hierarchy, updateRootCeo } = useOrgStore();
 
-  const currentOrgName = hierarchy.rootCeo.name || t('team.organization.orgTitleDefault', { defaultValue: 'AI Organization Structure' });
+  const currentOrgName =
+    hierarchy.rootCeo.name || t('team.organization.orgTitleDefault', { defaultValue: 'AI Organization Structure' });
   const [isEditing, setIsEditing] = useState(false);
   const [titleValue, setTitleValue] = useState(currentOrgName);
 
   useEffect(() => {
-    setTitleValue(hierarchy.rootCeo.name || t('team.organization.orgTitleDefault', { defaultValue: 'AI Organization Structure' }));
+    setTitleValue(
+      hierarchy.rootCeo.name || t('team.organization.orgTitleDefault', { defaultValue: 'AI Organization Structure' })
+    );
   }, [hierarchy.rootCeo.name, t]);
 
   const handleSave = () => {
@@ -69,7 +72,10 @@ export const OrgCanvasTitleBlock: React.FC = () => {
               {currentOrgName}
             </span>
             <Tooltip content='Edit Organization Title'>
-              <Edit size={12} className='text-slate-500 group-hover:text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity' />
+              <Edit
+                size={12}
+                className='text-slate-500 group-hover:text-cyan-400 opacity-60 group-hover:opacity-100 transition-opacity'
+              />
             </Tooltip>
           </div>
         )}
