@@ -194,7 +194,35 @@ describe('teamMapper', () => {
         assistant_name: 'Legacy Worker',
         status: 'pending',
         model: 'claude',
-      })
+      } as unknown as Parameters<typeof toBackendAssistant>[0])
     ).toThrow('assistant_id is required');
+  });
+
+  it('preserves knowledgeRepoIds and whenToUseHint across mapping', () => {
+    const raw = {
+      ...contextResetReady,
+      slot_id: 'slot-k',
+      conversation_id: 'conv-k',
+      role: 'teammate',
+      backend: 'claude',
+      name: 'KnowledgeWorker',
+      status: 'idle',
+      knowledgeRepoIds: ['repo-1', 'repo-2'],
+      whenToUseHint: 'video editing',
+    };
+    const mapped = fromBackendAssistant(raw);
+    expect(mapped.knowledgeRepoIds).toEqual(['repo-1', 'repo-2']);
+    expect(mapped.whenToUseHint).toBe('video editing');
+
+    const back = toBackendAssistant({
+      assistant_id: 'ast-1',
+      assistant_name: 'KnowledgeWorker',
+      role: 'teammate',
+      model: 'gpt-4',
+      knowledgeRepoIds: mapped.knowledgeRepoIds,
+      whenToUseHint: mapped.whenToUseHint,
+    });
+    expect(back.knowledgeRepoIds).toEqual(['repo-1', 'repo-2']);
+    expect(back.whenToUseHint).toBe('video editing');
   });
 });

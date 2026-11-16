@@ -200,6 +200,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   knowledgeRepoProvisionWorkingCopy: (params: unknown) =>
     ipcRenderer.invoke('knowledgeRepo:provisionWorkingCopy', params),
   knowledgeRepoSetEnvVars: (params: unknown) => ipcRenderer.invoke('knowledgeRepo:setEnvVars', params),
+  knowledgeRepoGetAssignment: (memberKey: string) => ipcRenderer.invoke('knowledgeRepo:getAssignment', memberKey),
+  knowledgeRepoSetAssignment: (params: unknown) => ipcRenderer.invoke('knowledgeRepo:setAssignment', params),
+  knowledgeRepoListAssignments: () => ipcRenderer.invoke('knowledgeRepo:listAssignments'),
   // Gateway & Combos APIs
   gatewayGetStatus: () => ipcRenderer.invoke('gateway:getStatus'),
   gatewayGetAccounts: () => ipcRenderer.invoke('gateway:getAccounts'),

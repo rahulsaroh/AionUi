@@ -93,6 +93,11 @@ export type TeammateCapabilityCard = {
   }>;
 };
 
+export type KnowledgeAssignment = {
+  repoIds: string[];
+  whenToUseHint?: string;
+};
+
 export type EffectiveInstructionResult = {
   instructions: string;
   estimatedTokens: number;

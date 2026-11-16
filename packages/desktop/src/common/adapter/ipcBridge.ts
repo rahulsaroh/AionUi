@@ -2739,6 +2739,26 @@ export const knowledgeRepo = {
     }
     throw new Error('Knowledge repos are only supported in desktop mode');
   },
+  getAssignment: async (memberKey: string): Promise<import('../types/knowledgeRepo').KnowledgeAssignment | undefined> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoGetAssignment) {
+      return window.electronAPI.knowledgeRepoGetAssignment(memberKey);
+    }
+    return undefined;
+  },
+  setAssignment: async (params: {
+    memberKey: string;
+    assignment: import('../types/knowledgeRepo').KnowledgeAssignment;
+  }): Promise<void> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoSetAssignment) {
+      return window.electronAPI.knowledgeRepoSetAssignment(params);
+    }
+  },
+  listAssignments: async (): Promise<Record<string, import('../types/knowledgeRepo').KnowledgeAssignment>> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoListAssignments) {
+      return window.electronAPI.knowledgeRepoListAssignments();
+    }
+    return {};
+  },
 };
 
 export const org = {

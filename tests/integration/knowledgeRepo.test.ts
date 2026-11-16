@@ -451,4 +451,80 @@ describe('Knowledge Repos Integration & Safety Tests', () => {
     expect(result.instructions).toContain('Available Skills & Pipelines');
     expect(result.instructions).toContain('explainer-video');
   });
+
+  it('persists member assignments across restarts and handles dangling repo IDs', async () => {
+    const repoA = {
+      id: 'repo-persist-A',
+      name: 'Repo A',
+      gitUrl: 'https://github.com/org/repo-a',
+      ref: 'main',
+      cachePath: tempDir,
+      syncStatus: 'idle' as const,
+      updatePolicy: 'auto' as const,
+      trustStatus: 'trusted' as const,
+      manifest: { alwaysOnRules: [], onDemandSkills: [], setupFiles: [], estimatedTokens: 0 },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const repoB = {
+      id: 'repo-persist-B',
+      name: 'Repo B',
+      gitUrl: 'https://github.com/org/repo-b',
+      ref: 'main',
+      cachePath: tempDir,
+      syncStatus: 'idle' as const,
+      updatePolicy: 'auto' as const,
+      trustStatus: 'trusted' as const,
+      manifest: { alwaysOnRules: [], onDemandSkills: [], setupFiles: [], estimatedTokens: 0 },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    (service as unknown as { repos: Map<string, typeof repoA> }).repos.set('repo-persist-A', repoA);
+    (service as unknown as { repos: Map<string, typeof repoB> }).repos.set('repo-persist-B', repoB);
+
+    const teamKey = 'team:team-123:slot-lead';
+    const orgKey = 'org:agent-ceo-456';
+
+    await service.setAssignment(teamKey, {
+      repoIds: ['repo-persist-A', 'repo-persist-B'],
+      whenToUseHint: 'architectural guidance',
+    });
+    await service.setAssignment(orgKey, {
+      repoIds: ['repo-persist-A'],
+      whenToUseHint: 'executive decisions',
+    });
+
+    expect(service.getAssignment(teamKey)).toEqual({
+      repoIds: ['repo-persist-A', 'repo-persist-B'],
+      whenToUseHint: 'architectural guidance',
+    });
+    expect(service.getAssignment(orgKey)).toEqual({
+      repoIds: ['repo-persist-A'],
+      whenToUseHint: 'executive decisions',
+    });
+
+    // Re-initialize service from saved file
+    const service2 = new KnowledgeRepoService();
+    (service2 as unknown as { dataDir: string }).dataDir = path.join(tempDir, 'cache');
+    (service2 as unknown as { worktreesDir: string }).worktreesDir = path.join(tempDir, 'worktrees');
+    await service2.initialize();
+
+    expect(service2.getAssignment(teamKey)).toEqual({
+      repoIds: ['repo-persist-A', 'repo-persist-B'],
+      whenToUseHint: 'architectural guidance',
+    });
+    expect(service2.getAssignment(orgKey)).toEqual({
+      repoIds: ['repo-persist-A'],
+      whenToUseHint: 'executive decisions',
+    });
+
+    // Removing repo-persist-B cleans up dangling ID from assignments
+    await service2.removeRepo('repo-persist-B');
+    expect(service2.getAssignment(teamKey)?.repoIds).toEqual(['repo-persist-A']);
+
+    // Removing member assignment cleans up key
+    await service2.removeMemberAssignment(orgKey);
+    expect(service2.getAssignment(orgKey)).toBeUndefined();
+  });
 });

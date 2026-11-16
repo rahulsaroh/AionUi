@@ -248,6 +248,14 @@ export interface ElectronBridgeAPI {
   knowledgeRepoCheckEnvironment?: (repoId: string) => Promise<Array<{ binary: string; present: boolean }>>;
   knowledgeRepoProvisionWorkingCopy?: (params: { repoId: string; projectId: string }) => Promise<string>;
   knowledgeRepoSetEnvVars?: (params: { id: string; envVars: Record<string, string> }) => Promise<void>;
+  knowledgeRepoGetAssignment?: (
+    memberKey: string
+  ) => Promise<import('../knowledgeRepo').KnowledgeAssignment | undefined>;
+  knowledgeRepoSetAssignment?: (params: {
+    memberKey: string;
+    assignment: import('../knowledgeRepo').KnowledgeAssignment;
+  }) => Promise<void>;
+  knowledgeRepoListAssignments?: () => Promise<Record<string, import('../knowledgeRepo').KnowledgeAssignment>>;
   // Gateway & Combos APIs
   gatewayGetStatus?: () => Promise<{
     success: boolean;

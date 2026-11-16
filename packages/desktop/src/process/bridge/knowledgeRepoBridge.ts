@@ -120,4 +120,25 @@ export function registerKnowledgeRepoBridge(): void {
       return knowledgeRepoService.setRepoEnvVars(params.id, params.envVars);
     }
   );
+
+  ipcMain.handle('knowledgeRepo:getAssignment', async (_event, memberKey: string) => {
+    return knowledgeRepoService.getAssignment(memberKey);
+  });
+
+  ipcMain.handle(
+    'knowledgeRepo:setAssignment',
+    async (
+      _event,
+      params: {
+        memberKey: string;
+        assignment: { repoIds: string[]; whenToUseHint?: string };
+      }
+    ) => {
+      return knowledgeRepoService.setAssignment(params.memberKey, params.assignment);
+    }
+  );
+
+  ipcMain.handle('knowledgeRepo:listAssignments', async () => {
+    return knowledgeRepoService.listAssignments();
+  });
 }

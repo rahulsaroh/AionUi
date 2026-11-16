@@ -22,7 +22,10 @@ import type {
  * runtime backend / conversation type are derived server-side from the
  * assistant, so callers only supply assistant identity, role, and model.
  */
-export type TeamAssistantInput = Pick<TeamAssistant, 'role' | 'assistant_name' | 'assistant_id' | 'model'>;
+export type TeamAssistantInput = Pick<
+  TeamAssistant,
+  'role' | 'assistant_name' | 'assistant_id' | 'model' | 'knowledgeRepoIds' | 'whenToUseHint'
+>;
 
 export type ICreateTeamParams = {
   user_id: string;
@@ -119,6 +122,13 @@ export function fromBackendAssistant(raw: unknown): TeamAssistant {
     model: r.model as string | undefined,
     pending_confirmations: (r.pending_confirmations ?? r.pendingConfirmations ?? 0) as number,
     context_reset: toContextResetCapability(r.context_reset),
+    knowledgeRepoIds: Array.isArray(r.knowledgeRepoIds)
+      ? (r.knowledgeRepoIds as string[])
+      : Array.isArray(r.knowledge_repo_ids)
+        ? (r.knowledge_repo_ids as string[])
+        : undefined,
+    whenToUseHint:
+      (r.whenToUseHint as string | undefined) ?? (r.when_to_use_hint as string | undefined) ?? undefined,
   };
 }
 
@@ -197,10 +207,17 @@ export function toBackendAssistant(a: TeamAssistantInput): Record<string, unknow
     throw new Error('assistant_id is required');
   }
 
-  return {
+  const result: Record<string, unknown> = {
     name: a.assistant_name,
     role: a.role === 'leader' ? 'lead' : a.role,
     model: a.model || 'default',
     assistant_id: a.assistant_id,
   };
+  if (a.knowledgeRepoIds) {
+    result.knowledgeRepoIds = a.knowledgeRepoIds;
+  }
+  if (a.whenToUseHint) {
+    result.whenToUseHint = a.whenToUseHint;
+  }
+  return result;
 }

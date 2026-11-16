@@ -14,6 +14,7 @@ import type {
   KnowledgeRepoSyncStatus,
   EffectiveInstructionResult,
   TeammateCapabilityCard,
+  KnowledgeAssignment,
 } from '@/common/types/knowledgeRepo';
 import { knowledgeRepoGitService } from './knowledgeRepoGitService';
 import { knowledgeRepoScanner } from './knowledgeRepoScanner';
@@ -29,6 +30,7 @@ export class KnowledgeRepoService {
   private repos: Map<string, KnowledgeRepo> = new Map();
   private authTokens: Map<string, string> = new Map(); // Encrypted / session tokens
   private repoEnvVars: Map<string, Record<string, string>> = new Map(); // Encrypted per-repo env vars
+  private assignments: Map<string, KnowledgeAssignment> = new Map(); // memberKey -> { repoIds, whenToUseHint }
   private activeAgentsRunning: Set<string> = new Set(); // repoId -> active task
   private pendingUpdates: Map<string, { newSha: string }> = new Map();
   private syncTimer: NodeJS.Timeout | null = null;
@@ -109,6 +111,41 @@ export class KnowledgeRepoService {
 
   getRepo(id: string): KnowledgeRepo | undefined {
     return this.repos.get(id);
+  }
+
+  getAssignment(memberKey: string): KnowledgeAssignment | undefined {
+    const raw = this.assignments.get(memberKey);
+    if (!raw) return undefined;
+    const validRepoIds = raw.repoIds.filter((id) => this.repos.has(id));
+    return {
+      repoIds: validRepoIds,
+      whenToUseHint: raw.whenToUseHint,
+    };
+  }
+
+  async setAssignment(memberKey: string, assignment: KnowledgeAssignment): Promise<void> {
+    const validRepoIds = (assignment.repoIds || []).filter((id) => this.repos.has(id));
+    this.assignments.set(memberKey, {
+      repoIds: validRepoIds,
+      whenToUseHint: assignment.whenToUseHint,
+    });
+    await this.persistState();
+  }
+
+  listAssignments(): Record<string, KnowledgeAssignment> {
+    const result: Record<string, KnowledgeAssignment> = {};
+    for (const [key, value] of this.assignments.entries()) {
+      result[key] = {
+        repoIds: value.repoIds.filter((id) => this.repos.has(id)),
+        whenToUseHint: value.whenToUseHint,
+      };
+    }
+    return result;
+  }
+
+  async removeMemberAssignment(memberKey: string): Promise<void> {
+    this.assignments.delete(memberKey);
+    await this.persistState();
   }
 
   /**
@@ -445,6 +482,15 @@ export class KnowledgeRepoService {
     this.repos.delete(id);
     this.authTokens.delete(id);
     this.repoEnvVars.delete(id);
+
+    // Clean up dangling repo from member assignments
+    for (const [key, assign] of this.assignments.entries()) {
+      if (assign.repoIds.includes(id)) {
+        assign.repoIds = assign.repoIds.filter((rId) => rId !== id);
+        this.assignments.set(key, assign);
+      }
+    }
+
     try {
       await fs.rm(repo.cachePath, { recursive: true, force: true });
     } catch {
@@ -523,6 +569,7 @@ export class KnowledgeRepoService {
         repos: KnowledgeRepo[];
         tokens: Record<string, string>;
         envVars: Record<string, Record<string, string>>;
+        assignments?: Record<string, KnowledgeAssignment>;
       };
       if (Array.isArray(parsed.repos)) {
         for (const r of parsed.repos) {
@@ -539,12 +586,18 @@ export class KnowledgeRepoService {
           this.repoEnvVars.set(k, v);
         }
       }
+      if (parsed.assignments) {
+        for (const [k, v] of Object.entries(parsed.assignments)) {
+          this.assignments.set(k, v);
+        }
+      }
     } catch {
       // First run or missing state file
     }
   }
 
   private async persistState(): Promise<void> {
+    await fs.mkdir(this.dataDir, { recursive: true });
     const stateFile = path.join(this.dataDir, 'repos.json');
     const tokensObj: Record<string, string> = {};
     for (const [k, v] of this.authTokens.entries()) {
@@ -554,10 +607,15 @@ export class KnowledgeRepoService {
     for (const [k, v] of this.repoEnvVars.entries()) {
       envVarsObj[k] = v;
     }
+    const assignmentsObj: Record<string, KnowledgeAssignment> = {};
+    for (const [k, v] of this.assignments.entries()) {
+      assignmentsObj[k] = v;
+    }
     const payload = {
       repos: Array.from(this.repos.values()),
       tokens: tokensObj,
       envVars: envVarsObj,
+      assignments: assignmentsObj,
     };
     await fs.writeFile(stateFile, JSON.stringify(payload, null, 2), 'utf8');
   }
