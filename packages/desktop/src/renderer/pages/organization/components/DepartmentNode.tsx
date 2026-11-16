@@ -235,4 +235,19 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
   );
 };
 
-export default React.memo(DepartmentNode);
+export function areDepartmentPropsEqual(
+  prev: { data: DepartmentNodeData; selected?: boolean },
+  next: { data: DepartmentNodeData; selected?: boolean }
+): boolean {
+  if (prev.selected !== next.selected) return false;
+  const p = prev.data;
+  const n = next.data;
+  if (p.isDescendantWorking !== n.isDescendantWorking) return false;
+  if (p.isCollapsed !== n.isCollapsed) return false;
+  if (p.orientation !== n.orientation) return false;
+  if (p.deptIndex !== n.deptIndex) return false;
+  if (p.department !== n.department) return false;
+  return true;
+}
+
+export default React.memo(DepartmentNode, areDepartmentPropsEqual);

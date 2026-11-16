@@ -178,4 +178,19 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
   );
 };
 
-export default React.memo(TeamNode);
+export function areTeamPropsEqual(
+  prev: { data: TeamNodeData; selected?: boolean },
+  next: { data: TeamNodeData; selected?: boolean }
+): boolean {
+  if (prev.selected !== next.selected) return false;
+  const p = prev.data;
+  const n = next.data;
+  if (p.isDescendantWorking !== n.isDescendantWorking) return false;
+  if (p.orientation !== n.orientation) return false;
+  if (p.team !== n.team) return false;
+  if (p.departmentName !== n.departmentName) return false;
+  if (p.sharedCountsMap !== n.sharedCountsMap) return false;
+  return true;
+}
+
+export default React.memo(TeamNode, areTeamPropsEqual);

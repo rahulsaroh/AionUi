@@ -152,4 +152,18 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
   );
 };
 
-export default React.memo(ProjectNode);
+function areProjectPropsEqual(
+  prev: { data: ProjectNodeData; selected?: boolean },
+  next: { data: ProjectNodeData; selected?: boolean }
+): boolean {
+  if (prev.selected !== next.selected) return false;
+  const p = prev.data;
+  const n = next.data;
+  if (p.isDescendantWorking !== n.isDescendantWorking) return false;
+  if (p.orientation !== n.orientation) return false;
+  if (p.project !== n.project) return false;
+  if (p.department !== n.department) return false;
+  return true;
+}
+
+export default React.memo(ProjectNode, areProjectPropsEqual);

@@ -73,3 +73,14 @@ declare module 'wavedrom/skins/dark.js' {
   const skin: import('wavedrom').WaveSkin;
   export default skin;
 }
+
+interface ImportMetaEnv {
+  readonly DEV: boolean;
+  readonly PROD: boolean;
+  readonly MODE: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+

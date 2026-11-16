@@ -221,4 +221,17 @@ export const RootCeoNode: React.FC<{ data: RootCeoNodeData; selected?: boolean }
   );
 };
 
-export default React.memo(RootCeoNode);
+function areRootCeoPropsEqual(
+  prev: { data: RootCeoNodeData; selected?: boolean },
+  next: { data: RootCeoNodeData; selected?: boolean }
+): boolean {
+  if (prev.selected !== next.selected) return false;
+  const p = prev.data;
+  const n = next.data;
+  if (p.isDescendantWorking !== n.isDescendantWorking) return false;
+  if (p.orientation !== n.orientation) return false;
+  if (p.rootCeo !== n.rootCeo) return false;
+  return true;
+}
+
+export default React.memo(RootCeoNode, areRootCeoPropsEqual);

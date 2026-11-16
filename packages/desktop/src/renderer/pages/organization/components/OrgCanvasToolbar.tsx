@@ -222,18 +222,20 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
 
         <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
 
-        {/* Dev Status Simulation Control */}
+        {/* Dev Status Simulation Control (Gated to development builds only) */}
         <div className='flex items-center gap-6px'>
-          <Dropdown droplist={simulationMenu} position='top'>
-            <Button
-              size='small'
-              type='outline'
-              className='text-12px !text-cyan-400 !border-cyan-500/50 hover:!bg-cyan-950/40 font-mono'
-              icon={<Lightning size={13} theme='outline' />}
-            >
-              Simulate Glow
-            </Button>
-          </Dropdown>
+          {import.meta.env.DEV && (
+            <Dropdown droplist={simulationMenu} position='top'>
+              <Button
+                size='small'
+                type='outline'
+                className='text-12px !text-cyan-400 !border-cyan-500/50 hover:!bg-cyan-950/40 font-mono'
+                icon={<Lightning size={13} theme='outline' />}
+              >
+                Simulate Glow
+              </Button>
+            </Dropdown>
+          )}
 
           <Tooltip content='Demo autonomous delegation flow' position='bottom'>
             <Button

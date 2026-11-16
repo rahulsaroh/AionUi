@@ -43,4 +43,17 @@ export const SharedMemberNode: React.FC<{ data: SharedMemberNodeData; selected?:
   );
 };
 
-export default React.memo(SharedMemberNode);
+function areSharedMemberPropsEqual(
+  prev: { data: SharedMemberNodeData; selected?: boolean },
+  next: { data: SharedMemberNodeData; selected?: boolean }
+): boolean {
+  if (prev.selected !== next.selected) return false;
+  const p = prev.data;
+  const n = next.data;
+  if (p.member !== n.member) return false;
+  if (p.sharedCount !== n.sharedCount) return false;
+  if (p.departmentsServed.length !== n.departmentsServed.length) return false;
+  return true;
+}
+
+export default React.memo(SharedMemberNode, areSharedMemberPropsEqual);

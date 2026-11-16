@@ -119,6 +119,47 @@ type OrgStoreState = {
   openChatError: string | null;
 };
 
+function sanitizeHierarchyTransientStatuses(h: OrgHierarchy): OrgHierarchy {
+  const sanitize = (status?: OrgNodeStatus): OrgNodeStatus | undefined => {
+    if (status === 'working' || status === 'queued_next' || status === 'recently_finished') {
+      return 'idle';
+    }
+    return status;
+  };
+
+  return {
+    ...h,
+    rootCeo: {
+      ...h.rootCeo,
+      status: sanitize(h.rootCeo.status),
+      ceoAgent: {
+        ...h.rootCeo.ceoAgent,
+        status: sanitize(h.rootCeo.ceoAgent.status),
+      },
+    },
+    departments: h.departments.map((dept) => ({
+      ...dept,
+      status: sanitize(dept.status),
+      departmentCeoAgent: {
+        ...dept.departmentCeoAgent,
+        status: sanitize(dept.departmentCeoAgent.status),
+      },
+      teams: dept.teams.map((team) => ({
+        ...team,
+        status: sanitize(team.status),
+        teamLeadAgent: {
+          ...team.teamLeadAgent,
+          status: sanitize(team.teamLeadAgent.status),
+        },
+        specialistMembers: team.specialistMembers.map((spec) => ({
+          ...spec,
+          status: sanitize(spec.status),
+        })),
+      })),
+    })),
+  };
+}
+
 function createInitialState(): OrgStoreState {
   const storedVersion = loadStored(STORAGE_KEYS.VERSION, () => 0);
   // Force blank canvas on version bump: discard persisted org data
@@ -173,7 +214,7 @@ function createInitialState(): OrgStoreState {
   return {
     activeScope:
       (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEYS.SCOPE) as OrgScope)) || 'workplace',
-    hierarchy: reconciled.hierarchy,
+    hierarchy: sanitizeHierarchyTransientStatuses(reconciled.hierarchy),
     projects: conversationReconciled.projects,
     members: loadStored<OrgAgentMember[]>(STORAGE_KEYS.MEMBERS, (): OrgAgentMember[] => []),
     conversations: conversationReconciled.conversations,
@@ -349,14 +390,110 @@ export function useOrgStore() {
   }, []);
 
   const updateNodeStatus = useCallback((nodeId: string, status: OrgNodeStatus) => {
+    let canonicalId: string | null = null;
+    const idsToUpdate = new Set<string>([nodeId]);
+
+    // Check Root CEO
+    if (
+      globalState.hierarchy.rootCeo.id === nodeId ||
+      globalState.hierarchy.rootCeo.ceoAgent.id === nodeId ||
+      globalState.hierarchy.rootCeo.ceoAgent.canonicalAgentId === nodeId
+    ) {
+      idsToUpdate.add(globalState.hierarchy.rootCeo.id);
+      idsToUpdate.add(globalState.hierarchy.rootCeo.ceoAgent.id);
+      if (globalState.hierarchy.rootCeo.ceoAgent.canonicalAgentId) {
+        idsToUpdate.add(globalState.hierarchy.rootCeo.ceoAgent.canonicalAgentId);
+      }
+    }
+
+    // Check Department CEOs & Teams & Members
+    globalState.hierarchy.departments.forEach((dept) => {
+      if (dept.id === nodeId || dept.departmentCeoAgent.id === nodeId) {
+        idsToUpdate.add(dept.id);
+        idsToUpdate.add(dept.departmentCeoAgent.id);
+      }
+      dept.teams.forEach((team) => {
+        if (team.id === nodeId || team.teamLeadAgent.id === nodeId) {
+          idsToUpdate.add(team.id);
+          idsToUpdate.add(team.teamLeadAgent.id);
+        }
+        team.specialistMembers.forEach((spec) => {
+          if (spec.id === nodeId || spec.canonicalAgentId === nodeId) {
+            idsToUpdate.add(spec.id);
+            if (spec.canonicalAgentId) {
+              canonicalId = spec.canonicalAgentId;
+              idsToUpdate.add(spec.canonicalAgentId);
+            }
+          }
+        });
+      });
+    });
+
+    // If canonicalId was found, update all instances of that member in all teams
+    if (canonicalId) {
+      globalState.hierarchy.departments.forEach((dept) => {
+        dept.teams.forEach((team) => {
+          team.specialistMembers.forEach((spec) => {
+            if (spec.canonicalAgentId === canonicalId) {
+              idsToUpdate.add(spec.id);
+            }
+          });
+        });
+      });
+    }
+
+    const nextStatuses = { ...globalState.nodeStatuses };
+    idsToUpdate.forEach((id) => {
+      nextStatuses[id] = status;
+    });
+
     globalState = {
       ...globalState,
-      nodeStatuses: {
-        ...globalState.nodeStatuses,
-        [nodeId]: status,
-      },
+      nodeStatuses: nextStatuses,
     };
     notify();
+
+    // Auto-transition 'recently_finished' -> 'idle' after 2000ms
+    if (status === 'recently_finished') {
+      setTimeout(() => {
+        let needsReset = false;
+        const resetStatuses = { ...globalState.nodeStatuses };
+        idsToUpdate.forEach((id) => {
+          if (resetStatuses[id] === 'recently_finished') {
+            resetStatuses[id] = 'idle';
+            needsReset = true;
+          }
+        });
+        if (needsReset) {
+          globalState = {
+            ...globalState,
+            nodeStatuses: resetStatuses,
+          };
+          notify();
+        }
+      }, 2000);
+    }
+
+    // Stale-state crash protection: if a node remains 'working' for over 5 minutes, reset to 'idle'
+    if (status === 'working') {
+      setTimeout(() => {
+        let needsReset = false;
+        const resetStatuses = { ...globalState.nodeStatuses };
+        idsToUpdate.forEach((id) => {
+          if (resetStatuses[id] === 'working') {
+            resetStatuses[id] = 'idle';
+            needsReset = true;
+          }
+        });
+        if (needsReset) {
+          globalState = {
+            ...globalState,
+            nodeStatuses: resetStatuses,
+          };
+          notify();
+        }
+      }, 5 * 60 * 1000);
+    }
   }, []);
 
   const setHoveredCanonicalAgentId = useCallback((agentId: string | null) => {
