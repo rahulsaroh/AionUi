@@ -1,4 +1,5 @@
 import { ipcBridge } from '@/common';
+import { knowledgeRepo } from '@/common/adapter/ipcBridge';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import type { IConversationMcpStatus, IProvider, TChatConversation, TProviderWithModel } from '@/common/config/storage';
 import { Message, Spin, Tag } from '@arco-design/web-react';
@@ -163,22 +164,108 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
       if (!team_id) throw new Error('Missing team id for team send');
 
       const enrichedInput = injectRetainedSkillsIntoPrompt(team_id, input, false, allTeams);
-      onPromptSent?.({ input: enrichedInput, files, slot_id: isLeader ? undefined : slot_id });
+
+      let promptWithKnowledge = enrichedInput;
+
       if (isLeader) {
-        const ack = await ipcBridge.team.sendMessage.invoke({ team_id, input: enrichedInput, files });
+        const leaderSlot = assistants.find((a) => a.role === 'leader')?.slot_id || slot_id || 'leader';
+        const leaderKey = `team:${team_id}:${leaderSlot}`;
+        let leaderKnowledgeBlock = '';
+
+        try {
+          const leaderAssign = await knowledgeRepo.getAssignment(leaderKey);
+          if (leaderAssign && leaderAssign.repoIds.length > 0) {
+            const inst = await knowledgeRepo.buildInstructions({
+              memberKey: leaderKey,
+              conversationId: conversation.id,
+              memberName: assistant_name || 'Leader',
+              repoIds: leaderAssign.repoIds,
+              whenToUseHint: leaderAssign.whenToUseHint,
+            });
+            if (inst?.instructions) {
+              leaderKnowledgeBlock = inst.instructions;
+            }
+          }
+        } catch (err) {
+          console.warn('[TeamChatView] Failed to build leader knowledge instructions:', err);
+        }
+
+        let capabilityCardsBlock = '';
+        try {
+          const allAssignments = await knowledgeRepo.listAssignments();
+          const membersWithRepos = assistants.map((ast) => {
+            const key = `team:${team_id}:${ast.slot_id}`;
+            const assign = allAssignments[key];
+            return {
+              slot_id: ast.slot_id,
+              assistant_name: ast.assistant_name,
+              knowledgeRepoIds: assign?.repoIds || ast.knowledgeRepoIds || [],
+              whenToUseHint: assign?.whenToUseHint || ast.whenToUseHint,
+            };
+          });
+          const cards = await knowledgeRepo.buildTeamCapabilityCards(membersWithRepos);
+          const cardsWithRepos = cards.filter((c) => c.repos.length > 0);
+          if (cardsWithRepos.length > 0) {
+            const cardsText = cardsWithRepos
+              .map((c) => {
+                const repoDetails = c.repos
+                  .map(
+                    (r) =>
+                      `  - Repository: ${r.repoName}${r.whenToUseHint ? ` (When to use: ${r.whenToUseHint})` : ''}${
+                        r.keySkills.length > 0 ? ` [Key Skills: ${r.keySkills.join(', ')}]` : ''
+                      }`
+                  )
+                  .join('\n');
+                return `- Teammate "${c.memberName}" (Slot: ${c.memberSlotId}):\n${repoDetails}`;
+              })
+              .join('\n');
+            capabilityCardsBlock = `### Team Knowledge & Routing Capabilities\nYou are the team leader. When delegating or routing tasks, consult your teammates' specialized knowledge:\n${cardsText}`;
+          }
+        } catch (err) {
+          console.warn('[TeamChatView] Failed to build team capability cards:', err);
+        }
+
+        const blocks = [leaderKnowledgeBlock, capabilityCardsBlock].filter(Boolean);
+        if (blocks.length > 0) {
+          promptWithKnowledge = `${blocks.join('\n\n')}\n\n---\n${enrichedInput}`;
+        }
+
+        onPromptSent?.({ input: promptWithKnowledge, files, slot_id: undefined });
+        const ack = await ipcBridge.team.sendMessage.invoke({ team_id, input: promptWithKnowledge, files });
         onTeamRunAck?.(ack);
         return;
       }
+
       if (!slot_id) throw new Error('Missing slot id for team agent send');
+      const memberKey = `team:${team_id}:${slot_id}`;
+      try {
+        const memberAssign = await knowledgeRepo.getAssignment(memberKey);
+        if (memberAssign && memberAssign.repoIds.length > 0) {
+          const inst = await knowledgeRepo.buildInstructions({
+            memberKey,
+            conversationId: conversation.id,
+            memberName: assistant_name || 'Teammate',
+            repoIds: memberAssign.repoIds,
+            whenToUseHint: memberAssign.whenToUseHint,
+          });
+          if (inst?.instructions) {
+            promptWithKnowledge = `${inst.instructions}\n\n---\n${enrichedInput}`;
+          }
+        }
+      } catch (err) {
+        console.warn('[TeamChatView] Failed to build member knowledge instructions:', err);
+      }
+
+      onPromptSent?.({ input: promptWithKnowledge, files, slot_id });
       const ack = await ipcBridge.team.sendMessageToAgent.invoke({
         team_id,
         slot_id,
-        input: enrichedInput,
+        input: promptWithKnowledge,
         files,
       });
       onTeamRunAck?.(ack);
     },
-    [allTeams, conversation.extra?.workspace, isLeader, onPromptSent, onTeamRunAck, slot_id, team_id]
+    [allTeams, assistants, conversation.extra?.workspace, conversation.id, isLeader, onPromptSent, onTeamRunAck, slot_id, team_id, assistant_name]
   );
   const teamSendMessageOverride = team_id ? teamSendMessage : undefined;
   const resolvedAssistantBackend =

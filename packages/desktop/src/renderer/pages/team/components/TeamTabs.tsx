@@ -26,11 +26,12 @@ import TeamAgentIdentity from './TeamAgentIdentity';
 import { useTeamTabs } from '../hooks/TeamTabsContext';
 import TeamAddMemberPopover from './memberPicker/TeamAddMemberPopover';
 import { KnowledgeRepoModal } from './KnowledgeRepoModal';
-import { MemberRepoAssignModal } from './MemberRepoAssignModal';
+import { MemberKnowledgePanel, KnowledgeChip } from '@/renderer/components/knowledge';
 
 const TAB_OVERFLOW_THRESHOLD = 10;
 
 type TeamTabViewProps = {
+  team_id: string;
   slot_id: string;
   assistant_name: string;
   assistant_backend: string;
@@ -55,6 +56,7 @@ type TeamTabViewProps = {
 
 const TeamTabView: React.FC<TeamTabViewProps> = React.memo(
   ({
+    team_id,
     slot_id,
     assistant_name,
     assistant_backend,
@@ -212,6 +214,11 @@ const TeamTabView: React.FC<TeamTabViewProps> = React.memo(
                   <AgentStatusBadge status={status} testId={`team-tab-status-${slot_id}`} />
                 )
               }
+            />
+            <KnowledgeChip
+              memberKey={`team:${team_id}:${slot_id}`}
+              memberName={assistant_name}
+              onClick={() => onAssignRepos?.(slot_id)}
             />
           </div>
         )}
@@ -476,6 +483,7 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
 }) => {
   const { t } = useTranslation();
   const {
+    team_id,
     assistants,
     activeSlotId,
     statusMap,
@@ -704,6 +712,7 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
                     return (
                       <TeamTabView
                         key={assistant.slot_id}
+                        team_id={team_id}
                         slot_id={assistant.slot_id}
                         assistant_name={assistant.assistant_name}
                         assistant_backend={assistant.assistant_backend}
@@ -864,11 +873,12 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
       <KnowledgeRepoModal visible={isKnowledgeModalOpen} onClose={() => setIsKnowledgeModalOpen(false)} />
 
       {assignRepoAssistant && (
-        <MemberRepoAssignModal
+        <MemberKnowledgePanel
           visible={Boolean(assignRepoAssistant)}
-          assistant={assignRepoAssistant}
+          memberKey={`team:${team_id}:${assignRepoAssistant.slot_id}`}
+          memberName={assignRepoAssistant.assistant_name}
           onClose={() => setAssignRepoAssistant(null)}
-          onSave={(assignedRepoIds, whenToUseHint) => {
+          onSaved={(assignedRepoIds, whenToUseHint) => {
             assignRepoAssistant.knowledgeRepoIds = assignedRepoIds;
             assignRepoAssistant.whenToUseHint = whenToUseHint;
             setAssignRepoAssistant(null);
@@ -880,6 +890,7 @@ const TeamTabs: React.FC<TeamTabsProps> = ({
 };
 
 export type TeamActiveMembersProps = {
+  team_id?: string;
   assistants: TeamAssistant[];
   statusMap: Map<string, { status: TeammateStatus }>;
   activeSlotId?: string;
@@ -889,7 +900,7 @@ export type TeamActiveMembersProps = {
 };
 
 export const TeamActiveMembers: React.FC<TeamActiveMembersProps> = React.memo(
-  ({ assistants, statusMap, activeSlotId, colorOf, onSelectMember, slotWorkBySlot }) => {
+  ({ team_id, assistants, statusMap, activeSlotId, colorOf, onSelectMember, slotWorkBySlot }) => {
     const { t } = useTranslation();
 
     const activeAssistants = useMemo(() => {
@@ -955,6 +966,12 @@ export const TeamActiveMembers: React.FC<TeamActiveMembersProps> = React.memo(
                   nameTestId={`team-active-member-name-${assistant.slot_id}`}
                   avatarOverlay={<AgentStatusBadge status='active' overlay />}
                 />
+                {team_id && (
+                  <KnowledgeChip
+                    memberKey={`team:${team_id}:${assistant.slot_id}`}
+                    memberName={assistant.assistant_name}
+                  />
+                )}
               </div>
             </Tooltip>
           );
