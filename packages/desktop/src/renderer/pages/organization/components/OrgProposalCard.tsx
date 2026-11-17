@@ -277,7 +277,7 @@ export const OrgProposalCard: React.FC<OrgProposalCardProps> = ({ cardData, onAp
               </div>
               <div className='flex flex-wrap gap-4px'>
                 {proposal.suggestedMembers.map((m, idx) => (
-                  <span key={idx} className='px-6px py-2px rounded bg-primary/10 text-primary text-10px'>
+                  <span key={idx} className='px-6px py-2px rounded bg-primary-light-1 text-primary text-10px'>
                     {m.name} ({m.role})
                   </span>
                 ))}

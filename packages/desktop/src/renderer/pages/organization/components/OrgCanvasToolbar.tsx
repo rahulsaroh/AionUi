@@ -172,7 +172,7 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
 
         {/* View controls */}
         <div className='flex items-center gap-6px pr-8px border-r border-[var(--color-border-2)]'>
-          <span className='size-22px rounded-6px bg-primary/10 text-primary flex items-center justify-center'>
+          <span className='size-22px rounded-6px bg-primary-light-1 text-primary flex items-center justify-center'>
             <NetworkTree size={14} theme='outline' fill='currentColor' />
           </span>
           <span className='font-bold text-13px text-t-primary'>2D Org Command Center</span>

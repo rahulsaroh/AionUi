@@ -584,7 +584,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           <div className='flex flex-col gap-4px w-full min-w-0 pr-8px select-none overflow-hidden'>
             <div className='flex items-center justify-between gap-8px min-w-0 w-full'>
               <div className='flex items-center gap-6px min-w-0 flex-1 overflow-hidden'>
-                <span className='size-22px rounded-6px bg-primary/10 text-primary flex items-center justify-center shrink-0'>
+                <span className='size-22px rounded-6px bg-primary-light-1 text-primary flex items-center justify-center shrink-0'>
                   {selectedNodeType === 'ceo' ? (
                     <Peoples size={13} theme='outline' fill='currentColor' />
                   ) : selectedNodeType === 'department' ? (
@@ -718,7 +718,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           <div className='p-12px rounded-10px bg-fill-2 border border-[var(--color-border-2)] flex flex-col gap-8px'>
             <div className='flex items-center justify-between'>
               <div className='flex items-center gap-10px min-w-0'>
-                <span className='size-32px rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
+                <span className='size-32px rounded-full bg-primary-light-2 text-primary flex items-center justify-center font-bold text-13px shrink-0'>
                   <Workbench size={16} theme='outline' />
                 </span>
                 <div className='flex flex-col min-w-0'>

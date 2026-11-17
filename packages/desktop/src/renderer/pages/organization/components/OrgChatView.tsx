@@ -1439,7 +1439,7 @@ export const OrgChatView: React.FC = () => {
                               key={`${ref.type}-${ref.id}`}
                               type='button'
                               onClick={() => handleSelectCreatedEntity(ref)}
-                              className=                                      'inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary/10 hover:bg-primary/20 border border-primary/25 text-left text-12px text-t-primary font-medium transition-colors cursor-pointer'
+                              className=                                      'inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary-light-1 hover:bg-primary-light-2 border border-primary-light-3 text-left text-12px text-t-primary font-medium transition-colors cursor-pointer'
                               aria-label={ref.name}
                             >
                               <span className='text-10px font-mono uppercase opacity-75'>[{ref.type}]</span>

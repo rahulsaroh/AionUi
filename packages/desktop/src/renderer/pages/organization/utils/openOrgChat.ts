@@ -119,18 +119,10 @@ export function resolveOrgChatTarget(
     let team = dept?.teams.find((tm) => project.teamIds?.includes(tm.id));
 
     if (!team && dept) {
-      const newTeam = createTeamShell(dept.id, 'Core', hierarchy.rootCeo.ceoAgent.model);
-      newTeam.workspacePath = project.workspacePath || project.path || dept.workspacePath || null;
-      hierarchyRef = {
-        ...hierarchyRef,
-        lastUpdated: Date.now(),
-        departments: hierarchyRef.departments.map((d) =>
-          d.id === dept.id ? { ...d, teams: [...d.teams, newTeam], lastActiveAt: Date.now() } : d
-        ),
-      };
-      mutatedHierarchy = hierarchyRef;
-      team = newTeam;
-      updatedProject = { ...project, teamIds: [...(project.teamIds || []), newTeam.id] };
+      // Reuse an existing team in the department (by id or case-insensitive name) instead of creating one.
+      team = dept.teams.find((tm) => tm.id === project.id) ||
+        dept.teams.find((tm) => tm.name?.toLowerCase() === project.name?.toLowerCase()) ||
+        dept.teams[0];
     }
 
     const { agent } = projectHeadAgent(updatedProject || project, hierarchyRef);

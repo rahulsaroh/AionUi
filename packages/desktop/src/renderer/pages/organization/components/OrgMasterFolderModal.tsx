@@ -141,7 +141,7 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
                   onClick={() => setSelectedPath(recent)}
                   className={`text-left text-11px font-mono p-8px rounded-6px border transition-colors cursor-pointer truncate ${
                     selectedPath === recent
-                      ? 'bg-primary/10 border-primary text-primary font-medium'
+                      ? 'bg-primary-light-1 border-primary text-primary font-medium'
                       : 'bg-fill-1 border-[var(--color-border-2)] text-t-secondary hover:bg-fill-2'
                   }`}
                 >

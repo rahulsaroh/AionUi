@@ -264,3 +264,4 @@ chrome-profiles/
 tsc_output.txt
 run.bat
 
+electron.vite.config.*.mjs
