@@ -764,6 +764,9 @@ try {
   }
 
   // 5. Prepare aioncore binary (for packaged runtime usage)
+  if (process.platform === 'win32') {
+    killWindowsProcesses(['AionUi.exe', 'electron.exe', 'aioncore.exe']);
+  }
   const { prepareAioncore } = require('../packages/shared-scripts/src/prepare-aioncore.js');
   const { resolveAioncoreVersion } = require('./resolveAioncoreVersion.js');
   const projectRoot = path.resolve(__dirname, '..');
@@ -848,7 +851,7 @@ try {
       const electronRunning = isProcessRunningWindows('electron.exe');
       if (aionRunning || electronRunning) {
         console.log('⚠️  Detected running AionUi/Electron process. Attempting to close...');
-        killWindowsProcesses(['AionUi.exe', 'electron.exe']);
+        killWindowsProcesses(['AionUi.exe', 'electron.exe', 'aioncore.exe']);
         cleaned = tryRemoveDir(winUnpackedDir);
         if (!cleaned) {
           console.log('⚠️  Directory still locked. Please close any running AionUi/Electron processes and retry.');
@@ -889,7 +892,7 @@ try {
     }
     console.log('   Retrying local build with win.signAndEditExecutable=false...');
     console.log('   This fallback is intended for transient rcedit / file-lock failures on developer machines.');
-    killWindowsProcesses(['AionUi.exe', 'electron.exe']);
+    killWindowsProcesses(['AionUi.exe', 'electron.exe', 'aioncore.exe']);
     cleanupWindowsPackOutput();
 
     try {

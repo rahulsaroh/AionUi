@@ -254,10 +254,8 @@ export function createDepartmentShell(name: string, defaultModel?: OrgAgentModel
       assignedTeamIds: [],
       lastActiveAt: Date.now(),
       status: 'idle',
-      model: defaultModel || {
-        modelId: 'claude-3-7-sonnet',
-        providerId: 'anthropic',
-      },
+      assistant_backend: 'aionrs',
+      model: defaultModel || undefined,
     },
     teams: [],
     linkedProjects: [],
@@ -283,10 +281,8 @@ export function createTeamShell(departmentId: string, name: string, defaultModel
       assignedTeamIds: [id],
       lastActiveAt: Date.now(),
       status: 'idle',
-      model: defaultModel || {
-        modelId: 'claude-3-7-sonnet',
-        providerId: 'anthropic',
-      },
+      assistant_backend: 'aionrs',
+      model: defaultModel || undefined,
     },
     hrCoordinatorAgent: {
       id: `hr-${id}`,
@@ -297,10 +293,8 @@ export function createTeamShell(departmentId: string, name: string, defaultModel
       assignedTeamIds: [id],
       lastActiveAt: Date.now(),
       status: 'idle',
-      model: {
-        modelId: 'claude-3-5-haiku',
-        providerId: 'anthropic',
-      },
+      assistant_backend: 'aionrs',
+      model: defaultModel || undefined,
     },
     specialistMembers: [],
   };
@@ -311,7 +305,7 @@ export function createMemberShell(
   role: string = 'specialist',
   title: string = 'Specialist',
   teamId?: string,
-  modelId: string = 'claude-3-7-sonnet'
+  modelId?: string
 ): import('@/types/organization').OrgAgentMember {
   const id = `agent-spec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   return {
@@ -323,10 +317,8 @@ export function createMemberShell(
     assignedTeamIds: teamId ? [teamId] : [],
     lastActiveAt: Date.now(),
     status: 'idle',
-    model: {
-      modelId,
-      providerId: 'anthropic',
-    },
+    assistant_backend: 'aionrs',
+    model: modelId && modelId !== 'claude-3-7-sonnet' ? { modelId, providerId: 'anthropic' } : undefined,
   };
 }
 

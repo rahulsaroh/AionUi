@@ -1387,6 +1387,7 @@ export class OrgDelegationEngine {
                 const assistantMsg = page?.items?.find(
                   (item) =>
                     item.position === 'left' &&
+                    item.type === 'text' &&
                     item.content &&
                     typeof item.content === 'object' &&
                     'content' in item.content
@@ -1424,7 +1425,11 @@ export class OrgDelegationEngine {
         });
         const assistantMsg = page?.items?.find(
           (item) =>
-            item.position === 'left' && item.content && typeof item.content === 'object' && 'content' in item.content
+            item.position === 'left' &&
+            item.type === 'text' &&
+            item.content &&
+            typeof item.content === 'object' &&
+            'content' in item.content
         );
         const msgText =
           (assistantMsg?.content as { content?: string; text?: string })?.content ??

@@ -43,6 +43,7 @@ import type {
   OrgConversationMessage,
   OrgAgentModelConfig,
   OrgCreatedEntityRef,
+  OrgAgentMember,
 } from '@/types/organization';
 
 export interface OrgChatErrorPanelProps {
@@ -494,7 +495,22 @@ export const OrgChatView: React.FC = () => {
 
       const isCeoDirective = isCeoChat;
 
-      const targetAgent = currentTargetAgent;
+      const resolvedModel =
+        currentAgentModel && currentAgentModel.modelId !== 'claude-3-7-sonnet'
+          ? currentAgentModel
+          : currentTargetAgent.model?.modelId !== 'claude-3-7-sonnet'
+            ? currentTargetAgent.model
+            : firstAvailableConfiguredModel;
+
+      const targetAgent: OrgAgentMember = {
+        ...currentTargetAgent,
+        model: resolvedModel || currentTargetAgent.model,
+        assistant_backend:
+          currentTargetAgent.assistant_backend === 'acp' &&
+          (!resolvedModel || resolvedModel.modelId !== 'claude-3-7-sonnet')
+            ? 'aionrs'
+            : currentTargetAgent.assistant_backend || 'aionrs',
+      };
       const activeWorkspace =
         activeWorkspacePath ||
         activeProject?.workspacePath ||
@@ -1411,7 +1427,7 @@ export const OrgChatView: React.FC = () => {
                         isUser
                           ? 'bg-message-user border-primary/15 text-t-primary rounded-tr-2px'
                           : msg.role === 'system'
-                            ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 rounded-tl-2px'
+                            ? 'bg-orange-500/10 border-orange-500/30 text-t-primary rounded-tl-2px'
                             : 'bg-[var(--color-bg-2)] border-[var(--color-border-2)] text-t-primary rounded-tl-2px'
                       )}
                     >
@@ -1423,7 +1439,7 @@ export const OrgChatView: React.FC = () => {
                               key={`${ref.type}-${ref.id}`}
                               type='button'
                               onClick={() => handleSelectCreatedEntity(ref)}
-                              className='inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary/10 hover:bg-primary/20 border border-primary/25 text-left text-12px text-primary font-medium transition-colors cursor-pointer'
+                              className=                                      'inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary/10 hover:bg-primary/20 border border-primary/25 text-left text-12px text-t-primary font-medium transition-colors cursor-pointer'
                               aria-label={ref.name}
                             >
                               <span className='text-10px font-mono uppercase opacity-75'>[{ref.type}]</span>
@@ -1688,7 +1704,7 @@ export const OrgChatView: React.FC = () => {
         <div className='max-w-860px mx-auto flex flex-col gap-8px'>
           {/* Show a "Connect a model" prompt if no model is configured */}
           {!currentAgentModel && (
-            <div className='flex items-center gap-10px px-14px py-8px rounded-10px bg-orange-500/10 border border-orange-500/30 text-13px text-orange-400'>
+            <div className='flex items-center gap-10px px-14px py-8px rounded-10px bg-orange-500/10 border border-orange-500/30 text-13px text-t-primary'>
               <span className='flex-1'>
                 {t('team.organization.noModelConfigured', {
                   defaultValue: 'No AI model connected. Connect a model in Settings to start chatting.',

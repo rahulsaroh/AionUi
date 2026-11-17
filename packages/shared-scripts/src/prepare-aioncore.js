@@ -230,8 +230,12 @@ function extractArchive(archivePath, outputDir, platform) {
   ensureDirectory(outputDir);
   if (platform === 'win32' || archivePath.endsWith('.zip')) {
     if (platform === 'win32') {
-      const ps = `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${outputDir.replace(/'/g, "''")}' -Force`;
-      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps]);
+      try {
+        execFileSync('tar', ['-xf', archivePath, '-C', outputDir]);
+      } catch {
+        const ps = `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${outputDir.replace(/'/g, "''")}' -Force`;
+        execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps]);
+      }
     } else {
       execFileSync('unzip', ['-o', archivePath, '-d', outputDir]);
     }

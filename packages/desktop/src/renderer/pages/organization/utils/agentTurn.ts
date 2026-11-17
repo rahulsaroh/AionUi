@@ -80,8 +80,21 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
       effectivePrompt = `${systemContextPrefix}\n\n${userText}`;
     }
 
+    const effectiveCeoAgent: OrgAgentMember = {
+      ...hierarchy.rootCeo.ceoAgent,
+      model: agent.model || hierarchy.rootCeo.ceoAgent.model,
+      assistant_backend: agent.assistant_backend || hierarchy.rootCeo.ceoAgent.assistant_backend || 'aionrs',
+    };
+    const effectiveHierarchy: OrgHierarchy = {
+      ...hierarchy,
+      rootCeo: {
+        ...hierarchy.rootCeo,
+        ceoAgent: effectiveCeoAgent,
+      },
+    };
+
     const ceo = runCeoTurn(threadId, effectivePrompt, {
-      hierarchy,
+      hierarchy: effectiveHierarchy,
       projects,
       userPrompt: effectivePrompt,
       useRealExecution: true,
