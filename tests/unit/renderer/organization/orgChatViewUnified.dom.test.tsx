@@ -40,8 +40,19 @@ vi.mock('@/renderer/hooks/agent/useModelProviderList', () => ({
 }));
 
 vi.mock('@/renderer/pages/organization/components/OrgModelSelector', () => ({
-  OrgModelSelector: ({ currentModel }: { currentModel?: { modelName?: string; modelId?: string } }) => (
-    <span data-testid='org-model-selector'>{currentModel?.modelName || currentModel?.modelId || 'No model'}</span>
+  OrgModelSelector: ({
+    currentModel,
+    onSelectModel,
+  }: {
+    currentModel?: { modelName?: string; modelId?: string };
+    onSelectModel?: (m: any) => void;
+  }) => (
+    <span
+      data-testid='org-model-selector'
+      onClick={() => onSelectModel?.({ providerId: 'openai', modelId: 'gpt-4o', modelName: 'GPT-4o' })}
+    >
+      {currentModel?.modelName || currentModel?.modelId || 'No model'}
+    </span>
   ),
 }));
 
@@ -57,13 +68,19 @@ vi.mock('@arco-design/web-react', async (importOriginal) => {
   };
 });
 
-const { openFolderWithMock } = vi.hoisted(() => ({ openFolderWithMock: vi.fn(async () => undefined) }));
+const { openFolderWithMock, convUpdateMock } = vi.hoisted(() => ({
+  openFolderWithMock: vi.fn(async () => undefined),
+  convUpdateMock: vi.fn(async () => true),
+}));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
     shell: { openFolderWith: { invoke: openFolderWithMock } },
     org: { saveData: vi.fn(async () => undefined), loadData: vi.fn(async () => null) },
-    conversation: { stop: { invoke: vi.fn(async () => undefined) } },
+    conversation: {
+      stop: { invoke: vi.fn(async () => undefined) },
+      update: { invoke: convUpdateMock },
+    },
   },
 }));
 
@@ -438,5 +455,53 @@ describe('OrgChatView unified agent turn', () => {
     expect(legacy.className).toBe(assistant.className);
     expect(screen.getAllByText('CEO').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('👑').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('updates model on backend conversation when changed, or resets backendConversationId if update fails', async () => {
+    convUpdateMock.mockResolvedValue(true as any);
+
+    storeState = {
+      ...storeState,
+      conversations: [
+        {
+          ...makeCeoConversation([]),
+          backendConversationId: 'backend-conv-999',
+        },
+      ],
+      selectedConversationId: 'conv-ceo-1',
+    };
+
+    renderView();
+
+    const selector = screen.getByTestId('org-model-selector');
+    fireEvent.click(selector);
+
+    expect(storeState.updateAgentModel).toHaveBeenCalledWith('agent-root-ceo', {
+      providerId: 'openai',
+      modelId: 'gpt-4o',
+      modelName: 'GPT-4o',
+    });
+    expect(convUpdateMock).toHaveBeenCalledWith({
+      id: 'backend-conv-999',
+      updates: {
+        model: {
+          id: 'openai',
+          use_model: 'gpt-4o',
+        },
+      },
+    });
+
+    // Test failure clears backendConversationId
+    convUpdateMock.mockResolvedValue(false as any);
+    fireEvent.click(selector);
+
+    await waitFor(() => {
+      expect(storeState.addOrgConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'conv-ceo-1',
+          backendConversationId: undefined,
+        })
+      );
+    });
   });
 });

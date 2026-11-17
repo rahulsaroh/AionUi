@@ -568,14 +568,24 @@ describe('useOrgTelemetryStore', () => {
       expect(match?.canonicalAgentId).toBe('c-alex-beta');
     });
 
-    it('prefers match by assistant_id when two members share a name', () => {
-      const match = matchCandidateMember(candidates, {
+    it('prefers match by assistant_id when candidate is unbound', () => {
+      const unboundA = { ...candidateA, backendSlotId: undefined };
+      const unboundB = { ...candidateB, backendSlotId: undefined };
+      const match = matchCandidateMember([unboundA, unboundB, candidateUnique], {
         assistant_id: 'c-alex-alpha',
         assistant_name: 'Alex',
       });
       expect(match).toBeDefined();
       expect(match?.id).toBe('member-1');
-      expect(match?.backendSlotId).toBe('slot-alex-1');
+    });
+
+    it('does not match by assistant_id if candidate already has a different backendSlotId', () => {
+      const match = matchCandidateMember(candidates, {
+        slot_id: 'slot-new-99',
+        assistant_id: 'c-alex-alpha',
+        assistant_name: 'Alex',
+      });
+      expect(match).toBeUndefined();
     });
 
     it('returns undefined if multiple members match name and neither slot_id nor assistant_id matches', () => {
@@ -585,12 +595,193 @@ describe('useOrgTelemetryStore', () => {
       expect(match).toBeUndefined();
     });
 
-    it('matches by name when exactly one candidate matches that name', () => {
-      const match = matchCandidateMember(candidates, {
+    it('matches by name when exactly one unbound candidate matches that name', () => {
+      const unboundJordan = { ...candidateUnique, backendSlotId: undefined };
+      const match = matchCandidateMember([candidateA, candidateB, unboundJordan], {
         assistant_name: 'Jordan',
       });
       expect(match).toBeDefined();
       expect(match?.id).toBe('member-3');
+    });
+
+    it('two spawns with the same assistant_id create two members, each keeping its own slot; glow lights the right member', async () => {
+      const hierarchy: OrgHierarchy = {
+        rootCeo: {
+          id: 'root-ceo',
+          name: 'Root CEO',
+          parentId: null,
+          status: 'idle',
+          lastActiveAt: null,
+          ceoAgent: {
+            id: 'ceo-agent',
+            canonicalAgentId: 'c-ceo',
+            name: 'CEO Agent',
+            role: 'ceo',
+            assignedTeamIds: [],
+            lastActiveAt: null,
+            status: 'idle',
+          },
+        },
+        departments: [
+          {
+            id: 'dept-spawn',
+            name: 'Growth',
+            parentDepartmentId: 'root-ceo',
+            status: 'idle',
+            lastActiveAt: null,
+            linkedProjects: [{ id: 'proj-spawn-test', name: 'Spawn Project' }],
+            departmentCeoAgent: {
+              id: 'dept-head-spawn',
+              canonicalAgentId: 'c-growth-head',
+              name: 'Growth VP',
+              role: 'department_head',
+              assignedTeamIds: [],
+              lastActiveAt: null,
+              status: 'idle',
+            },
+            teams: [
+              {
+                id: 'team-spawn',
+                departmentId: 'dept-spawn',
+                name: 'Viral Ops',
+                status: 'idle',
+                lastActiveAt: null,
+                backendTeamId: 'backend-spawn-team',
+                linkedProjectId: 'proj-spawn-test',
+                teamLeadAgent: {
+                  id: 'lead-spawn',
+                  canonicalAgentId: 'c-lead-growth',
+                  name: 'Growth Lead',
+                  role: 'team_lead',
+                  assignedTeamIds: ['team-spawn'],
+                  lastActiveAt: null,
+                  status: 'idle',
+                },
+                hrCoordinatorAgent: {
+                  id: 'hr-spawn',
+                  canonicalAgentId: 'c-hr-growth',
+                  name: 'Growth HR',
+                  role: 'hr_coordinator',
+                  assignedTeamIds: ['team-spawn'],
+                  lastActiveAt: null,
+                  status: 'idle',
+                },
+                specialistMembers: [],
+              },
+            ],
+          },
+        ],
+        lastUpdated: Date.now(),
+      };
+      setOrgStoreSnapshot({
+        hierarchy,
+        projects: [
+          {
+            id: 'proj-spawn-test',
+            name: 'Spawn Project',
+            backendTeamId: 'backend-spawn-team',
+            departmentId: 'dept-spawn',
+            teamIds: ['team-spawn'],
+            memberIds: [],
+            status: 'active',
+            leadAgentId: 'lead-spawn',
+          },
+        ],
+        nodeStatuses: {},
+      });
+
+      let agentSpawnedCb: ((e: any) => Promise<void>) | undefined;
+      let slotWorkCb: ((e: any) => Promise<void>) | undefined;
+
+      ipcBridge.team.agentSpawned.on = vi.fn().mockImplementation((cb) => {
+        agentSpawnedCb = cb;
+        return () => {};
+      });
+      ipcBridge.team.slotWorkChanged.on = vi.fn().mockImplementation((cb) => {
+        slotWorkCb = cb;
+        return () => {};
+      });
+
+      initTelemetryBridge();
+
+      // First spawn: assistant_id = 'shared-assistant', slot_id = 'slot-1'
+      await agentSpawnedCb!({
+        team_id: 'backend-spawn-team',
+        assistant: {
+          slot_id: 'slot-1',
+          assistant_id: 'shared-assistant',
+          assistant_name: 'Worker Alpha',
+          role: 'specialist',
+        },
+      });
+
+      const storeAfterFirst = getOrgStoreSnapshot();
+      const teamAfterFirst = storeAfterFirst.hierarchy.departments[0].teams[0];
+      expect(teamAfterFirst.specialistMembers.length).toBe(1);
+      const member1 = teamAfterFirst.specialistMembers[0];
+      expect(member1.id).toBe('member-slot-1');
+      expect(member1.canonicalAgentId).toBe('shared-assistant');
+      expect(member1.backendSlotId).toBe('slot-1');
+
+      // Second spawn with SAME assistant_id but DIFFERENT slot_id = 'slot-2'
+      await agentSpawnedCb!({
+        team_id: 'backend-spawn-team',
+        assistant: {
+          slot_id: 'slot-2',
+          assistant_id: 'shared-assistant',
+          assistant_name: 'Worker Beta',
+          role: 'specialist',
+        },
+      });
+
+      const storeAfterSecond = getOrgStoreSnapshot();
+      const teamAfterSecond = storeAfterSecond.hierarchy.departments[0].teams[0];
+      expect(teamAfterSecond.specialistMembers.length).toBe(2);
+      const member2 = teamAfterSecond.specialistMembers.find((m) => m.backendSlotId === 'slot-2')!;
+      expect(member2).toBeDefined();
+      expect(member2.id).toBe('member-slot-2');
+      expect(member2.canonicalAgentId).toBe('shared-assistant');
+      expect(member2.backendSlotId).toBe('slot-2');
+
+      // Member 1 still keeps its own slot
+      const member1AfterSecond = teamAfterSecond.specialistMembers.find((m) => m.backendSlotId === 'slot-1')!;
+      expect(member1AfterSecond).toBeDefined();
+      expect(member1AfterSecond.id).toBe('member-slot-1');
+      expect(member1AfterSecond.backendSlotId).toBe('slot-1');
+
+      // Glow check: slotWorkChanged for slot-2 lights up member-slot-2 and NOT member-slot-1
+      await slotWorkCb!({
+        team_id: 'backend-spawn-team',
+        slot_work: {
+          slot_id: 'slot-2',
+          state: 'running',
+        },
+      });
+
+      const storeAfterSlot2 = getOrgStoreSnapshot();
+      expect(storeAfterSlot2.nodeStatuses['member-slot-2']).toBe('working');
+      expect(storeAfterSlot2.nodeStatuses['member-slot-1']).toBeFalsy();
+
+      const propResultSlot2 = computeOrgStatusPropagation(
+        storeAfterSlot2.hierarchy,
+        storeAfterSlot2.projects,
+        storeAfterSlot2.nodeStatuses
+      );
+      expect(propResultSlot2.workingNodeIds.has('member-slot-2')).toBe(true);
+      expect(propResultSlot2.workingNodeIds.has('member-slot-1')).toBe(false);
+
+      // slotWorkChanged for slot-1 lights up member-slot-1
+      await slotWorkCb!({
+        team_id: 'backend-spawn-team',
+        slot_work: {
+          slot_id: 'slot-1',
+          state: 'running',
+        },
+      });
+
+      const storeAfterBoth = getOrgStoreSnapshot();
+      expect(storeAfterBoth.nodeStatuses['member-slot-1']).toBe('working');
+      expect(storeAfterBoth.nodeStatuses['member-slot-2']).toBe('working');
     });
   });
 });

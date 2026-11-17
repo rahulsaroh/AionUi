@@ -190,24 +190,29 @@ export function matchCandidateMember(
   candidates: OrgAgentMember[],
   info: { slot_id?: string; assistant_id?: string; assistant_name?: string }
 ): OrgAgentMember | undefined {
-  // 1. Prefer match by slot id
+  // 1. Prefer match by slot id first
   if (info.slot_id) {
     const bySlot = candidates.find((m) => m.backendSlotId === info.slot_id);
     if (bySlot) return bySlot;
   }
 
-  // 2. Prefer match by assistant_id
+  // Candidates that have no backendSlotId yet (unbound)
+  const unboundCandidates = candidates.filter((m) => !m.backendSlotId);
+
+  // 2. Match by assistant_id ONLY for members that have no backendSlotId yet and where exactly one unbound candidate matches
   if (info.assistant_id) {
-    const byId = candidates.find(
+    const byIdMatches = unboundCandidates.filter(
       (m) => (m.canonicalAgentId && m.canonicalAgentId === info.assistant_id) || m.id === info.assistant_id
     );
-    if (byId) return byId;
+    if (byIdMatches.length === 1) {
+      return byIdMatches[0];
+    }
   }
 
-  // 3. Only use name matching when exactly one candidate matches
+  // 3. Match by name ONLY for members that have no backendSlotId yet and where exactly one unbound candidate matches
   if (info.assistant_name) {
     const targetName = info.assistant_name.toLowerCase().trim();
-    const nameMatches = candidates.filter((m) => m.name && m.name.toLowerCase().trim() === targetName);
+    const nameMatches = unboundCandidates.filter((m) => m.name && m.name.toLowerCase().trim() === targetName);
     if (nameMatches.length === 1) {
       return nameMatches[0];
     }
@@ -503,9 +508,11 @@ export function initTelemetryBridge() {
               updateMemberBackendSlotId(matched.id, assistant.slot_id);
             }
           } else {
-            const newMemberId = assistant.assistant_id
-              ? `member-${assistant.assistant_id}`
-              : `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            const newMemberId = assistant.slot_id
+              ? `member-${assistant.slot_id}`
+              : assistant.assistant_id
+                ? `member-${assistant.assistant_id}`
+                : `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
             const newMember: OrgAgentMember = {
               id: newMemberId,
               canonicalAgentId: assistant.assistant_id || newMemberId,

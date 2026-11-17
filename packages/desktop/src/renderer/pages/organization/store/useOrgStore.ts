@@ -349,7 +349,9 @@ export function resolveRelatedOrgIds(nodeId: string, hierarchy: OrgHierarchy): S
         idsToUpdate.add(team.teamLeadAgent.id);
       }
       team.specialistMembers.forEach((spec) => {
-        if (spec.id === nodeId || spec.canonicalAgentId === nodeId) {
+        if (spec.id === nodeId) {
+          idsToUpdate.add(spec.id);
+        } else if (spec.canonicalAgentId === nodeId && !spec.backendSlotId) {
           idsToUpdate.add(spec.id);
           if (spec.canonicalAgentId) {
             canonicalId = spec.canonicalAgentId;
@@ -360,12 +362,12 @@ export function resolveRelatedOrgIds(nodeId: string, hierarchy: OrgHierarchy): S
     });
   });
 
-  // If canonicalId was found, update all instances of that member in all teams
+  // If canonicalId was found, update all instances of that member in all teams that don't have separate slots
   if (canonicalId) {
     hierarchy.departments.forEach((dept) => {
       dept.teams.forEach((team) => {
         team.specialistMembers.forEach((spec) => {
-          if (spec.canonicalAgentId === canonicalId) {
+          if (spec.canonicalAgentId === canonicalId && !spec.backendSlotId) {
             idsToUpdate.add(spec.id);
           }
         });
@@ -647,7 +649,7 @@ export function addTeamMember(teamId: string, member: OrgAgentMember): void {
           (m) =>
             m.id === member.id ||
             (member.backendSlotId && m.backendSlotId === member.backendSlotId) ||
-            (member.canonicalAgentId && m.canonicalAgentId === member.canonicalAgentId)
+            (!member.backendSlotId && member.canonicalAgentId && m.canonicalAgentId === member.canonicalAgentId)
         );
         if (alreadyExists) {
           return team;

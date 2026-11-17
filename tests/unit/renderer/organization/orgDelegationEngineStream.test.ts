@@ -38,7 +38,9 @@ describe('OrgDelegationEngine responseStream handling', () => {
     };
 
     vi.spyOn(ipcBridge.assistants.list, 'invoke').mockResolvedValue([]);
-    vi.spyOn(ipcBridge.mode.listProviders, 'invoke').mockResolvedValue([]);
+    vi.spyOn(ipcBridge.mode.listProviders, 'invoke').mockResolvedValue([
+      { id: 'test-prov', enabled: true, models: ['test-model'] } as any,
+    ]);
     vi.spyOn(ipcBridge.org, 'getSessionMcpServer').mockResolvedValue(null as any);
     vi.spyOn(ipcBridge.conversation.create, 'invoke').mockResolvedValue({ id: 'conv-123' } as any);
     vi.spyOn(ipcBridge.conversation.sendMessage, 'invoke').mockResolvedValue({} as any);
@@ -557,5 +559,143 @@ describe('OrgDelegationEngine responseStream handling', () => {
 
     const result = await stepPromise;
     expect(result).toContain('repeat repeat ');
+  });
+
+  describe('Part B: Model Selection & Handling', () => {
+    it('returns an error and performs no substitution when an explicit chosen model is unavailable', async () => {
+      vi.spyOn(ipcBridge.mode.listProviders, 'invoke').mockResolvedValue([
+        { id: 'openai', enabled: true, models: ['gpt-4o'] } as any,
+      ]);
+
+      const agentWithUnavailableModel: OrgAgentMember = {
+        ...testAgent,
+        model: {
+          providerId: 'anthropic',
+          modelId: 'claude-3-7-sonnet',
+        },
+      };
+
+      const streamUpdates: string[] = [];
+      const result = await engine.runOrgAgentStep({
+        agent: agentWithUnavailableModel,
+        systemPrompt: 'You are an agent',
+        userDirective: 'do something',
+        workspacePath: '',
+        onStreamUpdate: (t) => streamUpdates.push(t),
+      });
+
+      expect(result).toContain('[Error: Model "claude-3-7-sonnet" (provider: "anthropic") is unavailable');
+      expect(ipcBridge.conversation.create.invoke).not.toHaveBeenCalled();
+      expect(ipcBridge.conversation.sendMessage.invoke).not.toHaveBeenCalled();
+    });
+
+    it('falls back to available provider model and outputs notice naming model used when agent has no model set', async () => {
+      vi.spyOn(ipcBridge.mode.listProviders, 'invoke').mockResolvedValue([
+        { id: 'ollama', enabled: true, models: ['llama-3'] } as any,
+      ]);
+
+      const agentWithoutModel: OrgAgentMember = {
+        ...testAgent,
+        model: undefined,
+      };
+
+      const streamUpdates: string[] = [];
+      const stepPromise = engine.runOrgAgentStep({
+        agent: agentWithoutModel,
+        systemPrompt: 'You are an agent',
+        userDirective: 'do something',
+        workspacePath: '',
+        onStreamUpdate: (t) => streamUpdates.push(t),
+      });
+
+      for (let i = 0; i < 50 && !streamHandler; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(streamHandler).toBeDefined();
+
+      streamHandler!({
+        conversation_id: 'conv-123',
+        type: 'text',
+        data: 'Done with task.',
+      });
+      streamHandler!({
+        conversation_id: 'conv-123',
+        type: 'finish',
+        status: 'finish',
+      });
+
+      const result = await stepPromise;
+      expect(result).toContain('Done with task.');
+      expect(streamUpdates.some((u) => u.includes('Using llama-3'))).toBe(true);
+    });
+
+    it('reroutes ACP CLI agent to API assistant when the model belongs to a foreign provider not valid for the CLI', async () => {
+      // CLI is claude-acp, only supports claude models
+      vi.spyOn(ipcBridge.assistants.list, 'invoke').mockResolvedValue([
+        {
+          id: 'claude-cli-assistant',
+          enabled: true,
+          agent: { type: 'acp', acp_backend: 'claude' },
+          models: ['claude-3-5-sonnet'],
+        } as any,
+        {
+          id: 'bare:632f31d2',
+          enabled: true,
+          agent: { type: 'aionrs' },
+          models: ['gpt-4o'],
+        } as any,
+      ]);
+
+      vi.spyOn(ipcBridge.mode.listProviders, 'invoke').mockResolvedValue([
+        { id: 'openai', enabled: true, models: ['gpt-4o'] } as any,
+      ]);
+
+      const acpAgentWithGpt4o: OrgAgentMember = {
+        ...testAgent,
+        canonicalAgentId: 'claude-cli-assistant',
+        assistant_backend: 'acp',
+        model: {
+          providerId: 'openai',
+          modelId: 'gpt-4o',
+        },
+      };
+
+      let createdPayload: any = null;
+      vi.spyOn(ipcBridge.conversation.create, 'invoke').mockImplementation(async (payload: any) => {
+        createdPayload = payload;
+        return { id: 'conv-rerouted' } as any;
+      });
+
+      const stepPromise = engine.runOrgAgentStep({
+        agent: acpAgentWithGpt4o,
+        systemPrompt: 'You are an agent',
+        userDirective: 'run something',
+        workspacePath: '',
+      });
+
+      for (let i = 0; i < 50 && !streamHandler; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(streamHandler).toBeDefined();
+
+      streamHandler!({
+        conversation_id: 'conv-rerouted',
+        type: 'text',
+        data: 'Rerouted reply.',
+      });
+      streamHandler!({
+        conversation_id: 'conv-rerouted',
+        type: 'finish',
+        status: 'finish',
+      });
+
+      await stepPromise;
+
+      // Because gpt-4o is foreign to claude-cli-assistant, it must switch to API assistant (bare:632f31d2)
+      expect(createdPayload).toBeDefined();
+      expect(createdPayload.assistant.id).toBe('bare:632f31d2');
+      expect(createdPayload.model).toEqual({ id: 'openai', use_model: 'gpt-4o' });
+      expect(createdPayload.extra.current_model_id).toBeUndefined();
+    });
   });
 });

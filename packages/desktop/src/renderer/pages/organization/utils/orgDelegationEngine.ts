@@ -790,8 +790,11 @@ export class OrgDelegationEngine {
       // 1. Resolve real available assistant from backend
       let assistantId = opts.agent.canonicalAgentId || opts.agent.id;
       let isAcp = opts.agent.assistant_backend === 'acp';
+      let acpAssistant: any = null;
+      let allAssistants: any[] = [];
       try {
         const assistants = (await ipcBridge.assistants.list.invoke()) ?? [];
+        allAssistants = assistants;
         const enabled = assistants.filter((a) => a.enabled !== false);
         if (isAcp) {
           const acpPreferred =
@@ -804,6 +807,7 @@ export class OrgDelegationEngine {
             enabled.find((a) => a.agent?.type === 'acp');
           if (acpPreferred?.id) {
             assistantId = acpPreferred.id;
+            acpAssistant = acpPreferred;
           } else {
             isAcp = false;
           }
@@ -827,54 +831,116 @@ export class OrgDelegationEngine {
 
       // 2. Resolve model from configured App Settings
       let resolvedModel: { id: string; use_model: string } | undefined;
+      const explicitModel = opts.agent.model?.modelId?.trim();
+      const explicitProviderId = opts.agent.model?.providerId?.trim();
+
       try {
         const providers = (await ipcBridge.mode.listProviders.invoke()) ?? [];
         const enabledProviders = providers.filter((p) => p.enabled !== false);
 
-        if (opts.agent.model?.providerId && opts.agent.model?.modelId) {
-          const matchedProvider = enabledProviders.find((p) => p.id === opts.agent.model?.providerId);
-          if (matchedProvider) {
-            resolvedModel = { id: matchedProvider.id, use_model: opts.agent.model.modelId };
+        if (explicitModel) {
+          // If the agent has an explicit model, resolve it against enabled providers
+          if (explicitProviderId) {
+            const matchedProvider = enabledProviders.find((p) => p.id === explicitProviderId);
+            if (matchedProvider && matchedProvider.models?.includes(explicitModel)) {
+              resolvedModel = { id: matchedProvider.id, use_model: explicitModel };
+            }
+          }
+          if (!resolvedModel) {
+            const matchedProvider = enabledProviders.find((p) => p.models?.includes(explicitModel));
+            if (matchedProvider) {
+              resolvedModel = { id: matchedProvider.id, use_model: explicitModel };
+            }
+          }
+
+          // If explicit model cannot be resolved, DO NOT substitute another model
+          if (!resolvedModel) {
+            const providerNotice = explicitProviderId ? ` (provider: "${explicitProviderId}")` : '';
+            const errorMsg = `Model "${explicitModel}"${providerNotice} is unavailable or its provider is disabled. Please configure your API key or active model under Settings -> Model.`;
+            pushNotice(`[Error: ${errorMsg}]\n`);
+            runError = errorMsg;
+            return `[Error: ${errorMsg}]`;
+          }
+        } else {
+          // Agent has NO model set: allow fallbacks and push a one-line notice
+          // Fall back to Root CEO's assigned model if configured and available
+          if (this.hierarchy.rootCeo.ceoAgent.model?.modelId) {
+            const ceoModel = this.hierarchy.rootCeo.ceoAgent.model;
+            const matchedProvider = enabledProviders.find(
+              (p) => (ceoModel.providerId && p.id === ceoModel.providerId) || p.models?.includes(ceoModel.modelId)
+            );
+            if (matchedProvider) {
+              resolvedModel = { id: matchedProvider.id, use_model: ceoModel.modelId };
+            }
+          }
+          // Fall back to first available model from user's enabled providers
+          if (!resolvedModel && enabledProviders.length > 0) {
+            const p = enabledProviders.find((prov) => prov.models && prov.models.length > 0) || enabledProviders[0];
+            if (p?.models && p.models.length > 0) {
+              resolvedModel = {
+                id: p.id,
+                use_model: p.models[0],
+              };
+            }
+          }
+
+          if (resolvedModel) {
+            pushNotice(`[Notice: No model set for ${opts.agent.name}. Using ${resolvedModel.use_model}.]\n`);
           }
         }
-        if (!resolvedModel && opts.agent.model?.modelId) {
-          const matchedProvider = enabledProviders.find((p) => p.models?.includes(opts.agent.model!.modelId));
-          if (matchedProvider) {
-            resolvedModel = { id: matchedProvider.id, use_model: opts.agent.model.modelId };
-          }
+      } catch (err) {
+        if (explicitModel) {
+          const errorMsg = `Failed to resolve model "${explicitModel}". Please configure your API key or active model under Settings -> Model.`;
+          pushNotice(`[Error: ${errorMsg}]\n`);
+          runError = errorMsg;
+          return `[Error: ${errorMsg}]`;
         }
-        // Fall back to Root CEO's assigned model if configured
-        if (!resolvedModel && this.hierarchy.rootCeo.ceoAgent.model?.modelId) {
-          const ceoModel = this.hierarchy.rootCeo.ceoAgent.model;
-          const matchedProvider = enabledProviders.find(
-            (p) => (ceoModel.providerId && p.id === ceoModel.providerId) || p.models?.includes(ceoModel.modelId)
-          );
-          if (matchedProvider) {
-            resolvedModel = { id: matchedProvider.id, use_model: ceoModel.modelId };
-          }
-        }
-        // Fall back to first available model from user's enabled providers
-        if (!resolvedModel && enabledProviders.length > 0) {
-          const p = enabledProviders.find((prov) => prov.models && prov.models.length > 0) || enabledProviders[0];
-          resolvedModel = {
-            id: p.id,
-            use_model: (p.models && p.models[0]) || opts.agent.model?.modelId || 'default',
-          };
-        }
-        // Final fallback to agent's custom model definition
-        if (!resolvedModel && opts.agent.model?.modelId) {
-          resolvedModel = {
-            id: opts.agent.model.providerId || 'default',
-            use_model: opts.agent.model.modelId,
-          };
-        }
-      } catch {
-        // Non-fatal provider resolution fallback
       }
 
       // 3. Resolve or create real conversation session
       let convId = opts.conversationId;
       if (!convId) {
+        // If agent is ACP/CLI, verify that resolvedModel is valid for this CLI
+        if (isAcp && resolvedModel) {
+          let cliModels: string[] = [];
+          if (Array.isArray(acpAssistant?.models) && acpAssistant.models.length > 0) {
+            cliModels = acpAssistant.models;
+          } else {
+            try {
+              const managedAgents = await ipcBridge.acpConversation.getManagedAgents.invoke();
+              if (Array.isArray(managedAgents)) {
+                const targetAgentInfo = managedAgents.find(
+                  (a) => a.id === assistantId || a.id === opts.agent.canonicalAgentId || a.name === opts.agent.name
+                );
+                if (targetAgentInfo?.available_models && Array.isArray(targetAgentInfo.available_models)) {
+                  cliModels = targetAgentInfo.available_models.map((m: any) =>
+                    typeof m === 'string' ? m : m.id || m.name || m.value
+                  );
+                }
+              }
+            } catch {}
+          }
+
+          const modelValidForCli = cliModels.length === 0 || cliModels.includes(resolvedModel.use_model);
+          if (!modelValidForCli) {
+            // Model belongs to a different provider than the CLI can use:
+            // switch conversation to an API-based assistant (aionrs) for that model
+            const apiAssistant =
+              allAssistants.find(
+                (a) => a.enabled !== false && a.source === 'generated' && a.agent?.type === 'aionrs'
+              ) ??
+              allAssistants.find((a) => a.enabled !== false && a.agent?.type === 'aionrs') ??
+              allAssistants.find((a) => a.enabled !== false && (a.id === 'bare:632f31d2' || a.id.includes('aionrs')));
+            if (apiAssistant?.id) {
+              assistantId = apiAssistant.id;
+              isAcp = false;
+            } else {
+              assistantId = 'bare:632f31d2';
+              isAcp = false;
+            }
+          }
+        }
+
         let sessionMcpServers: any[] = [];
         try {
           const orgRole =

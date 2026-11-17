@@ -378,17 +378,55 @@ export const OrgChatView: React.FC = () => {
   );
 
   const handleSelectAgentModel = useCallback(
-    (newModel: OrgAgentModelConfig) => {
+    async (newModel: OrgAgentModelConfig) => {
       updateAgentModel(currentTargetAgent.id, newModel);
-      Message.success(
-        t('team.organization.modelSet', {
-          defaultValue: 'Model set to {{model}} for {{agent}}',
-          model: newModel.modelName || newModel.modelId,
-          agent: currentTargetAgent.name,
-        })
-      );
+
+      // If active conversation has an established backend session, apply or reset it
+      if (activeConversation?.backendConversationId) {
+        let applied = false;
+        try {
+          const modelPayload = {
+            id: newModel.providerId || 'default',
+            use_model: newModel.modelId,
+          };
+          const ok = await ipcBridge.conversation.update.invoke({
+            id: activeConversation.backendConversationId,
+            updates: { model: modelPayload as any },
+          });
+          applied = Boolean(ok);
+        } catch {
+          applied = false;
+        }
+
+        if (applied) {
+          Message.info(
+            t('team.organization.modelUpdatedApplied', {
+              defaultValue: 'Model updated for current session',
+            })
+          );
+        } else {
+          // Clear backendConversationId so next message creates a fresh conversation session with the new model
+          addOrgConversation({
+            ...activeConversation,
+            backendConversationId: undefined,
+          });
+          Message.info(
+            t('team.organization.modelUpdatedSessionReset', {
+              defaultValue: 'Model updated; cleared session. Next message will start a new session with the new model',
+            })
+          );
+        }
+      } else {
+        Message.success(
+          t('team.organization.modelSet', {
+            defaultValue: 'Model set to {{model}} for {{agent}}',
+            model: newModel.modelName || newModel.modelId,
+            agent: currentTargetAgent.name,
+          })
+        );
+      }
     },
-    [currentTargetAgent.id, currentTargetAgent.name, updateAgentModel, t]
+    [currentTargetAgent.id, currentTargetAgent.name, updateAgentModel, activeConversation, addOrgConversation, t]
   );
 
   const messages = useMemo<OrgConversationMessage[]>(() => {

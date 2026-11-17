@@ -3145,6 +3145,8 @@ export type I18nKey =
   | 'team.organization.legendTitle'
   | 'team.organization.manageProjects'
   | 'team.organization.modelSet'
+  | 'team.organization.modelUpdatedApplied'
+  | 'team.organization.modelUpdatedSessionReset'
   | 'team.organization.moreActions'
   | 'team.organization.newCeoChat'
   | 'team.organization.newChat'

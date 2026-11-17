@@ -118,6 +118,8 @@
     "tellRootCeoPlaceholder": "Tell your Root CEO what you want done...",
     "workspaceUnbound": "Organization workspace unbound",
     "modelSet": "Model set to {{model}} for {{agent}}",
+    "modelUpdatedApplied": "Model updated for current session",
+    "modelUpdatedSessionReset": "Model updated; cleared session. Next message will start a new session with the new model",
     "responseReceived": "Response received from {{agent}}",
     "halted": "Halted:",
     "communicatingWithProjectLead": "Communicating with {{agent}} for {{project}} [Model: {{model}}]...",
