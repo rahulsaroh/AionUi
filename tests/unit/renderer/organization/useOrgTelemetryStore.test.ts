@@ -14,6 +14,7 @@ import {
   initTelemetryBridge,
   resetTelemetryBridge,
   toOrgNodeStatus,
+  matchCandidateMember,
 } from '@/renderer/pages/organization/store/useOrgTelemetryStore';
 import {
   setOrgStoreSnapshot,
@@ -343,5 +344,253 @@ describe('useOrgTelemetryStore', () => {
     const updatedStore = getOrgStoreSnapshot();
     const updatedMember = updatedStore.hierarchy.departments[0].teams[0].specialistMembers[0];
     expect(updatedMember.backendSlotId).toBe('slot-sam-42');
+  });
+
+  it('spawn event for an unknown agent creates a member and the glow targets it; duplicate spawn events do not create duplicates', async () => {
+    const hierarchy: OrgHierarchy = {
+      rootCeo: {
+        id: 'root-ceo',
+        name: 'Root CEO',
+        parentId: null,
+        status: 'idle',
+        lastActiveAt: null,
+        ceoAgent: {
+          id: 'ceo-agent',
+          canonicalAgentId: 'c-ceo',
+          name: 'CEO Agent',
+          role: 'ceo',
+          assignedTeamIds: [],
+          lastActiveAt: null,
+          status: 'idle',
+        },
+      },
+      departments: [
+        {
+          id: 'dept-spawn',
+          name: 'Growth',
+          parentDepartmentId: 'root-ceo',
+          status: 'idle',
+          lastActiveAt: null,
+          linkedProjects: [{ id: 'proj-spawn', name: 'Growth Loop' }],
+          departmentCeoAgent: {
+            id: 'dept-head-spawn',
+            canonicalAgentId: 'c-growth-head',
+            name: 'Growth VP',
+            role: 'department_head',
+            assignedTeamIds: [],
+            lastActiveAt: null,
+            status: 'idle',
+          },
+          teams: [
+            {
+              id: 'team-spawn',
+              departmentId: 'dept-spawn',
+              name: 'Viral Ops',
+              status: 'idle',
+              lastActiveAt: null,
+              backendTeamId: 'backend-growth-team',
+              linkedProjectId: 'proj-spawn',
+              teamLeadAgent: {
+                id: 'lead-spawn',
+                canonicalAgentId: 'c-lead-growth',
+                name: 'Growth Lead',
+                role: 'team_lead',
+                assignedTeamIds: ['team-spawn'],
+                lastActiveAt: null,
+                status: 'idle',
+              },
+              hrCoordinatorAgent: {
+                id: 'hr-spawn',
+                canonicalAgentId: 'c-hr-growth',
+                name: 'Growth HR',
+                role: 'hr_coordinator',
+                assignedTeamIds: ['team-spawn'],
+                lastActiveAt: null,
+                status: 'idle',
+              },
+              specialistMembers: [],
+            },
+          ],
+        },
+      ],
+      lastUpdated: Date.now(),
+    };
+
+    const projects: OrgProject[] = [
+      {
+        id: 'proj-spawn',
+        name: 'Growth Loop',
+        departmentId: 'dept-spawn',
+        teamIds: ['team-spawn'],
+        status: 'active',
+        backendTeamId: 'backend-growth-team',
+      },
+    ];
+
+    setOrgStoreSnapshot({
+      hierarchy,
+      projects,
+      nodeStatuses: {},
+    });
+
+    let agentSpawnedCb: ((e: any) => Promise<void>) | undefined;
+    let agentRemovedCb: ((e: any) => Promise<void>) | undefined;
+    let slotWorkCb: ((e: any) => Promise<void>) | undefined;
+
+    (ipcBridge.team.agentSpawned as any).on = vi.fn((cb) => {
+      agentSpawnedCb = cb;
+      return () => {};
+    });
+    (ipcBridge.team.agentRemoved as any).on = vi.fn((cb) => {
+      agentRemovedCb = cb;
+      return () => {};
+    });
+    (ipcBridge.team.slotWorkChanged as any).on = vi.fn((cb) => {
+      slotWorkCb = cb;
+      return () => {};
+    });
+
+    initTelemetryBridge();
+    expect(agentSpawnedCb).toBeDefined();
+    expect(agentRemovedCb).toBeDefined();
+    expect(slotWorkCb).toBeDefined();
+
+    // 1. Trigger agentSpawned for an unknown agent
+    await agentSpawnedCb!({
+      team_id: 'backend-growth-team',
+      assistant: {
+        slot_id: 'slot-nova-88',
+        assistant_name: 'Nova Analyst',
+        assistant_id: 'c-nova-analyst',
+        role: 'specialist',
+      },
+    });
+
+    // 2. Member must be created in the team
+    const storeAfterSpawn = getOrgStoreSnapshot();
+    const team = storeAfterSpawn.hierarchy.departments[0].teams[0];
+    expect(team.specialistMembers.length).toBe(1);
+
+    const created = team.specialistMembers[0];
+    expect(created.name).toBe('Nova Analyst');
+    expect(created.backendSlotId).toBe('slot-nova-88');
+    expect(created.canonicalAgentId).toBe('c-nova-analyst');
+    expect(created.role).toBe('specialist');
+
+    // 3. Duplicate spawn event should NOT create a duplicate
+    await agentSpawnedCb!({
+      team_id: 'backend-growth-team',
+      assistant: {
+        slot_id: 'slot-nova-88',
+        assistant_name: 'Nova Analyst',
+        assistant_id: 'c-nova-analyst',
+        role: 'specialist',
+      },
+    });
+
+    const storeAfterDup = getOrgStoreSnapshot();
+    expect(storeAfterDup.hierarchy.departments[0].teams[0].specialistMembers.length).toBe(1);
+
+    // 4. slotWorkChanged for that slot lights up that member
+    await slotWorkCb!({
+      team_id: 'backend-growth-team',
+      slot_work: {
+        slot_id: 'slot-nova-88',
+        state: 'running',
+      },
+    });
+
+    const storeAfterWork = getOrgStoreSnapshot();
+    expect(storeAfterWork.nodeStatuses[created.id]).toBe('working');
+
+    // Glow computation targets the newly created member
+    const propResult = computeOrgStatusPropagation(
+      storeAfterWork.hierarchy,
+      storeAfterWork.projects,
+      storeAfterWork.nodeStatuses
+    );
+    expect(propResult.workingNodeIds.has(created.id)).toBe(true);
+    expect(propResult.workingNodeIds.has('team-spawn')).toBe(true);
+
+    // 5. agentRemoved removes the member
+    await agentRemovedCb!({
+      team_id: 'backend-growth-team',
+      slot_id: 'slot-nova-88',
+    });
+
+    const storeAfterRemoved = getOrgStoreSnapshot();
+    expect(storeAfterRemoved.hierarchy.departments[0].teams[0].specialistMembers.length).toBe(0);
+  });
+
+  describe('member matching with shared names (Requirement 3)', () => {
+    const candidateA = {
+      id: 'member-1',
+      canonicalAgentId: 'c-alex-alpha',
+      name: 'Alex',
+      role: 'specialist',
+      assignedTeamIds: ['team-1'],
+      lastActiveAt: null,
+      status: 'idle' as const,
+      backendSlotId: 'slot-alex-1',
+    };
+
+    const candidateB = {
+      id: 'member-2',
+      canonicalAgentId: 'c-alex-beta',
+      name: 'Alex',
+      role: 'specialist',
+      assignedTeamIds: ['team-1'],
+      lastActiveAt: null,
+      status: 'idle' as const,
+      backendSlotId: 'slot-alex-2',
+    };
+
+    const candidateUnique = {
+      id: 'member-3',
+      canonicalAgentId: 'c-jordan',
+      name: 'Jordan',
+      role: 'specialist',
+      assignedTeamIds: ['team-1'],
+      lastActiveAt: null,
+      status: 'idle' as const,
+      backendSlotId: 'slot-jordan',
+    };
+
+    const candidates = [candidateA, candidateB, candidateUnique];
+
+    it('prefers match by slot id when two members share a name', () => {
+      const match = matchCandidateMember(candidates, {
+        slot_id: 'slot-alex-2',
+        assistant_name: 'Alex',
+      });
+      expect(match).toBeDefined();
+      expect(match?.id).toBe('member-2');
+      expect(match?.canonicalAgentId).toBe('c-alex-beta');
+    });
+
+    it('prefers match by assistant_id when two members share a name', () => {
+      const match = matchCandidateMember(candidates, {
+        assistant_id: 'c-alex-alpha',
+        assistant_name: 'Alex',
+      });
+      expect(match).toBeDefined();
+      expect(match?.id).toBe('member-1');
+      expect(match?.backendSlotId).toBe('slot-alex-1');
+    });
+
+    it('returns undefined if multiple members match name and neither slot_id nor assistant_id matches', () => {
+      const match = matchCandidateMember(candidates, {
+        assistant_name: 'Alex',
+      });
+      expect(match).toBeUndefined();
+    });
+
+    it('matches by name when exactly one candidate matches that name', () => {
+      const match = matchCandidateMember(candidates, {
+        assistant_name: 'Jordan',
+      });
+      expect(match).toBeDefined();
+      expect(match?.id).toBe('member-3');
+    });
   });
 });

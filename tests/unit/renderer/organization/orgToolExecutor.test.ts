@@ -425,5 +425,40 @@ describe('executeOrgToolInStore (Step 1 & Step 2)', () => {
       expect(res.success).toBe(true);
       expect(res.task).toContain('User approved: add Alice using coder-bot');
     });
+
+    it('tightened approval detection handles affirmative answers and caveat words correctly', () => {
+      const askPayload = {
+        question: 'Should I recruit these agents?',
+        suggestedMembers: [{ name: 'Designer', assistant: 'designer-bot' }],
+      };
+
+      // "yes" approves
+      const resYes = handleUserAnswerAsk(askPayload, 'yes');
+      expect(resYes.approvedLineupId).toBeDefined();
+      expect(resYes.answer).toContain('yes approved_lineup_id=');
+
+      // "yes, but skip the designer" does not approve
+      const resYesBut = handleUserAnswerAsk(askPayload, 'yes, but skip the designer');
+      expect(resYesBut.approvedLineupId).toBeUndefined();
+      expect(resYesBut.answer).toBe('yes, but skip the designer');
+
+      // "addition" does not approve
+      const resAddition = handleUserAnswerAsk(askPayload, 'addition');
+      expect(resAddition.approvedLineupId).toBeUndefined();
+      expect(resAddition.answer).toBe('addition');
+
+      // "ok" approves
+      const resOk = handleUserAnswerAsk(askPayload, 'ok');
+      expect(resOk.approvedLineupId).toBeDefined();
+      expect(resOk.answer).toContain('ok approved_lineup_id=');
+
+      // Additional caveat checks: except, not, don't, without, skip, instead, only
+      expect(handleUserAnswerAsk(askPayload, 'ok, except for the designer').approvedLineupId).toBeUndefined();
+      expect(handleUserAnswerAsk(askPayload, 'sure, not the first one').approvedLineupId).toBeUndefined();
+      expect(handleUserAnswerAsk(askPayload, "yeah, don't add the designer").approvedLineupId).toBeUndefined();
+      expect(handleUserAnswerAsk(askPayload, 'proceed without the designer').approvedLineupId).toBeUndefined();
+      expect(handleUserAnswerAsk(askPayload, 'go ahead, instead pick someone else').approvedLineupId).toBeUndefined();
+      expect(handleUserAnswerAsk(askPayload, 'approve only the tester').approvedLineupId).toBeUndefined();
+    });
   });
 });

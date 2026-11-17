@@ -113,6 +113,7 @@ export const OrgChatView: React.FC = () => {
   const [errorState, setErrorState] = useState<{ message: string; threadId: string } | null>(null);
   const [draftsByThreadId, setDraftsByThreadId] = useState<Record<string, string>>({});
   const [activeProposal, setActiveProposal] = useState<StructureProposalData | null>(null);
+  const [activeAskLineup, setActiveAskLineup] = useState<AskUserPayload | null>(null);
   const [permissionQueue, setPermissionQueue] = useState<OrgPermissionRequest[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -126,6 +127,10 @@ export const OrgChatView: React.FC = () => {
     });
     const unsubAskUser = onAskUser((payload) => {
       lastAskUserPayloadRef.current = payload;
+      const members = payload.suggestedMembers || payload.members;
+      if (payload.asked && members) {
+        setActiveAskLineup(payload);
+      }
     });
     const unsubPermission = onOrgPermissionRequested((req) => {
       if (!req) return;
@@ -489,6 +494,7 @@ export const OrgChatView: React.FC = () => {
       if (lastAskUserPayloadRef.current) {
         const askPayload = lastAskUserPayloadRef.current;
         lastAskUserPayloadRef.current = null;
+        setActiveAskLineup(null);
         const res = handleUserAnswerAsk(askPayload, promptToSend);
         promptToSend = res.answer;
       }
@@ -1443,6 +1449,63 @@ export const OrgChatView: React.FC = () => {
                       }
                     }}
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Active lineup confirmation card */}
+            {activeAskLineup && (
+              <div className='flex gap-12px max-w-800px w-full mr-auto'>
+                <div className='size-32px rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center justify-center text-14px shrink-0 mt-2px shadow-sm'>
+                  👥
+                </div>
+                <div className='flex flex-col gap-6px p-12px rounded-lg bg-[var(--color-bg-2)] border border-[var(--color-border-2)] text-13px max-w-[90%] shadow-sm'>
+                  <div className='text-11px font-mono text-t-tertiary px-2px'>Root CEO • Team Lineup Confirmation</div>
+                  <div className='font-medium text-t-primary'>{activeAskLineup.question}</div>
+                  <div className='flex flex-wrap gap-8px my-4px'>
+                    {Array.isArray(activeAskLineup.suggestedMembers || activeAskLineup.members) &&
+                      (
+                        (activeAskLineup.suggestedMembers || activeAskLineup.members) as Array<{
+                          name?: string;
+                          role?: string;
+                          assistant?: string;
+                        }>
+                      ).map((m, idx) => (
+                        <div
+                          key={idx}
+                          className='px-8px py-4px rounded bg-[var(--color-fill-2)] text-12px border border-[var(--color-border-2)] flex items-center gap-4px'
+                        >
+                          <span className='font-medium'>{m.name || 'Agent'}</span>
+                          {(m.role || m.assistant) && (
+                            <span className='text-t-tertiary text-11px'>({m.role || m.assistant})</span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                  <div className='flex gap-8px mt-4px'>
+                    <Button
+                      type='primary'
+                      size='small'
+                      onClick={() => {
+                        const res = handleUserAnswerAsk(activeAskLineup, 'yes');
+                        setActiveAskLineup(null);
+                        lastAskUserPayloadRef.current = null;
+                        void executeTurn(res.answer);
+                      }}
+                    >
+                      {t('common.approve', { defaultValue: 'Approve' })}
+                    </Button>
+                    <Button
+                      size='small'
+                      onClick={() => {
+                        setActiveAskLineup(null);
+                        lastAskUserPayloadRef.current = null;
+                        void executeTurn('No, do not recruit this lineup.');
+                      }}
+                    >
+                      {t('common.reject', { defaultValue: 'Reject' })}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}

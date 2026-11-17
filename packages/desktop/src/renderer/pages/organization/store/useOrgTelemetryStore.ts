@@ -8,7 +8,14 @@ import { useState, useEffect } from 'react';
 import { ipcBridge } from '@/common';
 import type { NodeExecutionStatus, ActiveHandoff, NodeActivityUpdate } from '../types';
 import type { OrgNodeStatus, OrgProject, OrgTeamNode, OrgAgentMember } from '@/types/organization';
-import { touchNodeActivity, setOrgNodeStatus, getOrgStoreSnapshot, updateMemberBackendSlotId } from './useOrgStore';
+import {
+  touchNodeActivity,
+  setOrgNodeStatus,
+  getOrgStoreSnapshot,
+  updateMemberBackendSlotId,
+  addTeamMember,
+  removeTeamMember,
+} from './useOrgStore';
 
 type OrgTelemetryState = {
   nodeStatuses: Record<string, NodeExecutionStatus>;
@@ -179,6 +186,36 @@ export function recordDelegationComplete(params: { sourceTeamId: string; targetS
   }
 }
 
+export function matchCandidateMember(
+  candidates: OrgAgentMember[],
+  info: { slot_id?: string; assistant_id?: string; assistant_name?: string }
+): OrgAgentMember | undefined {
+  // 1. Prefer match by slot id
+  if (info.slot_id) {
+    const bySlot = candidates.find((m) => m.backendSlotId === info.slot_id);
+    if (bySlot) return bySlot;
+  }
+
+  // 2. Prefer match by assistant_id
+  if (info.assistant_id) {
+    const byId = candidates.find(
+      (m) => (m.canonicalAgentId && m.canonicalAgentId === info.assistant_id) || m.id === info.assistant_id
+    );
+    if (byId) return byId;
+  }
+
+  // 3. Only use name matching when exactly one candidate matches
+  if (info.assistant_name) {
+    const targetName = info.assistant_name.toLowerCase().trim();
+    const nameMatches = candidates.filter((m) => m.name && m.name.toLowerCase().trim() === targetName);
+    if (nameMatches.length === 1) {
+      return nameMatches[0];
+    }
+  }
+
+  return undefined;
+}
+
 export async function findOrgMemberBySlot(
   teamId: string,
   slotId?: string | null
@@ -260,12 +297,11 @@ export async function findOrgMemberBySlot(
           if (ast.role === 'leader' && team?.teamLeadAgent) {
             target = team.teamLeadAgent;
           } else {
-            target = candidateMembers.find(
-              (m) =>
-                (m.name && ast.assistant_name && m.name.toLowerCase() === ast.assistant_name.toLowerCase()) ||
-                (m.canonicalAgentId && ast.assistant_id && m.canonicalAgentId === ast.assistant_id) ||
-                m.id === ast.assistant_id
-            );
+            target = matchCandidateMember(candidateMembers, {
+              slot_id: ast.slot_id,
+              assistant_id: ast.assistant_id,
+              assistant_name: ast.assistant_name,
+            });
           }
           if (target) {
             target.backendSlotId = ast.slot_id;
@@ -275,7 +311,11 @@ export async function findOrgMemberBySlot(
 
         const matchedAst = assistants.find((a: { slot_id?: string }) => a.slot_id === slotId);
         if (matchedAst) {
-          const matchedMember = candidateMembers.find((m) => m.backendSlotId === slotId);
+          const matchedMember = matchCandidateMember(candidateMembers, {
+            slot_id: matchedAst.slot_id,
+            assistant_id: matchedAst.assistant_id,
+            assistant_name: matchedAst.assistant_name,
+          });
           if (matchedMember) {
             return { project, team, member: matchedMember };
           }
@@ -436,19 +476,61 @@ export function initTelemetryBridge() {
     });
 
     ipcBridge.team.agentSpawned?.on(async (e) => {
-      if (e?.team_id && e?.assistant) {
+      const assistant = e?.assistant || (e as any)?.agent;
+      if (e?.team_id && assistant) {
         const { team } = await findOrgMemberBySlot(e.team_id);
-        if (team && e.assistant.slot_id) {
-          const members = team.specialistMembers || [];
-          const matched = members.find(
-            (m) =>
-              (m.name &&
-                e.assistant.assistant_name &&
-                m.name.toLowerCase() === e.assistant.assistant_name.toLowerCase()) ||
-              m.id === e.assistant.assistant_id
-          );
+        if (team) {
+          const candidates: OrgAgentMember[] = [
+            ...(team.specialistMembers || []),
+            ...(team.teamLeadAgent ? [team.teamLeadAgent] : []),
+            ...(team.hrCoordinatorAgent ? [team.hrCoordinatorAgent] : []),
+          ];
+          if (team.members) {
+            team.members.forEach((m) => {
+              if (!candidates.some((c) => c.id === m.id)) candidates.push(m);
+            });
+          }
+
+          const matched = matchCandidateMember(candidates, {
+            slot_id: assistant.slot_id,
+            assistant_id: assistant.assistant_id,
+            assistant_name: assistant.assistant_name,
+          });
+
           if (matched) {
-            updateMemberBackendSlotId(matched.id, e.assistant.slot_id);
+            if (assistant.slot_id && matched.backendSlotId !== assistant.slot_id) {
+              matched.backendSlotId = assistant.slot_id;
+              updateMemberBackendSlotId(matched.id, assistant.slot_id);
+            }
+          } else {
+            const newMemberId = assistant.assistant_id
+              ? `member-${assistant.assistant_id}`
+              : `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            const newMember: OrgAgentMember = {
+              id: newMemberId,
+              canonicalAgentId: assistant.assistant_id || newMemberId,
+              name: assistant.assistant_name || 'Specialist',
+              role: 'specialist',
+              backendSlotId: assistant.slot_id,
+              assignedTeamIds: [team.id],
+              status: 'idle',
+              lastActiveAt: null,
+              workspacePath: team.workspacePath || null,
+            };
+            addTeamMember(team.id, newMember);
+          }
+        }
+      }
+    });
+
+    ipcBridge.team.agentRemoved?.on(async (e) => {
+      if (e?.team_id && e?.slot_id) {
+        const { team, member } = await findOrgMemberBySlot(e.team_id, e.slot_id);
+        if (team) {
+          const targetId = member?.id || e.slot_id;
+          removeTeamMember(team.id, targetId);
+          if (member?.id) {
+            setOrgNodeStatus(member.id, 'dormant');
           }
         }
       }

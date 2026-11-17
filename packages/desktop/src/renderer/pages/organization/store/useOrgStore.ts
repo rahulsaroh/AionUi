@@ -637,6 +637,105 @@ export function updateMemberBackendSlotId(memberId: string, slotId: string): voi
   }
 }
 
+export function addTeamMember(teamId: string, member: OrgAgentMember): void {
+  let modified = false;
+  const nextDepartments = globalState.hierarchy.departments.map((department) => ({
+    ...department,
+    teams: department.teams.map((team) => {
+      if (team.id === teamId || team.backendTeamId === teamId) {
+        const alreadyExists = (team.specialistMembers || []).some(
+          (m) =>
+            m.id === member.id ||
+            (member.backendSlotId && m.backendSlotId === member.backendSlotId) ||
+            (member.canonicalAgentId && m.canonicalAgentId === member.canonicalAgentId)
+        );
+        if (alreadyExists) {
+          return team;
+        }
+        modified = true;
+        const nextSpecs = [...(team.specialistMembers || []), member];
+        return {
+          ...team,
+          specialistMembers: nextSpecs,
+          ...(team.members ? { members: [...team.members, member] } : {}),
+        };
+      }
+      return team;
+    }),
+  }));
+
+  if (modified) {
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      lastUpdated: Date.now(),
+      departments: nextDepartments,
+    };
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    void memberHandbook
+      .create({
+        memberKey: `org:${member.id}`,
+        memberName: member.name,
+        role: member.role,
+        seedPrompt: member.systemPrompt,
+        model: member.model?.modelId,
+      })
+      .catch((err) => {
+        console.warn('[useOrgStore] Failed to create handbook for org member:', member.name, err);
+      });
+    notify();
+  }
+}
+
+export function removeTeamMember(teamId: string, slotOrMemberId: string): void {
+  let removedMemberId: string | undefined;
+  let modified = false;
+  const nextDepartments = globalState.hierarchy.departments.map((department) => ({
+    ...department,
+    teams: department.teams.map((team) => {
+      if (team.id === teamId || team.backendTeamId === teamId) {
+        const remainingSpecs = (team.specialistMembers || []).filter((m) => {
+          const match =
+            m.id === slotOrMemberId || m.backendSlotId === slotOrMemberId || m.canonicalAgentId === slotOrMemberId;
+          if (match) removedMemberId = m.id;
+          return !match;
+        });
+        if (remainingSpecs.length !== (team.specialistMembers || []).length) {
+          modified = true;
+        }
+        const remainingMembers = team.members?.filter((m) => {
+          const match =
+            m.id === slotOrMemberId || m.backendSlotId === slotOrMemberId || m.canonicalAgentId === slotOrMemberId;
+          if (match) removedMemberId = m.id;
+          return !match;
+        });
+        return {
+          ...team,
+          specialistMembers: remainingSpecs,
+          ...(team.members ? { members: remainingMembers } : {}),
+        };
+      }
+      return team;
+    }),
+  }));
+
+  if (modified) {
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      lastUpdated: Date.now(),
+      departments: nextDepartments,
+    };
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    if (removedMemberId) {
+      void memberHandbook.delete({ memberKey: `org:${removedMemberId}`, archive: true }).catch((err) => {
+        console.warn('[useOrgStore] Failed to archive handbook for removed member:', removedMemberId, err);
+      });
+    }
+    notify();
+  }
+}
+
 export function useOrgStore() {
   const [state, setState] = useState<OrgStoreState>(globalState);
 
@@ -951,36 +1050,12 @@ export function useOrgStore() {
     notify();
   }, []);
 
-  const addTeamMember = useCallback((teamId: string, member: OrgAgentMember) => {
-    const nextHierarchy = {
-      ...globalState.hierarchy,
-      lastUpdated: Date.now(),
-      departments: globalState.hierarchy.departments.map((department) => ({
-        ...department,
-        teams: department.teams.map((team) =>
-          team.id === teamId
-            ? {
-                ...team,
-                specialistMembers: [...team.specialistMembers, member],
-              }
-            : team
-        ),
-      })),
-    };
-    globalState = { ...globalState, hierarchy: nextHierarchy };
-    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
-    void memberHandbook
-      .create({
-        memberKey: `org:${member.id}`,
-        memberName: member.name,
-        role: member.role,
-        seedPrompt: member.systemPrompt,
-        model: member.model?.modelId,
-      })
-      .catch((err) => {
-        console.warn('[useOrgStore] Failed to create handbook for org member:', member.name, err);
-      });
-    notify();
+  const handleAddTeamMember = useCallback((teamId: string, member: OrgAgentMember) => {
+    addTeamMember(teamId, member);
+  }, []);
+
+  const handleRemoveTeamMember = useCallback((teamId: string, slotOrMemberId: string) => {
+    removeTeamMember(teamId, slotOrMemberId);
   }, []);
 
   const updateRootCeo = useCallback((patch: Partial<OrgHierarchy['rootCeo']>) => {
@@ -1555,7 +1630,8 @@ export function useOrgStore() {
     updateDepartment,
     addSubTeam,
     updateTeamNode,
-    addTeamMember,
+    addTeamMember: handleAddTeamMember,
+    removeTeamMember: handleRemoveTeamMember,
     updateTeamMember,
     updateRootCeo,
     updateAgentModel,

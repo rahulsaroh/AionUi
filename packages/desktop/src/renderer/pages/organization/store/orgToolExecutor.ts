@@ -737,15 +737,16 @@ export function handleUserAnswerAsk(
   userAnswer: string
 ): { answer: string; approvedLineupId?: string } {
   const members = questionPayload.suggestedMembers || questionPayload.members;
-  const isAffirmative = /^(yes|yeah|sure|ok|okay|approve|approved|go ahead|proceed|yep|add|hire)/i.test(
-    userAnswer.trim()
-  );
+  const trimmed = userAnswer.trim();
+  const hasAffirmativeStart = /^(yes|yeah|yep|sure|ok|okay|approve|approved|go ahead|proceed)\b/i.test(trimmed);
+  const hasCaveat = /\b(but|except|not|don't|dont|without|skip|instead|only)\b/i.test(trimmed);
+  const isApproved = hasAffirmativeStart && !hasCaveat;
   const projectId = questionPayload.projectId || questionPayload.project_id;
 
-  if (members && isAffirmative) {
+  if (members && isApproved) {
     const lineupId = recordApprovedLineupInStore(members, undefined, projectId);
     return {
-      answer: `${userAnswer.trim()} approved_lineup_id=${lineupId}`,
+      answer: `${trimmed} approved_lineup_id=${lineupId}`,
       approvedLineupId: lineupId,
     };
   }
