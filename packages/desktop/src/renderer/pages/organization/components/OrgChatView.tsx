@@ -28,7 +28,13 @@ import { OrgModelSelector } from './OrgModelSelector';
 import { runAgentTurn, buildAgentSystemContext, type OrgChatTarget } from '../utils/agentTurn';
 import { OrgMasterFolderModal } from './OrgMasterFolderModal';
 import { OrgProposalCard, type StructureProposalData } from './OrgProposalCard';
-import { setupOrgToolBridgeListener, onStructureProposed } from '../store/orgToolExecutor';
+import {
+  setupOrgToolBridgeListener,
+  onStructureProposed,
+  onAskUser,
+  handleUserAnswerAsk,
+  type AskUserPayload,
+} from '../store/orgToolExecutor';
 import { onOrgPermissionRequested, type OrgPermissionRequest } from '../utils/orgDelegationEngine';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import { computeAutoTitle } from '../utils/orgCoherence';
@@ -111,11 +117,15 @@ export const OrgChatView: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<(() => Promise<void>) | null>(null);
+  const lastAskUserPayloadRef = useRef<AskUserPayload | null>(null);
 
   useEffect(() => {
     const unsubBridge = setupOrgToolBridgeListener();
     const unsubProposal = onStructureProposed((proposal) => {
       setActiveProposal(proposal);
+    });
+    const unsubAskUser = onAskUser((payload) => {
+      lastAskUserPayloadRef.current = payload;
     });
     const unsubPermission = onOrgPermissionRequested((req) => {
       if (!req) return;
@@ -136,6 +146,7 @@ export const OrgChatView: React.FC = () => {
     return () => {
       unsubBridge();
       unsubProposal();
+      unsubAskUser();
       unsubPermission();
       unsubLive?.();
     };
@@ -474,12 +485,20 @@ export const OrgChatView: React.FC = () => {
       );
       updateNodeStatus(targetAgent.id, 'working');
 
+      let promptToSend = prompt;
+      if (lastAskUserPayloadRef.current) {
+        const askPayload = lastAskUserPayloadRef.current;
+        lastAskUserPayloadRef.current = null;
+        const res = handleUserAnswerAsk(askPayload, promptToSend);
+        promptToSend = res.answer;
+      }
+
       // Use existing user message or create new one
       const userMessage = existingUserMessage ?? {
         id: `msg-${Date.now()}-u`,
         sender: 'User',
         role: 'user',
-        content: prompt,
+        content: promptToSend,
         timestamp: Date.now(),
       };
 
@@ -549,11 +568,11 @@ export const OrgChatView: React.FC = () => {
           projects,
           threadId: targetConvId,
           target: activeChatTarget,
-          userText: prompt,
+          userText: promptToSend,
           agent: targetAgent,
           workspacePath: activeWorkspace,
           systemContext,
-          conversation: activeConversation ?? null,
+          conversation: interimConversation,
           isCeo: isCeoDirective,
           onNodeStatusUpdate: updateNodeStatus,
           signal: abortController.signal,

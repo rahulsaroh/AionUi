@@ -14,6 +14,8 @@ import type {
   OrgAgentMember,
   OrgCreatedEntityRef,
   OrgNodeStatus,
+  OrgConversation,
+  OrgConversationMessage,
 } from '@/types/organization';
 
 export type CeoEventType = 'text-delta' | 'step' | 'created-entities' | 'approval-request' | 'error' | 'done';
@@ -53,6 +55,7 @@ export interface RunCeoTurnOptions {
   onNodeStatusUpdate?: (nodeId: string, status: string) => void;
   signal?: AbortSignal;
   conversationId?: string;
+  conversation?: OrgConversation | null;
 }
 
 export interface RunCeoTurnResult {
@@ -120,9 +123,24 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
     try {
       onNodeStatusUpdate?.('root-ceo', 'working');
 
+      let effectiveUserText = userText;
+      if (options.conversation?.messages) {
+        const msgs = options.conversation.messages;
+        const lastAssistantIdx = msgs.findLastIndex((m: OrgConversationMessage) => m.role === 'assistant');
+        const recentSystemMsgs = msgs
+          .slice(lastAssistantIdx >= 0 ? lastAssistantIdx + 1 : 0)
+          .filter(
+            (m: OrgConversationMessage) => m.role === 'system' && m.content && !effectiveUserText.includes(m.content)
+          );
+        if (recentSystemMsgs.length > 0) {
+          const prefix = recentSystemMsgs.map((m: OrgConversationMessage) => m.content).join('\n\n');
+          effectiveUserText = `${prefix}\n\n${effectiveUserText}`;
+        }
+      }
+
       // Start the directive execution
       finalResult = await engine.executeDirective(
-        userText,
+        effectiveUserText,
         targetDeptId,
         targetTeamId,
         targetProjectId,

@@ -73,7 +73,18 @@ export function computeOrgStatusPropagation(
     let deptHasWorking = false;
 
     // Department CEO agent
-    if (isWorking(dept.id) || isWorking(dept.departmentCeoAgent?.id) || isWorking(dept.pmAgentId)) {
+    if (dept.departmentCeoAgent) {
+      const dCeo = dept.departmentCeoAgent;
+      if (isWorking(dCeo.id) || isWorking(dCeo.canonicalAgentId)) {
+        deptHasWorking = true;
+        workingNodeIds.add(dCeo.id);
+        activeWorkingCount++;
+      }
+      if (isError(dCeo.id) || isError(dCeo.canonicalAgentId)) errorNodeIds.add(dCeo.id);
+      if (isQueued(dCeo.id) || isQueued(dCeo.canonicalAgentId)) queuedNodeIds.add(dCeo.id);
+      if (isFinished(dCeo.id) || isFinished(dCeo.canonicalAgentId)) finishedNodeIds.add(dCeo.id);
+    }
+    if (isWorking(dept.id) || (dept.pmAgentId && isWorking(dept.pmAgentId))) {
       deptHasWorking = true;
       activeWorkingCount++;
     }
@@ -84,13 +95,46 @@ export function computeOrgStatusPropagation(
       let teamHasWorking = false;
 
       // Check Team Lead & HR
-      if (isWorking(team.id) || isWorking(team.teamLeadAgent?.id) || isWorking(team.hrCoordinatorAgent?.id)) {
+      if (team.teamLeadAgent) {
+        const lead = team.teamLeadAgent;
+        if (isWorking(lead.id) || isWorking(lead.canonicalAgentId)) {
+          teamHasWorking = true;
+          workingNodeIds.add(lead.id);
+          activeWorkingCount++;
+        }
+        if (isError(lead.id) || isError(lead.canonicalAgentId)) errorNodeIds.add(lead.id);
+        if (isQueued(lead.id) || isQueued(lead.canonicalAgentId)) queuedNodeIds.add(lead.id);
+        if (isFinished(lead.id) || isFinished(lead.canonicalAgentId)) finishedNodeIds.add(lead.id);
+      }
+
+      if (team.hrCoordinatorAgent) {
+        const hr = team.hrCoordinatorAgent;
+        if (isWorking(hr.id) || isWorking(hr.canonicalAgentId)) {
+          teamHasWorking = true;
+          workingNodeIds.add(hr.id);
+          activeWorkingCount++;
+        }
+        if (isError(hr.id) || isError(hr.canonicalAgentId)) errorNodeIds.add(hr.id);
+        if (isQueued(hr.id) || isQueued(hr.canonicalAgentId)) queuedNodeIds.add(hr.id);
+        if (isFinished(hr.id) || isFinished(hr.canonicalAgentId)) finishedNodeIds.add(hr.id);
+      }
+
+      if (isWorking(team.id)) {
         teamHasWorking = true;
         activeWorkingCount++;
       }
 
-      // Check Specialist Members
-      team.specialistMembers.forEach((member) => {
+      // Check Specialist Members (and flat team members)
+      const specialists = team.specialistMembers || [];
+      const flatMembers = (team.members || []).filter(
+        (m) =>
+          m.id !== team.teamLeadAgent?.id &&
+          m.id !== team.hrCoordinatorAgent?.id &&
+          !specialists.some((s) => s.id === m.id)
+      );
+      const allSpecs = [...specialists, ...flatMembers];
+
+      allSpecs.forEach((member) => {
         const memberWorking = isWorking(member.id) || isWorking(member.canonicalAgentId);
         if (memberWorking) {
           teamHasWorking = true;

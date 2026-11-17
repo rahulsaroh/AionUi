@@ -68,14 +68,27 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
   } = options;
 
   if (isCeo || target.type === 'ceo') {
-    const ceo = runCeoTurn(threadId, userText, {
+    const msgs = conversation?.messages || [];
+    const lastAssistantIdx = msgs.findLastIndex((m) => m.role === 'assistant');
+    const recentSystemMsgs = msgs
+      .slice(lastAssistantIdx >= 0 ? lastAssistantIdx + 1 : 0)
+      .filter((m) => m.role === 'system' && m.content);
+
+    let effectivePrompt = userText;
+    if (recentSystemMsgs.length > 0) {
+      const systemContextPrefix = recentSystemMsgs.map((m) => m.content).join('\n\n');
+      effectivePrompt = `${systemContextPrefix}\n\n${userText}`;
+    }
+
+    const ceo = runCeoTurn(threadId, effectivePrompt, {
       hierarchy,
       projects,
-      userPrompt: userText,
+      userPrompt: effectivePrompt,
       useRealExecution: true,
       onNodeStatusUpdate,
       signal,
       conversationId: conversation?.backendConversationId,
+      conversation,
     });
     return {
       events: (async function* () {

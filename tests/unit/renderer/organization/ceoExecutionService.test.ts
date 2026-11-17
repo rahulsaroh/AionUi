@@ -88,4 +88,62 @@ describe('runCeoTurn Service', () => {
     expect(doneEvent).toBeDefined();
     expect(doneEvent?.data).toHaveProperty('finalSynthesis');
   });
+
+  it('includes proposal approval message with approved_lineup_id in the prompt to the CEO agent', async () => {
+    const lineupId = 'lineup-approved-999';
+    const conversation = {
+      id: 'conv-ceo-1',
+      title: 'CEO chat',
+      type: 'ceo_directive' as const,
+      sourceNodeId: 'root-ceo',
+      targetNodeId: 'root-ceo',
+      timestamp: 1,
+      messages: [
+        {
+          id: 'msg-1',
+          sender: 'User',
+          role: 'user',
+          content: 'Hire backend specialists',
+          timestamp: 100,
+        },
+        {
+          id: 'msg-2',
+          sender: 'CEO',
+          role: 'assistant',
+          content: 'I have proposed 2 specialists.',
+          timestamp: 200,
+        },
+        {
+          id: 'msg-3',
+          sender: 'System',
+          role: 'system',
+          content: `Approved and instantiated 2 organizational entities.\nUser approved the proposal. approved_lineup_id=${lineupId}. Use this id in assign_task.`,
+          timestamp: 300,
+        },
+      ],
+    };
+
+    // Spy on OrgDelegationEngine prototype executeDirective
+    const { OrgDelegationEngine } = await import('@/renderer/pages/organization/utils/orgDelegationEngine');
+    const executeDirectiveSpy = vi.spyOn(OrgDelegationEngine.prototype, 'executeDirective');
+
+    const { events: iterator } = runCeoTurn('test-thread', 'Assign task to build auth service', {
+      hierarchy: dummyHierarchy,
+      projects: dummyProjects,
+      userPrompt: 'Assign task to build auth service',
+      useRealExecution: false,
+      conversation,
+    });
+
+    for await (const _ of iterator) {
+      // drain events
+    }
+
+    expect(executeDirectiveSpy).toHaveBeenCalled();
+    const passedPrompt = executeDirectiveSpy.mock.calls[0][0];
+    expect(passedPrompt).toContain(`approved_lineup_id=${lineupId}`);
+    expect(passedPrompt).toContain('Assign task to build auth service');
+
+    executeDirectiveSpy.mockRestore();
+  });
 });

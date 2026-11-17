@@ -483,6 +483,160 @@ try {
   console.warn('[useOrgStore] Cron execution subscription warning:', err);
 }
 
+export function setOrgNodeStatus(nodeId: string, status: OrgNodeStatus, durationMs = 2000): void {
+  const idsToUpdate = resolveRelatedOrgIds(nodeId, globalState.hierarchy);
+
+  const nextStatuses = { ...globalState.nodeStatuses };
+  idsToUpdate.forEach((id) => {
+    nextStatuses[id] = status;
+  });
+
+  globalState = {
+    ...globalState,
+    nodeStatuses: nextStatuses,
+  };
+  notify();
+
+  // Auto-transition 'recently_finished' -> 'idle' after durationMs
+  if (status === 'recently_finished') {
+    idsToUpdate.forEach((id) => {
+      if (nodeResetTimers.has(id)) {
+        clearTimeout(nodeResetTimers.get(id)!);
+        nodeResetTimers.delete(id);
+      }
+    });
+
+    const timer = setTimeout(() => {
+      let needsReset = false;
+      const resetStatuses = { ...globalState.nodeStatuses };
+      idsToUpdate.forEach((id) => {
+        if (resetStatuses[id] === 'recently_finished') {
+          resetStatuses[id] = 'idle';
+          needsReset = true;
+        }
+      });
+      if (needsReset) {
+        globalState = {
+          ...globalState,
+          nodeStatuses: resetStatuses,
+        };
+        notify();
+      }
+    }, durationMs);
+
+    idsToUpdate.forEach((id) => {
+      nodeResetTimers.set(id, timer);
+    });
+  } else if (status === 'working') {
+    const now = Date.now();
+    idsToUpdate.forEach((id) => {
+      nodeActivityTimestamps.set(id, now);
+      scheduleNodeInactivityCheck(id);
+    });
+  } else {
+    // Status is idle/error/dormant/etc. Cancel any pending inactivity reset timer
+    idsToUpdate.forEach((id) => {
+      if (nodeResetTimers.has(id)) {
+        clearTimeout(nodeResetTimers.get(id)!);
+        nodeResetTimers.delete(id);
+      }
+    });
+  }
+}
+
+export function updateMemberBackendSlotId(memberId: string, slotId: string): void {
+  let changed = false;
+
+  const nextDepartments = globalState.hierarchy.departments.map((dept) => {
+    let deptChanged = false;
+    let deptCeo = dept.departmentCeoAgent;
+    if (deptCeo && (deptCeo.id === memberId || deptCeo.canonicalAgentId === memberId)) {
+      deptCeo = { ...deptCeo, backendSlotId: slotId };
+      deptChanged = true;
+    }
+
+    const nextTeams = dept.teams.map((team) => {
+      let teamChanged = false;
+      let lead = team.teamLeadAgent;
+      let hr = team.hrCoordinatorAgent;
+      if (lead && (lead.id === memberId || lead.canonicalAgentId === memberId)) {
+        lead = { ...lead, backendSlotId: slotId };
+        teamChanged = true;
+      }
+      if (hr && (hr.id === memberId || hr.canonicalAgentId === memberId)) {
+        hr = { ...hr, backendSlotId: slotId };
+        teamChanged = true;
+      }
+
+      const nextSpecs = team.specialistMembers.map((spec) => {
+        if (spec.id === memberId || spec.canonicalAgentId === memberId) {
+          teamChanged = true;
+          return { ...spec, backendSlotId: slotId };
+        }
+        return spec;
+      });
+
+      if (teamChanged) {
+        deptChanged = true;
+        return {
+          ...team,
+          teamLeadAgent: lead,
+          hrCoordinatorAgent: hr,
+          specialistMembers: nextSpecs,
+          members: team.members?.map((m) =>
+            m.id === memberId || m.canonicalAgentId === memberId ? { ...m, backendSlotId: slotId } : m
+          ),
+        };
+      }
+      return team;
+    });
+
+    if (deptChanged) {
+      changed = true;
+      return {
+        ...dept,
+        departmentCeoAgent: deptCeo,
+        teams: nextTeams,
+      };
+    }
+    return dept;
+  });
+
+  let nextRootCeo = globalState.hierarchy.rootCeo;
+  if (nextRootCeo.ceoAgent.id === memberId || nextRootCeo.ceoAgent.canonicalAgentId === memberId) {
+    nextRootCeo = {
+      ...nextRootCeo,
+      ceoAgent: { ...nextRootCeo.ceoAgent, backendSlotId: slotId },
+    };
+    changed = true;
+  }
+
+  const nextMembers = (globalState.members || []).map((m) => {
+    if (m.id === memberId || m.canonicalAgentId === memberId) {
+      changed = true;
+      return { ...m, backendSlotId: slotId };
+    }
+    return m;
+  });
+
+  if (changed) {
+    const nextHierarchy: OrgHierarchy = {
+      ...globalState.hierarchy,
+      departments: nextDepartments,
+      rootCeo: nextRootCeo,
+      lastUpdated: Date.now(),
+    };
+    globalState = {
+      ...globalState,
+      hierarchy: nextHierarchy,
+      members: nextMembers,
+    };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    notify();
+  }
+}
+
 export function useOrgStore() {
   const [state, setState] = useState<OrgStoreState>(globalState);
 
@@ -559,61 +713,8 @@ export function useOrgStore() {
     notify();
   }, []);
 
-  const updateNodeStatus = useCallback((nodeId: string, status: OrgNodeStatus) => {
-    const idsToUpdate = resolveRelatedOrgIds(nodeId, globalState.hierarchy);
-
-    const nextStatuses = { ...globalState.nodeStatuses };
-    idsToUpdate.forEach((id) => {
-      nextStatuses[id] = status;
-    });
-
-    globalState = {
-      ...globalState,
-      nodeStatuses: nextStatuses,
-    };
-    notify();
-
-    // Auto-transition 'recently_finished' -> 'idle' after 2000ms
-    if (status === 'recently_finished') {
-      idsToUpdate.forEach((id) => {
-        if (nodeResetTimers.has(id)) {
-          clearTimeout(nodeResetTimers.get(id)!);
-          nodeResetTimers.delete(id);
-        }
-      });
-
-      setTimeout(() => {
-        let needsReset = false;
-        const resetStatuses = { ...globalState.nodeStatuses };
-        idsToUpdate.forEach((id) => {
-          if (resetStatuses[id] === 'recently_finished') {
-            resetStatuses[id] = 'idle';
-            needsReset = true;
-          }
-        });
-        if (needsReset) {
-          globalState = {
-            ...globalState,
-            nodeStatuses: resetStatuses,
-          };
-          notify();
-        }
-      }, 2000);
-    } else if (status === 'working') {
-      const now = Date.now();
-      idsToUpdate.forEach((id) => {
-        nodeActivityTimestamps.set(id, now);
-        scheduleNodeInactivityCheck(id);
-      });
-    } else {
-      // Status is idle/error/dormant/etc. Cancel any pending inactivity reset timer
-      idsToUpdate.forEach((id) => {
-        if (nodeResetTimers.has(id)) {
-          clearTimeout(nodeResetTimers.get(id)!);
-          nodeResetTimers.delete(id);
-        }
-      });
-    }
+  const updateNodeStatus = useCallback((nodeId: string, status: OrgNodeStatus, durationMs?: number) => {
+    setOrgNodeStatus(nodeId, status, durationMs);
   }, []);
 
   const setHoveredCanonicalAgentId = useCallback((agentId: string | null) => {

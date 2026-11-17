@@ -51,6 +51,8 @@ export interface OrgAgentMember {
   systemPrompt?: string;
   /** Professional skills and capabilities of this agent */
   skills?: string[];
+  /** Backend slot ID in the backend team */
+  backendSlotId?: string;
 }
 
 export interface OrgTeamNode {

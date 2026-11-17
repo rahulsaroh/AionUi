@@ -60,6 +60,35 @@ export function emitStructureProposed(proposal: StructureProposal): void {
   }
 }
 
+export type AskUserPayload = {
+  asked: boolean;
+  question: string;
+  members?: unknown;
+  suggestedMembers?: unknown;
+  projectId?: string;
+  project_id?: string;
+};
+
+type AskUserListener = (payload: AskUserPayload) => void;
+const askUserListeners = new Set<AskUserListener>();
+
+export function onAskUser(listener: AskUserListener): () => void {
+  askUserListeners.add(listener);
+  return () => {
+    askUserListeners.delete(listener);
+  };
+}
+
+export function emitAskUser(payload: AskUserPayload): void {
+  for (const listener of askUserListeners) {
+    try {
+      listener(payload);
+    } catch (err) {
+      console.error('[OrgToolExecutor] Error in ask_user listener:', err);
+    }
+  }
+}
+
 /**
  * Executes an organizational tool call against the renderer store.
  * Returns structured results with created entity IDs.
@@ -673,12 +702,18 @@ export async function executeOrgToolInStore(
         timestamp: Date.now(),
       });
 
-      return {
+      const payload: AskUserPayload = {
         asked: true,
         question,
         members: args.suggestedMembers || args.members,
+        suggestedMembers: args.suggestedMembers || args.members,
         projectId: args.projectId || args.project_id,
+        project_id: args.projectId || args.project_id,
       };
+
+      emitAskUser(payload);
+
+      return payload;
     }
 
     default:
