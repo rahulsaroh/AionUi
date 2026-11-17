@@ -3164,6 +3164,7 @@ export type I18nKey =
   | 'team.organization.noMatchingProjects'
   | 'team.organization.noMatchingTeams'
   | 'team.organization.noModelConfigured'
+  | 'team.organization.noProjectMembers'
   | 'team.organization.noProjects'
   | 'team.organization.noSearchResults'
   | 'team.organization.noTeam'

@@ -379,8 +379,8 @@ export interface ElectronBridgeAPI {
   orgSaveFullBundle?: (bundle: unknown) => Promise<boolean>;
   orgGetMembers?: () => Promise<unknown[]>;
   orgSaveMembers?: (members: unknown[]) => Promise<boolean>;
-  orgGetProjects?: () => Promise<unknown[]>;
-  orgSaveProjects?: (projects: unknown[]) => Promise<boolean>;
+  orgGetProjects?: (params?: { mode?: 'workplace' | 'organization' }) => Promise<unknown[]>;
+  orgSaveProjects?: (params: { projects: unknown[]; mode?: 'workplace' | 'organization' }) => Promise<boolean>;
   orgScanFolder?: (params: {
     targetDir: string;
     allowedWorkspace: string;

@@ -15,6 +15,7 @@ import { MemberKnowledgePanel, KnowledgeChip } from '@/renderer/components/knowl
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import {
   validateWithinMaster,
+  validateOrgFolder,
   getDefaultDeptPath,
   getDefaultTeamPath,
   getDefaultProjectPath,
@@ -49,6 +50,10 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     upsertOrgProject,
     updateRootCeo,
     updateAgentModel,
+    removeDepartment,
+    removeOrgTeam,
+    removeTeamMember,
+    deleteOrgProject,
     hierarchy,
     projects,
   } = useOrgStore();
@@ -66,6 +71,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const [modelId, setModelId] = useState('claude-3-7-sonnet');
   const [parentDeptId, setParentDeptId] = useState('');
   const [folderPath, setFolderPath] = useState('');
+  const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [buildCmd, setBuildCmd] = useState('');
   const [runCmd, setRunCmd] = useState('');
   const [projectDeptId, setProjectDeptId] = useState('');
@@ -76,20 +82,24 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const masterRoot = hierarchy.rootCeo.workspacePath || null;
 
   useEffect(() => {
-    if (!folderPath.trim() || !masterRoot) {
+    const paths = (entity === 'team' || entity === 'project' ? folderPaths : [folderPath]).filter((path) =>
+      path.trim()
+    );
+    if (paths.length === 0 || !masterRoot) {
       setPathScopeError(null);
       return;
     }
     let cancelled = false;
-    void validateWithinMaster(folderPath, masterRoot).then((res) => {
+    void Promise.all(paths.map((path) => validateWithinMaster(path, masterRoot))).then((results) => {
       if (!cancelled) {
-        setPathScopeError(res.valid ? null : res.error || 'Folder must be inside the organization master folder');
+        const invalid = results.find((result) => !result.valid);
+        setPathScopeError(invalid?.error || (invalid ? 'Folder must be inside the organization master folder' : null));
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [folderPath, masterRoot]);
+  }, [folderPath, folderPaths, entity, masterRoot]);
 
   const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
 
@@ -136,6 +146,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   useEffect(() => {
     if (!visible || !data) return;
     setFolderPath('');
+    setFolderPaths([]);
     setProjectDeptId('');
     setProjectTeamId('');
 
@@ -165,6 +176,9 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       setModelId(team.teamLeadAgent.model?.modelId ?? 'claude-3-7-sonnet');
       setHrName(team.hrCoordinatorAgent.name);
       setFolderPath(team.workspacePath ?? '');
+      setFolderPaths(
+        team.workspacePaths?.length ? team.workspacePaths : team.workspacePath ? [team.workspacePath] : ['']
+      );
     } else if (entity === 'member') {
       const member = data as OrgAgentMember;
       setMemberName(member.name);
@@ -179,17 +193,43 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       setProjectDeptId(project.departmentId);
       setProjectTeamId(project.teamIds?.[0] ?? '');
       setFolderPath(project.workspacePath ?? project.path ?? '');
+      setFolderPaths(
+        project.workspacePaths?.length
+          ? project.workspacePaths
+          : project.workspacePath || project.path
+            ? [project.workspacePath || project.path || '']
+            : ['']
+      );
       setProjectStatus((project.status ?? 'active') as 'active' | 'dormant' | 'done');
     }
   }, [visible, data, entity]);
 
   const handleSave = useCallback(async () => {
-    if (folderPath.trim() && masterRoot) {
-      const check = await validateWithinMaster(folderPath, masterRoot);
-      if (!check.valid) {
-        Message.error(check.error || 'Folder must be inside the organization master folder');
-        setPathScopeError(check.error || 'Folder must be inside the organization master folder');
-        return;
+    const paths = (entity === 'team' || entity === 'project' ? folderPaths : [folderPath]).filter((path) =>
+      path.trim()
+    );
+    if (masterRoot) {
+      for (const path of paths) {
+        const check = await validateWithinMaster(path, masterRoot);
+        if (!check.valid) {
+          Message.error(check.error || 'Folder must be inside the organization master folder');
+          setPathScopeError(check.error || 'Folder must be inside the organization master folder');
+          return;
+        }
+      }
+    }
+    if (entity === 'project' && paths.length > 0) {
+      const parentRoot =
+        hierarchy.departments.find((department) => department.id === projectDeptId)?.workspacePath || masterRoot;
+      if (parentRoot) {
+        for (const path of paths) {
+          const check = await validateOrgFolder(path, parentRoot, 'project');
+          if (!check.valid) {
+            Message.error(check.error || 'Project folders must be inside the department folder');
+            setPathScopeError(check.error || 'Project folders must be inside the department folder');
+            return;
+          }
+        }
       }
     }
 
@@ -233,10 +273,12 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     if (entity === 'team' && data && context.teamId) {
       const team = data as OrgTeamNode;
       if (!name.trim()) return;
+      const assignedPaths = [...new Set(folderPaths.map((path) => path.trim()).filter(Boolean))];
       updateTeamNode(team.id, {
         name: name.trim(),
         description: description.trim() || undefined,
-        workspacePath: folderPath.trim() || undefined,
+        workspacePath: assignedPaths[0] || null,
+        workspacePaths: assignedPaths,
         teamLeadAgent: {
           ...team.teamLeadAgent,
           name: headName.trim() || team.teamLeadAgent.name,
@@ -286,13 +328,16 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
 
     if (entity === 'project') {
       if (!name.trim() || !projectDeptId) return;
+      const assignedPaths = [...new Set(folderPaths.map((path) => path.trim()).filter(Boolean))];
       upsertOrgProject({
         id: (data as OrgProject | null)?.id ?? `proj-${Date.now()}`,
         name: name.trim(),
         departmentId: projectDeptId,
         teamIds: projectTeamId ? [projectTeamId] : [],
-        path: folderPath.trim() || undefined,
-        workspacePath: folderPath.trim() || undefined,
+        path: assignedPaths[0] || undefined,
+        workspacePath: assignedPaths[0] || null,
+        workspacePaths: assignedPaths,
+        context: { ...(data as OrgProject | null)?.context, workspacePaths: assignedPaths },
         description: description.trim() || undefined,
         status: projectStatus,
       });
@@ -316,6 +361,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     modelId,
     parentDeptId,
     folderPath,
+    folderPaths,
     masterRoot,
     buildCmd,
     runCmd,
@@ -330,6 +376,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     updateRootCeo,
     updateAgentModel,
     hierarchy.rootCeo,
+    hierarchy.departments,
     providers,
     getAvailableModels,
     formatModelLabel,
@@ -343,6 +390,82 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const isTeam = entity === 'team';
   const isDept = entity === 'department';
   const isCeo = entity === 'ceo';
+  const isRemovableMember = Boolean(
+    isMember &&
+    context.teamId &&
+    hierarchy.departments.some((department) =>
+      department.teams.some(
+        (team) => team.id === context.teamId && team.specialistMembers.some((member) => member.id === data?.id)
+      )
+    )
+  );
+
+  const renderFolderList = (paths: string[], setPaths: React.Dispatch<React.SetStateAction<string[]>>) => (
+    <div className='flex flex-col gap-6px'>
+      {paths.map((path, index) => (
+        <div key={`folder-${index}`} className='flex items-center gap-6px'>
+          <div className='min-w-0 flex-1'>
+            <WorkspaceFolderSelect
+              value={path}
+              onChange={(nextPath) =>
+                setPaths((current) => current.map((item, itemIndex) => (itemIndex === index ? nextPath : item)))
+              }
+              placeholder={t('team.organization.assignFolder', { defaultValue: 'Choose folder' })}
+              recentLabel={t('team.create.recentLabel', { defaultValue: 'Recent' })}
+              chooseDifferentLabel={t('team.create.chooseDifferentFolder', { defaultValue: 'Browse folder' })}
+            />
+          </div>
+          {paths.length > 1 && (
+            <Button
+              size='mini'
+              type='text'
+              status='danger'
+              aria-label={t('common.remove', { defaultValue: 'Remove' })}
+              onClick={() => setPaths((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+            >
+              {t('common.remove', { defaultValue: 'Remove' })}
+            </Button>
+          )}
+        </div>
+      ))}
+      <Button
+        size='mini'
+        type='text'
+        className='self-start'
+        disabled={paths.length >= 20}
+        onClick={() => setPaths((current) => (current.length < 20 ? [...current, ''] : current))}
+      >
+        {t('common.add', { defaultValue: 'Add' })}
+      </Button>
+    </div>
+  );
+
+  const handleDelete = () => {
+    if (!data || isCeo) return;
+    Modal.confirm({
+      title: t('common.delete', { defaultValue: 'Delete' }),
+      content: t('team.sider.deleteConfirmContent', { defaultValue: 'This action cannot be undone.' }),
+      okButtonProps: { status: 'danger' },
+      onOk: () => {
+        let deleted = false;
+        if (isDept) deleted = removeDepartment(data.id);
+        else if (isTeam) deleted = removeOrgTeam(data.id);
+        else if (isMember && context.teamId) {
+          deleted = removeTeamMember(context.teamId, data.id);
+        } else if (isProject) {
+          deleteOrgProject(data.id);
+          deleted = true;
+        }
+        if (!deleted) {
+          Message.error(t('common.deleteFailed', { defaultValue: 'Could not delete this item.' }));
+          return;
+        }
+        Message.success(t('common.deleteSuccess', { defaultValue: 'Deleted successfully' }));
+        onSave?.();
+        onClose();
+      },
+    });
+  };
 
   return (
     <>
@@ -365,6 +488,23 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         okText={t('team.organization.save', { defaultValue: 'Save' })}
         cancelText={t('team.organization.cancel', { defaultValue: 'Cancel' })}
         okButtonProps={{ disabled: !name.trim() && !isMember && !isProject ? !name.trim() : false }}
+        footer={
+          <div className='flex items-center justify-between gap-8px'>
+            <div>
+              {data && (isDept || isTeam || isRemovableMember || isProject) ? (
+                <Button status='danger' onClick={handleDelete}>
+                  {t('common.delete', { defaultValue: 'Delete' })}
+                </Button>
+              ) : null}
+            </div>
+            <div className='flex items-center gap-8px'>
+              <Button onClick={onClose}>{t('team.organization.cancel', { defaultValue: 'Cancel' })}</Button>
+              <Button type='primary' onClick={() => void handleSave()}>
+                {t('team.organization.save', { defaultValue: 'Save' })}
+              </Button>
+            </div>
+          </div>
+        }
       >
         <div className='flex flex-col gap-10px'>
           {isCeo && (
@@ -526,14 +666,17 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               </div>
               <div className='flex flex-col gap-4px'>
                 <div className='flex items-center justify-between'>
-                  <span className='text-12px text-t-secondary'>Team Workspace Folder Path</span>
+                  <span className='text-12px text-t-secondary'>
+                    {t('team.organization.folder', { defaultValue: 'Workspace folders' })} (
+                    {folderPaths.filter((path) => path.trim()).length})
+                  </span>
                   {masterRoot && name.trim() && (
                     <Button
                       size='mini'
                       type='text'
                       onClick={() => {
                         const dept = hierarchy.departments.find((d) => d.id === context.departmentId);
-                        setFolderPath(getDefaultTeamPath(masterRoot, dept?.name || 'department', name));
+                        setFolderPaths([getDefaultTeamPath(masterRoot, dept?.name || 'department', name)]);
                       }}
                       className='!text-10px !h-20px !px-4px text-primary'
                     >
@@ -541,13 +684,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
                     </Button>
                   )}
                 </div>
-                <WorkspaceFolderSelect
-                  value={folderPath}
-                  onChange={setFolderPath}
-                  placeholder='Choose subfolder within master root...'
-                  recentLabel='Recent'
-                  chooseDifferentLabel='Browse Folder...'
-                />
+                {renderFolderList(folderPaths, setFolderPaths)}
                 {pathScopeError ? (
                   <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
                 ) : masterRoot ? (
@@ -641,25 +778,22 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               </div>
               <div className='flex flex-col gap-4px'>
                 <div className='flex items-center justify-between'>
-                  <span className='text-12px text-t-secondary'>Project Workspace Folder</span>
+                  <span className='text-12px text-t-secondary'>
+                    {t('team.organization.folder', { defaultValue: 'Workspace folders' })} (
+                    {folderPaths.filter((path) => path.trim()).length})
+                  </span>
                   {masterRoot && name.trim() && (
                     <Button
                       size='mini'
                       type='text'
-                      onClick={() => setFolderPath(getDefaultProjectPath(masterRoot, name))}
+                      onClick={() => setFolderPaths([getDefaultProjectPath(masterRoot, name)])}
                       className='!text-10px !h-20px !px-4px text-primary'
                     >
                       Auto-scaffold in Master Root
                     </Button>
                   )}
                 </div>
-                <WorkspaceFolderSelect
-                  value={folderPath}
-                  onChange={setFolderPath}
-                  placeholder='Assign subfolder within master root...'
-                  recentLabel='Recent'
-                  chooseDifferentLabel='Browse Folder...'
-                />
+                {renderFolderList(folderPaths, setFolderPaths)}
                 {pathScopeError ? (
                   <span className='text-10px text-red-500 font-mono'>{pathScopeError}</span>
                 ) : masterRoot ? (

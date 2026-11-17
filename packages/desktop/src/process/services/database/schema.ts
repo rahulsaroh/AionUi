@@ -55,6 +55,7 @@ export function initSchema(db: ISqliteDriver): void {
     channel_chat_id TEXT,
     pinned INTEGER NOT NULL DEFAULT 0,
     pinned_at INTEGER,
+    mode TEXT NOT NULL DEFAULT 'workplace' CHECK(mode IN ('workplace', 'organization')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -63,6 +64,8 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)');
 
   // Messages table (消息表 - 存储TMessage)
   db.exec(`CREATE TABLE IF NOT EXISTS messages (
@@ -96,6 +99,7 @@ export function initSchema(db: ISqliteDriver): void {
     parent_id TEXT NULL,
     department_role TEXT NULL,
     description TEXT NULL,
+    mode TEXT NOT NULL DEFAULT 'workplace' CHECK(mode IN ('workplace', 'organization')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -103,6 +107,8 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_id ON teams(user_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_parent_id ON teams(parent_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_updated_at ON teams(updated_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_teams_mode ON teams(mode)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_mode_updated ON teams(user_id, mode, updated_at DESC)');
 
   // Mailbox table (团队消息邮箱)
   db.exec(`CREATE TABLE IF NOT EXISTS mailbox (
@@ -365,10 +371,12 @@ export function initSchema(db: ISqliteDriver): void {
     description TEXT,
     status TEXT,
     context TEXT,
+    mode TEXT NOT NULL DEFAULT 'organization' CHECK(mode IN ('workplace', 'organization')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_dept ON org_projects(department_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_mode ON org_projects(mode)');
 
   // Organization state key-value table
   db.exec(`CREATE TABLE IF NOT EXISTS org_state (

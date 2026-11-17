@@ -71,6 +71,8 @@ export interface OrgTeamNode {
   description?: string;
   /** Persistent local disk directory bound to this team. */
   workspacePath?: string | null;
+  /** Additional folders available to the team in the same organization session. */
+  workspacePaths?: string[];
   /** Underlying AionCore backend team ID (if backed by a real team) */
   backendTeamId?: string;
 }
@@ -124,13 +126,17 @@ export interface OrgProject {
   memberIds?: string[];
   goal?: string;
   description?: string;
-  context?: { repos?: string[]; skills?: string[]; notes?: string };
+  context?: { repos?: string[]; skills?: string[]; notes?: string; workspacePaths?: string[] };
+  /** All project folders available to the project agent. workspacePath remains the primary folder for legacy clients. */
+  workspacePaths?: string[];
   status: 'active' | 'dormant' | 'done';
   path?: string;
   /** Persistent local disk directory bound to this project (canonical folder path). */
   workspacePath?: string | null;
   /** Underlying AionCore backend team ID (if backed by a real team) */
   backendTeamId?: string;
+  /** App mode: 'workplace' or 'organization' - isolates data between modes */
+  mode?: 'workplace' | 'organization';
 }
 
 export interface OrgStorageBundle {
@@ -181,6 +187,8 @@ export interface OrgConversation {
   timestamp: number;
   summary?: string;
   messages: OrgConversationMessage[];
+  /** App mode: 'workplace' or 'organization' - isolates data between modes */
+  mode?: 'workplace' | 'organization';
 }
 
 export interface OrgCronJob {

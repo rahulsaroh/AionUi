@@ -2847,15 +2847,15 @@ export const org = {
     }
     return false;
   },
-  getProjects: async (): Promise<any[]> => {
+  getProjects: async (params?: { mode?: 'workplace' | 'organization' }): Promise<any[]> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgGetProjects) {
-      return window.electronAPI.orgGetProjects();
+      return window.electronAPI.orgGetProjects(params);
     }
     return [];
   },
-  saveProjects: async (projects: unknown[]): Promise<boolean> => {
+  saveProjects: async (params: { projects: unknown[]; mode?: 'workplace' | 'organization' }): Promise<boolean> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgSaveProjects) {
-      return window.electronAPI.orgSaveProjects(projects);
+      return window.electronAPI.orgSaveProjects(params);
     }
     return false;
   },

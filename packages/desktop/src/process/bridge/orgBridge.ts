@@ -223,21 +223,21 @@ export function registerOrgBridge(): void {
     }
   });
 
-  ipcMain.handle('org:getProjects', async (): Promise<unknown[]> => {
+  ipcMain.handle('org:getProjects', async (_event, params?: { mode?: 'workplace' | 'organization' }): Promise<unknown[]> => {
     try {
-      return await orgStorageService.getProjects();
+      return await orgStorageService.getProjects(params?.mode);
     } catch (err) {
       console.error('[OrgBridge] getProjects failed:', err);
       return [];
     }
   });
 
-  ipcMain.handle('org:saveProjects', async (_event, projects: any[]): Promise<boolean> => {
+  ipcMain.handle('org:saveProjects', async (_event, params: { projects: any[]; mode?: 'workplace' | 'organization' }): Promise<boolean> => {
     try {
-      if (!Array.isArray(projects)) {
+      if (!Array.isArray(params.projects)) {
         return false;
       }
-      return await orgStorageService.saveProjects(projects);
+      return await orgStorageService.saveProjects(params.projects);
     } catch (err) {
       console.error('[OrgBridge] saveProjects failed:', err);
       return false;

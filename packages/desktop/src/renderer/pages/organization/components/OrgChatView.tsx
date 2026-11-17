@@ -289,16 +289,27 @@ export const OrgChatView: React.FC = () => {
     return undefined;
   }, [currentTargetAgent, hierarchy.rootCeo.ceoAgent.model, firstAvailableConfiguredModel]);
 
-  const activeWorkspacePath = useMemo(() => {
-    const raw =
+  const activeWorkspacePaths = useMemo(() => {
+    const assignedPaths = activeProject?.workspacePaths?.length
+      ? activeProject.workspacePaths
+      : activeTeam?.workspacePaths?.length
+        ? activeTeam.workspacePaths
+        : [];
+    const legacyPath =
       activeProject?.workspacePath ||
       activeProject?.path ||
       activeTargetAgent?.workspacePath ||
-      activeTeam?.workspacePath ||
-      activeDept?.workspacePath ||
-      hierarchy.rootCeo.workspacePath;
+      activeTeam?.workspacePath;
+    return [...new Set((assignedPaths.length > 0 ? assignedPaths : legacyPath ? [legacyPath] : []).filter(Boolean))];
+  }, [activeProject, activeTargetAgent, activeTeam]);
+
+  const activeWorkspacePath = useMemo(() => {
+    const raw =
+      activeWorkspacePaths.length > 1
+        ? hierarchy.rootCeo.workspacePath || activeWorkspacePaths[0]
+        : activeWorkspacePaths[0] || activeDept?.workspacePath || hierarchy.rootCeo.workspacePath;
     return raw && raw !== 'workspace' ? raw : null;
-  }, [activeProject, activeTargetAgent, activeTeam, activeDept, hierarchy.rootCeo.workspacePath]);
+  }, [activeWorkspacePaths, activeDept?.workspacePath, hierarchy.rootCeo.workspacePath]);
 
   // Unified target for the active thread. Every send goes through runAgentTurn
   // with this target; the CEO is just another target type.
@@ -527,6 +538,7 @@ export const OrgChatView: React.FC = () => {
             projectName: activeProject?.name,
             projectGoal: activeProject?.goal || activeProject?.description,
             workspacePath: activeWorkspace,
+            workspacePaths: activeWorkspacePaths,
             departmentName: activeDept?.name,
             roleLabel: targetAgent.title || targetAgent.role,
           });
@@ -1439,7 +1451,7 @@ export const OrgChatView: React.FC = () => {
                               key={`${ref.type}-${ref.id}`}
                               type='button'
                               onClick={() => handleSelectCreatedEntity(ref)}
-                              className=                                      'inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary-light-1 hover:bg-primary-light-2 border border-primary-light-3 text-left text-12px text-t-primary font-medium transition-colors cursor-pointer'
+                              className='inline-flex items-center gap-6px px-8px py-3px rounded-6px bg-primary-light-1 hover:bg-primary-light-2 border border-primary-light-3 text-left text-12px text-t-primary font-medium transition-colors cursor-pointer'
                               aria-label={ref.name}
                             >
                               <span className='text-10px font-mono uppercase opacity-75'>[{ref.type}]</span>

@@ -158,7 +158,22 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
         console.warn('[agentTurn] Failed to load agent knowledge:', err);
       }
 
-      const promptBlocks = [handbookBlock, knowledgeBlock, systemContext].filter(Boolean);
+      const priorMessages = !conversation?.backendConversationId
+        ? (conversation?.messages ?? [])
+            .slice(0, -1)
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .slice(-30)
+        : [];
+      const conversationHistory = priorMessages
+        .map((message) => `${message.role === 'user' ? 'User' : agent.name}: ${message.content}`)
+        .join('\n\n')
+        .slice(-24_000);
+      const promptBlocks = [
+        handbookBlock,
+        knowledgeBlock,
+        systemContext,
+        conversationHistory ? `Previous conversation:\n${conversationHistory}` : '',
+      ].filter(Boolean);
       const composedPrompt = `${promptBlocks.join('\n\n')}\n\n---\nUser: ${userText}`;
       const response = await engine.executeDirectMessage(
         agent,
@@ -200,6 +215,7 @@ export function buildAgentSystemContext(opts: {
   projectName?: string;
   projectGoal?: string;
   workspacePath?: string;
+  workspacePaths?: string[];
   departmentName?: string;
   roleLabel?: string;
 }): string {
@@ -210,5 +226,10 @@ export function buildAgentSystemContext(opts: {
   if (opts.projectName) parts.push(`Project: ${opts.projectName}`);
   if (opts.projectGoal) parts.push(`Goal: ${opts.projectGoal}`);
   if (opts.workspacePath) parts.push(`Workspace: ${opts.workspacePath}`);
+  if (opts.workspacePaths && opts.workspacePaths.length > 1) {
+    parts.push('Assigned folders available in this session:');
+    for (const folderPath of opts.workspacePaths) parts.push(`- ${folderPath}`);
+    parts.push('Work across all assigned folders as needed. Keep file operations inside the listed folders.');
+  }
   return parts.join('\n');
 }

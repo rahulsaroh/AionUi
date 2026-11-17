@@ -51,6 +51,7 @@ export function resolveOrgChatTarget(
   hierarchy: OrgHierarchy,
   projects: OrgProject[],
   conversations: OrgConversation[],
+  activeScope: 'workplace' | 'organization',
   t: (key: string, opts?: Record<string, unknown>) => string
 ): ResolvedChatTarget | { error: string } {
   const now = Date.now();
@@ -75,6 +76,7 @@ export function resolveOrgChatTarget(
       timestamp: now,
       summary: '',
       messages: [],
+      mode: activeScope,
     };
     return { agent, conversation: conv, workspacePath: hierarchy.rootCeo.workspacePath || undefined };
   }
@@ -99,6 +101,7 @@ export function resolveOrgChatTarget(
       timestamp: now,
       summary: '',
       messages: [],
+      mode: activeScope,
     };
     return {
       agent,
@@ -125,6 +128,22 @@ export function resolveOrgChatTarget(
         dept.teams[0];
     }
 
+    // If still no team, create one (as a shell) and add it to the department
+    if (!team && dept) {
+      mutatedHierarchy = {
+        ...hierarchyRef,
+        departments: hierarchyRef.departments.map((d) =>
+          d.id === dept.id
+            ? { ...d, teams: [...d.teams, createTeamShell(dept.id, project.name || 'Core')] }
+            : d
+        ),
+        lastUpdated: Date.now(),
+      };
+      team = mutatedHierarchy.departments.find((d) => d.id === dept.id)!.teams.at(-1)!;
+      hierarchyRef = mutatedHierarchy;
+      updatedProject = { ...project, teamIds: [...(project.teamIds || []), team.id] };
+    }
+
     const { agent } = projectHeadAgent(updatedProject || project, hierarchyRef);
     if (!agent) return { error: t('team.organization.agentNotFound', { defaultValue: 'Agent could not be resolved' }) };
 
@@ -147,6 +166,7 @@ export function resolveOrgChatTarget(
       timestamp: now,
       summary: '',
       messages: [],
+      mode: activeScope,
     };
     return {
       agent,
@@ -219,6 +239,7 @@ export function resolveOrgChatTarget(
       timestamp: now,
       summary: '',
       messages: [],
+      mode: activeScope,
     };
     return {
       agent: found.agent,

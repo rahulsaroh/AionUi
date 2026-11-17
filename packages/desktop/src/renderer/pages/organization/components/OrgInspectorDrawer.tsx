@@ -384,7 +384,7 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           const teamNode = d.teams.find((t) => t.id === selectedNodeId);
           if (teamNode) {
             // eslint-disable-next-line no-await-in-loop
-            await updateTeamNode(teamNode.id, { workspacePath: chosenPath });
+            await updateTeamNode(teamNode.id, { workspacePath: chosenPath, workspacePaths: [chosenPath] });
             Message.success(`Team workspace folder set to: ${chosenPath}`);
             break;
           }
@@ -392,7 +392,13 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
       } else if (selectedNodeType === 'project') {
         const proj = projects.find((p) => p.id === selectedNodeId);
         if (proj) {
-          upsertOrgProject({ ...proj, workspacePath: chosenPath, path: chosenPath });
+          upsertOrgProject({
+            ...proj,
+            workspacePath: chosenPath,
+            workspacePaths: [chosenPath],
+            path: chosenPath,
+            context: { ...proj.context, workspacePaths: [chosenPath] },
+          });
           Message.success(`Project workspace folder set to: ${chosenPath}`);
         }
       }

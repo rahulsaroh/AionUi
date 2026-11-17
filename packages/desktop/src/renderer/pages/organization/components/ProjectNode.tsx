@@ -44,7 +44,13 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
   const targetHandlePos = orientation === 'LR' ? Position.Left : Position.Top;
   const sourceHandlePos = orientation === 'LR' ? Position.Right : Position.Bottom;
 
-  const workspaceLabel = project.workspacePath || project.path || 'unbound';
+  const workspacePaths = project.workspacePaths?.length
+    ? project.workspacePaths
+    : project.workspacePath || project.path
+      ? [project.workspacePath || project.path || '']
+      : [];
+  const workspaceLabel = workspacePaths[0] || 'unbound';
+  const workspaceTitle = workspacePaths.join('\n') || workspaceLabel;
   const scopeText = project.description?.slice(0, 30) || 'Deliverable Focus';
 
   return (
@@ -101,21 +107,24 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
         <div
           onClick={(e) => {
             e.stopPropagation();
-            if (project.workspacePath) {
-              void ipcBridge.shell?.openFolderWith?.invoke?.({ folder_path: project.workspacePath, tool: 'explorer' });
+            if (workspacePaths[0]) {
+              void ipcBridge.shell?.openFolderWith?.invoke?.({ folder_path: workspacePaths[0], tool: 'explorer' });
             } else {
               onSetFolder?.();
             }
           }}
           className='flex items-center justify-between px-6px py-3px rounded bg-slate-800/40 border border-slate-700/50 text-9px text-slate-300 font-mono hover:border-purple-500/40 transition-colors'
-          title={workspaceLabel}
+          title={workspaceTitle}
         >
           <div className='flex items-center gap-4px truncate min-w-0'>
             <LinkOne size={10} className='text-purple-400 shrink-0' />
             <span className='truncate'>{workspaceLabel}</span>
+            {workspacePaths.length > 1 && (
+              <span className='shrink-0 text-purple-300'>+{workspacePaths.length - 1}</span>
+            )}
           </div>
           <span className='text-purple-300 opacity-60 hover:opacity-100 shrink-0 text-8px'>
-            {project.workspacePath ? 'open' : 'bind'}
+            {workspacePaths.length > 0 ? 'open' : 'bind'}
           </span>
         </div>
 

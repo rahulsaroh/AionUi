@@ -58,16 +58,21 @@ export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
     >
       <div className='flex items-center gap-6px truncate min-w-0'>
         <FolderClose size={13} theme='outline' className='text-amber-500 shrink-0' />
-        <span
-          className='truncate font-medium text-12px'
-          title={project.name}
-          aria-label={t('team.organization.openProjectChat', {
-            defaultValue: 'Open chat with {{name}}',
-            name: project.name,
-          })}
-        >
-          {project.name}
-        </span>
+        <div className='flex min-w-0 flex-col'>
+          <span
+            className='truncate font-medium text-12px'
+            title={project.name}
+            aria-label={t('team.organization.openProjectChat', {
+              defaultValue: 'Open chat with {{name}}',
+              name: project.name,
+            })}
+          >
+            {project.name}
+          </span>
+          <span className='text-9px text-t-tertiary'>
+            {t('team.organization.teams')}: {project.teamIds?.length ?? 0}
+          </span>
+        </div>
       </div>
       <div className='flex items-center gap-3px shrink-0'>
         <Tooltip {...siderTooltipProps} content={statusTooltip} position='top'>

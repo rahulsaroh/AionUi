@@ -45,6 +45,7 @@ const STORAGE_KEYS = {
   PROJECTS: 'aionui:org-projects',
   MEMBERS: 'aionui:org-members',
   CONVERSATIONS: 'aionui:org-conversations',
+  SELECTED_CONVERSATION: 'aionui:org-selected-conversation',
   CRON_JOBS: 'aionui:org-cron-jobs',
   VERSION: 'aionui:org-storage-version',
   APPROVED_LINEUPS: 'aionui:org-approved-lineups',
@@ -239,7 +240,7 @@ function createInitialState(): OrgStoreState {
     simulationMessage: '',
     orgViewMode: 'chat',
     activeFilter: 'all',
-    selectedConversationId: null,
+    selectedConversationId: loadStored<string | null>(STORAGE_KEYS.SELECTED_CONVERSATION, () => null),
     openChatError: null,
   };
 }
@@ -253,8 +254,15 @@ function notify() {
   listeners.forEach((l) => l(snapshot));
 }
 
-function persistHierarchyAndProjects(next: Pick<OrgStoreState, 'hierarchy' | 'projects'>) {
+function persistHierarchyAndProjects(
+  next: Pick<OrgStoreState, 'hierarchy' | 'projects'>,
+  mode: 'workplace' | 'organization'
+) {
   saveStored(STORAGE_KEYS.HIERARCHY, next.hierarchy);
+  // Save projects with mode to backend
+  ipcBridge.org.saveProjects({ projects: next.projects, mode }).catch((err) => {
+    console.warn('[useOrgStore] Failed to persist projects:', err);
+  });
   saveStored(STORAGE_KEYS.PROJECTS, next.projects);
 }
 
@@ -289,25 +297,57 @@ export async function revalidateStoredPaths(
         }
       }
     }
+    if (!masterRoot) continue;
+    for (const team of dept.teams) {
+      const requestedPaths = team.workspacePaths?.length
+        ? team.workspacePaths
+        : team.workspacePath
+          ? [team.workspacePath]
+          : [];
+      const validPaths: string[] = [];
+      for (const folderPath of requestedPaths) {
+        const check = await validateOrgFolder(folderPath, masterRoot, 'team');
+        if (!check.valid) {
+          changed = true;
+        } else if (check.resolvedPath) {
+          validPaths.push(check.resolvedPath);
+          if (check.resolvedPath !== folderPath) changed = true;
+        }
+      }
+      if (validPaths.length > 0 || requestedPaths.length > 0) {
+        team.workspacePaths = validPaths;
+        team.workspacePath = validPaths[0] || null;
+      }
+    }
   }
 
   for (const proj of projects) {
-    if (proj.workspacePath) {
+    const requestedPaths = proj.workspacePaths?.length
+      ? proj.workspacePaths
+      : proj.workspacePath || proj.path
+        ? [proj.workspacePath || proj.path || '']
+        : [];
+    if (requestedPaths.length > 0) {
       const dept = hierarchy.departments.find((d) => d.id === proj.departmentId);
       const parentRoot = dept?.workspacePath || masterRoot;
       if (!parentRoot) {
         proj.status = 'dormant';
         changed = true;
       } else {
-        const check = await validateOrgFolder(proj.workspacePath, parentRoot, 'project');
-        if (!check.valid) {
-          proj.status = 'dormant';
-          changed = true;
-        } else if (check.resolvedPath && check.resolvedPath !== proj.workspacePath) {
-          proj.workspacePath = check.resolvedPath;
-          proj.path = check.resolvedPath;
-          changed = true;
+        const validPaths: string[] = [];
+        for (const folderPath of requestedPaths) {
+          const check = await validateOrgFolder(folderPath, parentRoot, 'project');
+          if (!check.valid) {
+            proj.status = 'dormant';
+            changed = true;
+          } else if (check.resolvedPath) {
+            validPaths.push(check.resolvedPath);
+            if (check.resolvedPath !== folderPath) changed = true;
+          }
         }
+        proj.workspacePaths = validPaths;
+        proj.workspacePath = validPaths[0] || null;
+        proj.path = validPaths[0] || undefined;
       }
     }
   }
@@ -689,7 +729,7 @@ export function addTeamMember(teamId: string, member: OrgAgentMember): void {
   }
 }
 
-export function removeTeamMember(teamId: string, slotOrMemberId: string): void {
+export function removeTeamMember(teamId: string, slotOrMemberId: string): boolean {
   let removedMemberId: string | undefined;
   let modified = false;
   const nextDepartments = globalState.hierarchy.departments.map((department) => ({
@@ -736,6 +776,7 @@ export function removeTeamMember(teamId: string, slotOrMemberId: string): void {
     }
     notify();
   }
+  return modified;
 }
 
 export function useOrgStore() {
@@ -747,9 +788,10 @@ export function useOrgStore() {
     // Sync from persistent backend SQLite store on startup if available
     const syncFromPersistentStore = async () => {
       try {
+        const mode = globalState.activeScope;
         const [hierRaw, projRaw, convRaw] = await Promise.all([
           ipcBridge.org.loadData(STORAGE_KEYS.HIERARCHY),
-          ipcBridge.org.loadData(STORAGE_KEYS.PROJECTS),
+          ipcBridge.org.getProjects({ mode }),
           ipcBridge.org.loadData(STORAGE_KEYS.CONVERSATIONS),
         ]);
         let changed = false;
@@ -766,32 +808,37 @@ export function useOrgStore() {
             }
           } catch {}
         }
-        if (projRaw) {
-          try {
-            const parsed = JSON.parse(projRaw);
-            if (Array.isArray(parsed)) {
-              nextProjects = parsed;
-              changed = true;
-            }
-          } catch {}
+        if (projRaw && Array.isArray(projRaw)) {
+          // Filter projects by mode
+          nextProjects = projRaw.filter((p: any) => p.mode === mode);
+          changed = true;
         }
         if (convRaw) {
           try {
             const parsed = JSON.parse(convRaw);
             if (Array.isArray(parsed)) {
-              nextConversations = parsed;
+              // Filter conversations by mode
+              nextConversations = parsed.filter((c: any) => c.mode === mode);
               changed = true;
             }
           } catch {}
         }
 
         if (changed) {
+          const persistedSelection = loadStored<string | null>(STORAGE_KEYS.SELECTED_CONVERSATION, () => null);
+          const selectedConversationId = nextConversations.some(
+            (conversation) => conversation.id === persistedSelection
+          )
+            ? persistedSelection
+            : (nextConversations[0]?.id ?? null);
           globalState = {
             ...globalState,
             hierarchy: nextHierarchy,
             projects: nextProjects,
             conversations: nextConversations,
+            selectedConversationId,
           };
+          saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, selectedConversationId);
           notify();
         }
       } catch (err) {
@@ -807,11 +854,56 @@ export function useOrgStore() {
   }, []);
 
   const setActiveScope = useCallback((scope: OrgScope) => {
+    const previousMode = globalState.activeScope;
     globalState = { ...globalState, activeScope: scope };
     try {
       localStorage.setItem(STORAGE_KEYS.SCOPE, scope);
     } catch {}
     notify();
+
+    // If mode changed, refresh data from backend for the new mode
+    if (previousMode !== scope) {
+      const reloadDataForMode = async () => {
+        try {
+          const [projRaw, convRaw] = await Promise.all([
+            ipcBridge.org.getProjects({ mode: scope }),
+            ipcBridge.org.loadData(STORAGE_KEYS.CONVERSATIONS),
+          ]);
+          let nextProjects = globalState.projects;
+          let nextConversations = globalState.conversations;
+          if (projRaw && Array.isArray(projRaw)) {
+            nextProjects = projRaw.filter((p: any) => p.mode === scope);
+          }
+          if (convRaw) {
+            try {
+              const parsed = JSON.parse(convRaw);
+              if (Array.isArray(parsed)) {
+                nextConversations = parsed.filter((c: any) => c.mode === scope);
+              }
+            } catch {}
+          }
+          // Reset selection to first item of new mode or null
+          const nextSelection = nextConversations[0]?.id ?? null;
+          globalState = {
+            ...globalState,
+            projects: nextProjects,
+            conversations: nextConversations,
+            selectedConversationId: nextSelection,
+            selectedDepartmentId: null,
+            selectedTeamId: null,
+            selectedProjectId: null,
+            focusedNodeId: 'root-ceo',
+          };
+          saveStored(STORAGE_KEYS.PROJECTS, nextProjects);
+          saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+          saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
+          notify();
+        } catch (err) {
+          console.warn('[useOrgStore] Failed to reload data for mode:', scope, err);
+        }
+      };
+      void reloadDataForMode();
+    }
   }, []);
 
   const updateNodeStatus = useCallback((nodeId: string, status: OrgNodeStatus, durationMs?: number) => {
@@ -877,6 +969,7 @@ export function useOrgStore() {
 
   const setSelectedConversationId = useCallback((id: string | null) => {
     globalState = { ...globalState, selectedConversationId: id };
+    saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, id);
     notify();
   }, []);
 
@@ -898,7 +991,7 @@ export function useOrgStore() {
       simulationStep: 0,
       simulationMessage: '',
     };
-    persistHierarchyAndProjects(reconciled);
+    persistHierarchyAndProjects(reconciled, globalState.activeScope);
     saveStored(STORAGE_KEYS.CONVERSATIONS, defConversations);
     saveStored(STORAGE_KEYS.CRON_JOBS, defCron);
     notify();
@@ -962,19 +1055,94 @@ export function useOrgStore() {
   const removeDepartment = useCallback((departmentId: string): boolean => {
     const dept = globalState.hierarchy.departments.find((d) => d.id === departmentId);
     if (!dept) return false;
-    const hasTeams = dept.teams.length > 0;
-    const hasProjects = globalState.projects.some((p) => p.departmentId === departmentId);
-    const hasAutomations = globalState.cronJobs.some(
-      (c) => (c as { orgDepartmentId?: string }).orgDepartmentId === departmentId
+    const teamIds = new Set(dept.teams.map((team) => team.id));
+    const projectIds = new Set(
+      globalState.projects.filter((project) => project.departmentId === departmentId).map((p) => p.id)
     );
-    if (hasTeams || hasProjects || hasAutomations) return false;
+    const removedCronJobs = globalState.cronJobs.filter((job) => job.departmentId === departmentId);
     const nextHierarchy = {
       ...globalState.hierarchy,
       departments: globalState.hierarchy.departments.filter((d) => d.id !== departmentId),
       lastUpdated: Date.now(),
     };
-    globalState = { ...globalState, hierarchy: nextHierarchy };
+    const nextProjects = globalState.projects.filter((project) => !projectIds.has(project.id));
+    const departmentNodeIds = new Set([departmentId, dept.departmentCeoAgent.id]);
+    const nextConversations = globalState.conversations.filter(
+      (conversation) =>
+        !projectIds.has(conversation.projectId ?? '') &&
+        !teamIds.has(conversation.teamId ?? '') &&
+        !departmentNodeIds.has(conversation.targetNodeId)
+    );
+    const nextCronJobs = globalState.cronJobs.filter((job) => job.departmentId !== departmentId);
+    const nextSelection = nextConversations.some(
+      (conversation) => conversation.id === globalState.selectedConversationId
+    )
+      ? globalState.selectedConversationId
+      : (nextConversations[0]?.id ?? null);
+    globalState = {
+      ...globalState,
+      hierarchy: nextHierarchy,
+      projects: nextProjects,
+      conversations: nextConversations,
+      cronJobs: nextCronJobs,
+      selectedConversationId: nextSelection,
+      selectedDepartmentId: globalState.selectedDepartmentId === departmentId ? null : globalState.selectedDepartmentId,
+      selectedTeamId:
+        globalState.selectedTeamId && teamIds.has(globalState.selectedTeamId) ? null : globalState.selectedTeamId,
+      selectedProjectId:
+        globalState.selectedProjectId && projectIds.has(globalState.selectedProjectId)
+          ? null
+          : globalState.selectedProjectId,
+    };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects }, globalState.activeScope);
+    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveStored(STORAGE_KEYS.CRON_JOBS, nextCronJobs);
+    saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
+    removedCronJobs.forEach((job) => {
+      void ipcBridge.cron.removeJob.invoke({ job_id: job.id }).catch(() => {});
+    });
+    notify();
+    return true;
+  }, []);
+
+  const removeOrgTeam = useCallback((teamId: string): boolean => {
+    const department = globalState.hierarchy.departments.find((item) => item.teams.some((team) => team.id === teamId));
+    if (!department) return false;
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      departments: globalState.hierarchy.departments.map((item) => ({
+        ...item,
+        teams: item.teams.filter((team) => team.id !== teamId),
+      })),
+      lastUpdated: Date.now(),
+    };
+    const nextProjects = globalState.projects.map((project) => ({
+      ...project,
+      teamIds: (project.teamIds ?? []).filter((id) => id !== teamId),
+    }));
+    const nextConversations = globalState.conversations.filter((conversation) => conversation.teamId !== teamId);
+    const nextSelection = nextConversations.some(
+      (conversation) => conversation.id === globalState.selectedConversationId
+    )
+      ? globalState.selectedConversationId
+      : (nextConversations[0]?.id ?? null);
+    const coherentHierarchy = syncHierarchyProjectReferences(nextHierarchy, nextProjects);
+    globalState = {
+      ...globalState,
+      hierarchy: coherentHierarchy,
+      projects: nextProjects,
+      conversations: nextConversations,
+      selectedConversationId: nextSelection,
+      selectedTeamId: globalState.selectedTeamId === teamId ? null : globalState.selectedTeamId,
+      selectedProjectId:
+        globalState.selectedProjectId && !nextProjects.some((project) => project.id === globalState.selectedProjectId)
+          ? null
+          : globalState.selectedProjectId,
+    };
+    persistHierarchyAndProjects({ hierarchy: coherentHierarchy, projects: nextProjects }, globalState.activeScope);
+    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
     notify();
     return true;
   }, []);
@@ -1043,12 +1211,26 @@ export function useOrgStore() {
   }, []);
 
   const updateTeamNode = useCallback((teamId: string, patch: Partial<OrgTeamNode>) => {
+    const previousTeam = globalState.hierarchy.departments
+      .flatMap((department) => department.teams)
+      .find((team) => team.id === teamId);
     const nextHierarchy = syncHierarchyProjectReferences(
       updateTeamInHierarchy(globalState.hierarchy, teamId, patch),
       globalState.projects
     );
-    globalState = { ...globalState, hierarchy: nextHierarchy };
+    const pathsChanged =
+      patch.workspacePaths !== undefined &&
+      JSON.stringify(
+        previousTeam?.workspacePaths ?? (previousTeam?.workspacePath ? [previousTeam.workspacePath] : [])
+      ) !== JSON.stringify(patch.workspacePaths);
+    const nextConversations = pathsChanged
+      ? globalState.conversations.map((conversation) =>
+          conversation.teamId === teamId ? { ...conversation, backendConversationId: undefined } : conversation
+        )
+      : globalState.conversations;
+    globalState = { ...globalState, hierarchy: nextHierarchy, conversations: nextConversations };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    if (pathsChanged) saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
     notify();
   }, []);
 
@@ -1057,7 +1239,7 @@ export function useOrgStore() {
   }, []);
 
   const handleRemoveTeamMember = useCallback((teamId: string, slotOrMemberId: string) => {
-    removeTeamMember(teamId, slotOrMemberId);
+    return removeTeamMember(teamId, slotOrMemberId);
   }, []);
 
   const updateRootCeo = useCallback((patch: Partial<OrgHierarchy['rootCeo']>) => {
@@ -1162,6 +1344,7 @@ export function useOrgStore() {
 
   const upsertOrgProject = useCallback(async (project: OrgProject) => {
     return enqueueOrgMutation(async () => {
+      const previousProject = globalState.projects.find((item) => item.id === project.id);
       let finalProj = project;
       let masterRoot = globalState.hierarchy.rootCeo.workspacePath;
       if (!masterRoot) {
@@ -1174,21 +1357,52 @@ export function useOrgStore() {
       const dept = globalState.hierarchy.departments.find((d) => d.id === project.departmentId);
       const parentRoot = dept?.workspacePath || masterRoot;
 
-      if (project.workspacePath) {
+      const requestedPaths = project.workspacePaths?.length
+        ? project.workspacePaths
+        : project.context?.workspacePaths?.length
+          ? project.context.workspacePaths
+          : project.workspacePath || project.path
+            ? [project.workspacePath || project.path || '']
+            : [];
+      if (requestedPaths.length > 0) {
         if (!parentRoot) {
-          finalProj = { ...project, workspacePath: undefined, path: undefined, status: 'dormant' };
+          finalProj = { ...project, workspacePath: null, workspacePaths: [], path: undefined, status: 'dormant' };
         } else {
-          const check = await validateOrgFolder(project.workspacePath, parentRoot, 'project');
-          if (!check.valid) {
-            finalProj = { ...project, workspacePath: undefined, path: undefined, status: 'dormant' };
-          } else if (check.resolvedPath) {
-            finalProj = { ...project, workspacePath: check.resolvedPath, path: check.resolvedPath };
+          const validPaths: string[] = [];
+          for (const folderPath of requestedPaths) {
+            const check = await validateOrgFolder(folderPath, parentRoot, 'project');
+            if (!check.valid || !check.resolvedPath) {
+              finalProj = { ...project, workspacePath: null, workspacePaths: [], path: undefined, status: 'dormant' };
+              validPaths.length = 0;
+              break;
+            }
+            validPaths.push(check.resolvedPath);
+          }
+          if (validPaths.length > 0) {
+            finalProj = {
+              ...project,
+              workspacePath: validPaths[0],
+              workspacePaths: validPaths,
+              path: validPaths[0],
+              context: { ...project.context, workspacePaths: validPaths },
+            };
           }
         }
       }
       const next = applyProjectMutation(globalState.hierarchy, globalState.projects, normalizeOrgProject(finalProj));
-      globalState = { ...globalState, ...next };
-      persistHierarchyAndProjects(next);
+      const pathsChanged =
+        previousProject !== undefined &&
+        JSON.stringify(
+          previousProject.workspacePaths ?? (previousProject.workspacePath ? [previousProject.workspacePath] : [])
+        ) !== JSON.stringify(finalProj.workspacePaths ?? (finalProj.workspacePath ? [finalProj.workspacePath] : []));
+      const nextConversations = pathsChanged
+        ? globalState.conversations.map((conversation) =>
+            conversation.projectId === project.id ? { ...conversation, backendConversationId: undefined } : conversation
+          )
+        : globalState.conversations;
+      globalState = { ...globalState, ...next, conversations: nextConversations };
+      persistHierarchyAndProjects(next, globalState.activeScope);
+      if (pathsChanged) saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
       notify();
     });
   }, []);
@@ -1202,8 +1416,22 @@ export function useOrgStore() {
 
   const deleteOrgProject = useCallback((projectId: string) => {
     const next = applyProjectRemoval(globalState.hierarchy, globalState.projects, projectId);
-    globalState = { ...globalState, ...next };
-    persistHierarchyAndProjects(next);
+    const nextConversations = globalState.conversations.filter((conversation) => conversation.projectId !== projectId);
+    const nextSelection = nextConversations.some(
+      (conversation) => conversation.id === globalState.selectedConversationId
+    )
+      ? globalState.selectedConversationId
+      : (nextConversations[0]?.id ?? null);
+    globalState = {
+      ...globalState,
+      ...next,
+      conversations: nextConversations,
+      selectedConversationId: nextSelection,
+      selectedProjectId: globalState.selectedProjectId === projectId ? null : globalState.selectedProjectId,
+    };
+    persistHierarchyAndProjects(next, globalState.activeScope);
+    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
     notify();
   }, []);
 
@@ -1239,7 +1467,7 @@ export function useOrgStore() {
     const nextProj = { ...proj, memberIds: [...currentMemberIds, memberId] };
     const nextProjects = globalState.projects.map((p) => (p.id === projectId ? nextProj : p));
     globalState = { ...globalState, projects: nextProjects };
-    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects });
+    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects }, globalState.activeScope);
     notify();
   }, []);
 
@@ -1250,7 +1478,7 @@ export function useOrgStore() {
     const nextProj = { ...proj, memberIds: nextMemberIds };
     const nextProjects = globalState.projects.map((p) => (p.id === projectId ? nextProj : p));
     globalState = { ...globalState, projects: nextProjects };
-    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects });
+    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects }, globalState.activeScope);
     notify();
   }, []);
 
@@ -1499,6 +1727,7 @@ export function useOrgStore() {
       globalState.hierarchy,
       globalState.projects,
       globalState.conversations,
+      globalState.activeScope,
       t
     );
     if ('error' in result) {
@@ -1570,7 +1799,8 @@ export function useOrgStore() {
     }
 
     globalState = { ...globalState, ...(nextState as OrgStoreState) };
-    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects });
+    saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, result.conversation.id);
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects }, globalState.activeScope);
     saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
     notify();
     return { ok: true };
@@ -1628,6 +1858,7 @@ export function useOrgStore() {
     resetToDefault,
     addDepartment,
     removeDepartment,
+    removeOrgTeam,
     archiveDepartment,
     updateDepartment,
     addSubTeam,

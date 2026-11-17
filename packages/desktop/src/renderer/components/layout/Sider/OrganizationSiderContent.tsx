@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Tooltip, Modal, Input, Message, Dropdown, Menu } from '@arco-design/web-react';
+import { Tooltip, Modal, Input, Message, Dropdown, Menu, Button } from '@arco-design/web-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -24,6 +24,12 @@ import type {
 import OrgProjectModal from '@/renderer/pages/organization/components/OrgProjectModal';
 import OrgDepartmentModal from '@/renderer/pages/organization/components/OrgDepartmentModal';
 import OrgEntityEditModal from '@/renderer/pages/organization/components/OrgEntityEditModal';
+import {
+  chatsWithMember,
+  listDepartmentTeamMembers,
+  listProjectTeamMembers,
+  teamRoster,
+} from '@/renderer/pages/organization/utils/orgRoster';
 
 import SiderCommandCard from './SiderCommandCard';
 import SiderNavRow from './SiderNavRow';
@@ -33,7 +39,6 @@ import SiderBreadcrumb from './SiderBreadcrumb';
 import SiderSectionLabel from './SiderSectionLabel';
 import SiderDepartmentHeader from './SiderDepartmentHeader';
 import SiderSubSectionLabel from './SiderSubSectionLabel';
-import SiderTeamRow from './SiderTeamRow';
 import SiderProjectRow from './SiderProjectRow';
 import SiderMemberRow from './SiderMemberRow';
 import SiderChatRow from './SiderChatRow';
@@ -97,6 +102,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [newSubTeamName, setNewSubTeamName] = useState('');
   const [createDeptModalVisible, setCreateDeptModalVisible] = useState(false);
   const [newDeptName, setNewDeptName] = useState('');
+  const [allMembersVisible, setAllMembersVisible] = useState(false);
   const [projectModal, setProjectModal] = useState<{
     visible: boolean;
     project: OrgProject | null;
@@ -115,6 +121,25 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const isTodayActive = location.pathname === '/today';
   const isCostsActive = location.pathname === '/costs';
   const isPipelineActive = location.pathname.startsWith('/pipeline');
+  const organizationMembers = useMemo(
+    () =>
+      hierarchy.departments.flatMap((department) =>
+        department.teams.flatMap((team) => {
+          const roster = [
+            team.teamLeadAgent,
+            ...(team.hrCoordinatorAgent ? [team.hrCoordinatorAgent] : []),
+            ...team.specialistMembers,
+          ];
+          return roster.map((member) => ({
+            member,
+            departmentId: department.id,
+            teamId: team.id,
+            teamName: team.name,
+          }));
+        })
+      ),
+    [hierarchy.departments]
+  );
 
   const toggleDept = (deptId: string) => {
     setCollapsedDepts((prev) => {
@@ -168,33 +193,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       .toSorted((a, b) => b.timestamp - a.timestamp);
   }, [conversations]);
   const [showAllCeoChats, setShowAllCeoChats] = useState(false);
-  // Project -> conversations (newest first)
-  const projectConversationsMap = useMemo(() => {
-    const map = new Map<string, OrgConversation[]>();
-    conversations.forEach((c) => {
-      if (c.projectId) {
-        const list = map.get(c.projectId) ?? [];
-        list.push(c);
-        map.set(c.projectId, list);
-      }
-    });
-    map.forEach((chats) => chats.sort((a, b) => b.timestamp - a.timestamp));
-    return map;
-  }, [conversations]);
 
-  // Team -> conversations (newest first, excluding project chats)
-  const teamConversationsMap = useMemo(() => {
-    const map = new Map<string, OrgConversation[]>();
-    conversations.forEach((c) => {
-      if (c.teamId && !c.projectId) {
-        const list = map.get(c.teamId) ?? [];
-        list.push(c);
-        map.set(c.teamId, list);
-      }
-    });
-    map.forEach((chats) => chats.sort((a, b) => b.timestamp - a.timestamp));
-    return map;
-  }, [conversations]);
+  const allAgentMembers = useMemo(() => {
+    const members: OrgAgentMember[] = [];
+    if (hierarchy.rootCeo.ceoAgent) members.push(hierarchy.rootCeo.ceoAgent);
+    if (hierarchy.rootCeo.chiefOfStaffAgent) members.push(hierarchy.rootCeo.chiefOfStaffAgent);
+    for (const department of hierarchy.departments) {
+      if (department.departmentCeoAgent) members.push(department.departmentCeoAgent);
+      if (department.pmAgent) members.push(department.pmAgent);
+      for (const team of department.teams) members.push(...teamRoster(team));
+    }
+    return members;
+  }, [hierarchy]);
 
   const handleOpenCeoChat = () => {
     onSessionClick?.();
@@ -301,6 +311,10 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       if (dept.name.toLowerCase().includes(query)) return true;
       const deptTeams = allTeams.filter((teamItem) => teamItem.departmentId === dept.id);
       if (deptTeams.some((teamItem) => teamItem.name.toLowerCase().includes(query))) return true;
+      if (
+        deptTeams.some((teamItem) => teamRoster(teamItem).some((member) => member.name.toLowerCase().includes(query)))
+      )
+        return true;
       const deptProjects = projects.filter((p) => p.departmentId === dept.id);
       return deptProjects.some((p) => p.name.toLowerCase().includes(query));
     });
@@ -352,21 +366,6 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     return parts;
   }, [selectedProject, selectedTeam, selectedDepartment, teamsInSelectedDept, hierarchy.departments]);
 
-  // Returns a short label for the chat row badge: team name or agent role
-  const chatBadgeLabel = (conv: OrgConversation): string => {
-    if (conv.teamId) {
-      const team = allTeams.find((teamItem) => teamItem.id === conv.teamId);
-      if (team) return team.name;
-    }
-    if (conv.agentId) {
-      const agent = allTeams
-        .flatMap((teamItem) => [...teamItem.specialistMembers, teamItem.teamLeadAgent, teamItem.hrCoordinatorAgent])
-        .find((a) => a.id === conv.agentId);
-      if (agent) return agent.name;
-    }
-    return '';
-  };
-
   const formatChatTime = (timestamp: number): string => {
     const now = Date.now();
     const elapsed = now - timestamp;
@@ -403,6 +402,44 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     onSessionClick?.();
     void navigate('/organization');
   };
+
+  const handleSelectConversation = (conversationId: string) => {
+    setSelectedConversationId(conversationId);
+    setOrgViewMode('chat');
+    onSessionClick?.();
+    void navigate('/organization');
+  };
+
+  const renderMemberThread = (member: OrgAgentMember, memberChats: OrgConversation[], projectId?: string) => (
+    <div key={`${projectId ?? 'dept'}:${member.canonicalAgentId || member.id}`} className='flex flex-col'>
+      <SiderMemberRow
+        member={member}
+        isSelected={memberChats.some((chat) => chat.id === selectedConversationId)}
+        onOpenChat={() => handleOpenMemberChat(member.id, projectId)}
+      />
+      {memberChats.length > 0 ? (
+        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+          {memberChats.map((conv) => {
+            const projectName = conv.projectId ? projects.find((item) => item.id === conv.projectId)?.name : undefined;
+            return (
+              <SiderChatRow
+                key={conv.id}
+                conversation={conv}
+                isSelected={selectedConversationId === conv.id}
+                badge={projectId ? undefined : projectName}
+                relativeTime={formatChatTime(conv.timestamp)}
+                onSelect={() => handleSelectConversation(conv.id)}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
+          {t('team.organization.noChats', { defaultValue: 'No chats yet.' })}
+        </div>
+      )}
+    </div>
+  );
 
   const handleSelectTeam = (teamId: string) => {
     setSelectedTeam(teamId);
@@ -708,6 +745,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
               </Tooltip>
             </Dropdown>
           </div>
+          <Button size='mini' type='text' className='!justify-start' onClick={() => setAllMembersVisible(true)}>
+            {t('team.allMembers', { defaultValue: 'All members' })} ({organizationMembers.length})
+          </Button>
           {/* CEO chat threads (last 3, with Show all) */}
           {ceoConversations.length > 0 && (
             <div className='flex flex-col gap-1px pl-6px pr-2px py-1px'>
@@ -849,14 +889,22 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                   })
                 );
 
-                const filteredTeams = deptTeams.filter((team) => {
+                const memberVisible = (member: OrgAgentMember): boolean => {
                   if (activeFilter === 'all') return true;
-                  if (activeFilter === 'dormant') return teamStatus(team) === 'dormant';
                   if (activeFilter === 'shared') {
-                    return team.specialistMembers.some((m) => sharedCanonicalIds.has(m.canonicalAgentId));
+                    return member.assignedTeamIds.length > 1 || sharedCanonicalIds.has(member.canonicalAgentId);
                   }
-                  return teamStatus(team) !== 'dormant';
-                });
+                  const onDormantTeam = deptTeams.some(
+                    (team) =>
+                      teamStatus(team) === 'dormant' &&
+                      teamRoster(team).some(
+                        (person) => person.id === member.id || person.canonicalAgentId === member.canonicalAgentId
+                      )
+                  );
+                  if (activeFilter === 'dormant') return member.status === 'dormant' || onDormantTeam;
+                  return member.status !== 'dormant' && !onDormantTeam;
+                };
+                const departmentMembers = listDepartmentTeamMembers(dept).filter(memberVisible);
 
                 const filteredProjects = deptProjects.filter((proj) => {
                   if (activeFilter === 'all') return true;
@@ -895,13 +943,12 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                       <div className='flex flex-col gap-1px pl-16px pr-4px py-2px border-l border-[var(--color-border-2)]/40 ml-10px animate-expand'>
                         {subTab === 'teams' ? (
                           <>
-                            {/* Teams list */}
                             <SiderSubSectionLabel
-                              label={t('team.organization.teams', { defaultValue: 'Teams' })}
-                              count={filteredTeams.length}
+                              label={t('team.organization.teamRoster', { defaultValue: 'Team roster' })}
+                              count={departmentMembers.length}
                             />
                             <div className='flex flex-col gap-0.5px'>
-                              {filteredTeams.length === 0 ? (
+                              {departmentMembers.length === 0 ? (
                                 <div className='px-6px py-4px text-10px text-t-tertiary'>
                                   {activeFilter === 'all'
                                     ? t('team.organization.noTeams', {
@@ -910,84 +957,19 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                     : t('team.organization.noMatchingTeams', { defaultValue: 'No matching teams.' })}
                                 </div>
                               ) : (
-                                filteredTeams.map((team) => {
-                                  const tStatus = teamStatus(team);
-                                  const isTeamSelected = selectedTeamId === team.id;
-                                  const chats = teamConversationsMap.get(team.id) ?? [];
-                                  const roster = [
-                                    team.teamLeadAgent,
-                                    ...(team.hrCoordinatorAgent ? [team.hrCoordinatorAgent] : []),
-                                    ...team.specialistMembers,
-                                  ].filter((member, index, all) => all.findIndex((m) => m.id === member.id) === index);
-                                  return (
-                                    <div key={team.id} className='flex flex-col'>
-                                      <SiderTeamRow
-                                        team={team}
-                                        status={tStatus}
-                                        isSelected={isTeamSelected}
-                                        onSelect={() => handleSelectTeam(team.id)}
-                                        onEdit={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenEntityEdit('team', team, {
-                                            departmentId: dept.id,
-                                            teamId: team.id,
-                                          });
-                                        }}
-                                        onNewChat={(e) => {
-                                          e.stopPropagation();
-                                          handleNewTeamChat(dept.id, team);
-                                        }}
-                                        siderTooltipProps={siderTooltipProps}
-                                      />
-                                      {/* Team roster (member direct chats) */}
-                                      {isTeamSelected && roster.length > 0 && (
-                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                          <SiderSubSectionLabel
-                                            label={t('team.organization.teamRoster', { defaultValue: 'Team roster' })}
-                                            count={roster.length}
-                                          />
-                                          {roster.map((member) => (
-                                            <SiderMemberRow
-                                              key={member.id}
-                                              member={member}
-                                              isSelected={false}
-                                              onOpenChat={() => handleOpenMemberChat(member.id)}
-                                            />
-                                          ))}
-                                        </div>
-                                      )}
-                                      {/* Chats nested under team */}
-                                      {chats.length > 0 && (
-                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                          {chats.map((conv) => {
-                                            const isChatSelected = selectedConversationId === conv.id;
-                                            return (
-                                              <SiderChatRow
-                                                key={conv.id}
-                                                conversation={conv}
-                                                isSelected={isChatSelected}
-                                                badge={chatBadgeLabel(conv)}
-                                                relativeTime={formatChatTime(conv.timestamp)}
-                                                onSelect={() => {
-                                                  setSelectedConversationId(conv.id);
-                                                  setOrgViewMode('chat');
-                                                  onSessionClick?.();
-                                                  void navigate('/organization');
-                                                }}
-                                              />
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })
+                                departmentMembers.map((member) =>
+                                  renderMemberThread(
+                                    member,
+                                    chatsWithMember(conversations, member, allAgentMembers, {
+                                      departments: hierarchy.departments,
+                                    })
+                                  )
+                                )
                               )}
                             </div>
                           </>
                         ) : (
                           <>
-                            {/* Projects list with chats nested underneath */}
                             <SiderSubSectionLabel
                               label={t('team.organization.projects', { defaultValue: 'Projects' })}
                               count={filteredProjects.length}
@@ -1005,11 +987,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                 </div>
                               ) : (
                                 filteredProjects.map((proj) => {
-                                  const chats = projectConversationsMap.get(proj.id) ?? [];
                                   const isProjectSelected = selectedProjectId === proj.id;
+                                  const projectMembers = listProjectTeamMembers(proj, dept, allAgentMembers);
+                                  const visibleProjectMembers = projectMembers.filter(memberVisible);
                                   return (
                                     <div key={proj.id} className='flex flex-col'>
-                                      {/* Project row */}
                                       <SiderProjectRow
                                         project={proj}
                                         isSelected={isProjectSelected}
@@ -1027,32 +1009,26 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                         }}
                                         siderTooltipProps={siderTooltipProps}
                                       />
-                                      {/* Chats nested under project */}
-                                      {chats.length > 0 && (
-                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                          {chats.map((conv) => {
-                                            const isChatSelected = selectedConversationId === conv.id;
-                                            return (
-                                              <SiderChatRow
-                                                key={conv.id}
-                                                conversation={conv}
-                                                isSelected={isChatSelected}
-                                                badge={chatBadgeLabel(conv)}
-                                                relativeTime={formatChatTime(conv.timestamp)}
-                                                onSelect={() => {
-                                                  setSelectedConversationId(conv.id);
-                                                  setOrgViewMode('chat');
-                                                  onSessionClick?.();
-                                                  void navigate('/organization');
-                                                }}
-                                              />
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                      {chats.length === 0 && (
+                                      {visibleProjectMembers.length === 0 ? (
                                         <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                          {t('team.organization.noChats', { defaultValue: 'No chats' })}
+                                          {projectMembers.length === 0
+                                            ? t('team.organization.noProjectMembers', {
+                                                defaultValue: 'No team members on this project.',
+                                              })
+                                            : t('team.noMatchingMembers')}
+                                        </div>
+                                      ) : (
+                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {visibleProjectMembers.map((member) =>
+                                            renderMemberThread(
+                                              member,
+                                              chatsWithMember(conversations, member, allAgentMembers, {
+                                                projectId: proj.id,
+                                                departments: hierarchy.departments,
+                                              }),
+                                              proj.id
+                                            )
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -1122,6 +1098,37 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         onClose={() => setEditEntity(null)}
         onSave={handleEditSave}
       />
+      <Modal
+        title={t('team.allMembers', { defaultValue: 'All members' })}
+        visible={allMembersVisible}
+        footer={null}
+        onCancel={() => setAllMembersVisible(false)}
+      >
+        <div className='max-h-60vh overflow-y-auto flex flex-col gap-4px'>
+          {organizationMembers.map(({ member, departmentId, teamId, teamName }) => (
+            <div
+              key={`${teamId}:${member.id}`}
+              className='flex items-center justify-between gap-8px px-6px py-4px rounded-6px hover:bg-fill-2'
+            >
+              <div className='min-w-0'>
+                <div className='truncate text-12px text-t-primary'>{member.name}</div>
+                <div className='truncate text-10px text-t-tertiary'>
+                  {teamName} · {member.title || member.role}
+                </div>
+              </div>
+              <Button
+                size='mini'
+                onClick={() => {
+                  setAllMembersVisible(false);
+                  setEditEntity({ type: 'member', data: member, context: { departmentId, teamId } });
+                }}
+              >
+                {t('common.edit', { defaultValue: 'Edit' })}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 };

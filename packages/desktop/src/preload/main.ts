@@ -263,8 +263,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   orgSaveFullBundle: (bundle: unknown) => ipcRenderer.invoke('org:saveFullBundle', bundle),
   orgGetMembers: () => ipcRenderer.invoke('org:getMembers'),
   orgSaveMembers: (members: unknown[]) => ipcRenderer.invoke('org:saveMembers', members),
-  orgGetProjects: () => ipcRenderer.invoke('org:getProjects'),
-  orgSaveProjects: (projects: unknown[]) => ipcRenderer.invoke('org:saveProjects', projects),
+  orgGetProjects: (params?: { mode?: 'workplace' | 'organization' }) => ipcRenderer.invoke('org:getProjects', params),
+  orgSaveProjects: (params: { projects: unknown[]; mode?: 'workplace' | 'organization' }) => ipcRenderer.invoke('org:saveProjects', params),
   orgScanFolder: (params: {
     targetDir: string;
     allowedWorkspace: string;

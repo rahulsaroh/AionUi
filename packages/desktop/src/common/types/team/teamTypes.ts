@@ -98,6 +98,8 @@ export type TTeam = {
   departmentRole?: string;
   /** Department / Sub-team description for leader orchestration */
   description?: string;
+  /** App mode: 'workplace' or 'organization' - isolates data between modes */
+  mode?: 'workplace' | 'organization';
 };
 
 /** Alias for TTeam configuration across tree structures */

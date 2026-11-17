@@ -14,6 +14,8 @@ vi.mock('@/common', () => ({
       saveData: vi.fn(async () => undefined),
       loadData: vi.fn(async () => null),
       getMembers: vi.fn(async () => []),
+      getProjects: vi.fn(async () => []),
+      saveProjects: vi.fn(async () => true),
     },
   },
 }));

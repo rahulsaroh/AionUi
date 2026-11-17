@@ -70,7 +70,22 @@ export function validateProjectShape(p: any): boolean {
   if (typeof p.name !== 'string' || !p.name || p.name.length > 256) return false;
   if (typeof p.departmentId !== 'string' || !p.departmentId || p.departmentId.length > 128) return false;
   if (p.workspacePath !== null && p.workspacePath !== undefined && typeof p.workspacePath !== 'string') return false;
+  if (
+    p.workspacePaths !== undefined &&
+    (!Array.isArray(p.workspacePaths) ||
+      p.workspacePaths.length > 20 ||
+      !p.workspacePaths.every((item: unknown) => typeof item === 'string' && item.length <= 4096))
+  )
+    return false;
   return true;
+}
+
+function serializeProjectContext(project: OrgProject): string | null {
+  const context = {
+    ...project.context,
+    ...(project.workspacePaths?.length ? { workspacePaths: project.workspacePaths } : {}),
+  };
+  return Object.keys(context).length > 0 ? JSON.stringify(context) : null;
 }
 
 /**
@@ -295,14 +310,19 @@ export class OrgStorageService {
     }
   }
 
-  public async getProjects(): Promise<OrgProject[]> {
+  public async getProjects(mode?: 'workplace' | 'organization'): Promise<OrgProject[]> {
     const db = await this.getDriver();
     try {
-      const rows = db
-        .prepare(
-          'SELECT id, name, department_id, workspace_path, member_ids, goal, description, status, context FROM org_projects ORDER BY name ASC'
-        )
-        .all() as Array<{
+      let query =
+        'SELECT id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode FROM org_projects';
+      const params: unknown[] = [];
+      if (mode) {
+        query += ' WHERE mode = ?';
+        params.push(mode);
+      }
+      query += ' ORDER BY name ASC';
+
+      const rows = db.prepare(query).all(...params) as Array<{
         id: string;
         name: string;
         department_id: string;
@@ -312,10 +332,12 @@ export class OrgStorageService {
         description: string | null;
         status: string | null;
         context: string | null;
+        mode: string | null;
       }>;
 
-      return rows.map(
-        (r): OrgProject => ({
+      return rows.map((r): OrgProject => {
+        const context = r.context ? (JSON.parse(r.context) as OrgProject['context']) : undefined;
+        return {
           id: r.id,
           name: r.name,
           departmentId: r.department_id,
@@ -324,10 +346,12 @@ export class OrgStorageService {
           goal: r.goal || undefined,
           description: r.description || undefined,
           status: (r.status as OrgProject['status']) || 'active',
-          context: r.context ? JSON.parse(r.context) : undefined,
+          context,
+          workspacePaths: context?.workspacePaths,
           workspacePath: r.workspace_path || null,
-        })
-      );
+          mode: (r.mode as 'workplace' | 'organization') || 'organization',
+        };
+      });
     } catch (err) {
       console.error('[OrgStorageService] getProjects failed:', err);
       return [];
@@ -339,8 +363,8 @@ export class OrgStorageService {
     const now = Date.now();
     try {
       db.prepare(
-        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            department_id = excluded.department_id,
@@ -350,6 +374,7 @@ export class OrgStorageService {
            description = excluded.description,
            status = excluded.status,
            context = excluded.context,
+           mode = excluded.mode,
            updated_at = excluded.updated_at`
       ).run(
         project.id,
@@ -360,7 +385,8 @@ export class OrgStorageService {
         project.goal || null,
         project.description || null,
         project.status || 'active',
-        project.context ? JSON.stringify(project.context) : null,
+        serializeProjectContext(project),
+        project.mode || 'organization',
         now,
         now
       );
@@ -380,8 +406,8 @@ export class OrgStorageService {
     const now = Date.now();
     try {
       const stmt = db.prepare(
-        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            department_id = excluded.department_id,
@@ -391,6 +417,7 @@ export class OrgStorageService {
            description = excluded.description,
            status = excluded.status,
            context = excluded.context,
+           mode = excluded.mode,
            updated_at = excluded.updated_at`
       );
       db.transaction(() => {
@@ -404,7 +431,8 @@ export class OrgStorageService {
             p.goal || null,
             p.description || null,
             p.status || 'active',
-            p.context ? JSON.stringify(p.context) : null,
+            serializeProjectContext(p),
+            p.mode || 'organization',
             now,
             now
           );
@@ -664,8 +692,8 @@ export class OrgStorageService {
 
         // 4. Save projects into org_projects
         const stmtProj = db.prepare(
-          `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              department_id = excluded.department_id,
@@ -675,6 +703,7 @@ export class OrgStorageService {
              description = excluded.description,
              status = excluded.status,
              context = excluded.context,
+             mode = excluded.mode,
              updated_at = excluded.updated_at`
         );
         for (const p of bundle.projects || []) {
@@ -687,7 +716,8 @@ export class OrgStorageService {
             p.goal || null,
             p.description || null,
             p.status || 'active',
-            p.context ? JSON.stringify(p.context) : null,
+            serializeProjectContext(p),
+            p.mode || 'organization',
             now,
             now
           );
