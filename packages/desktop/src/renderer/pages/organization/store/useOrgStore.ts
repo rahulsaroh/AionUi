@@ -84,6 +84,15 @@ function saveStored<T>(key: string, value: T): void {
   }
 }
 
+/**
+ * Legacy organization records predate mode-scoped storage. Treat them as
+ * Organization data so existing projects and their chat history remain
+ * accessible after upgrading.
+ */
+function belongsToScope(item: { mode?: OrgScope }, scope: OrgScope): boolean {
+  return item.mode === scope || (scope === 'organization' && item.mode === undefined);
+}
+
 export type ApprovedLineupRecord = {
   id: string;
   proposalId?: string;
@@ -248,6 +257,23 @@ function createInitialState(): OrgStoreState {
 let globalState: OrgStoreState = createInitialState();
 
 const listeners = new Set<(state: OrgStoreState) => void>();
+
+/**
+ * Persist only the active scope's conversations while retaining conversations
+ * from the other scope in the shared storage record.
+ */
+function saveScopedConversations(conversations: OrgConversation[]): void {
+  const scope = globalState.activeScope;
+  const scopedConversations = conversations
+    .filter((conversation) => belongsToScope(conversation, scope))
+    .map((conversation) => ({ ...conversation, mode: conversation.mode ?? scope }));
+  const scopedConversationIds = new Set(scopedConversations.map((conversation) => conversation.id));
+  const retainedConversations = loadStored<OrgConversation[]>(STORAGE_KEYS.CONVERSATIONS, () => []).filter(
+    (conversation) => !belongsToScope(conversation, scope) && !scopedConversationIds.has(conversation.id)
+  );
+
+  saveStored(STORAGE_KEYS.CONVERSATIONS, [...scopedConversations, ...retainedConversations]);
+}
 
 function notify() {
   const snapshot = { ...globalState };
@@ -802,23 +828,30 @@ export function useOrgStore() {
         if (hierRaw) {
           try {
             const parsed = JSON.parse(hierRaw);
-            if (parsed?.rootCeo) {
+            const backendHasDepartments = Array.isArray(parsed?.departments) && parsed.departments.length > 0;
+            const localHasDepartments = globalState.hierarchy.departments.length > 0;
+            // A stale backend shell contains only the Root CEO. Do not let it
+            // overwrite the populated Organization hierarchy held locally.
+            if (parsed?.rootCeo && (backendHasDepartments || !localHasDepartments)) {
               nextHierarchy = parsed;
               changed = true;
             }
           } catch {}
         }
         if (projRaw && Array.isArray(projRaw)) {
-          // Filter projects by mode
-          nextProjects = projRaw.filter((p: any) => p.mode === mode);
+          // Legacy records have no mode and belong to Organization.
+          nextProjects = projRaw.filter((project) => belongsToScope(project, mode));
           changed = true;
         }
         if (convRaw) {
           try {
             const parsed = JSON.parse(convRaw);
             if (Array.isArray(parsed)) {
-              // Filter conversations by mode
-              nextConversations = parsed.filter((c: any) => c.mode === mode);
+              // Keep legacy Organization chats selectable instead of showing
+              // their sidebar entry without its message history.
+              nextConversations = (parsed as OrgConversation[]).filter((conversation) =>
+                belongsToScope(conversation, mode)
+              );
               changed = true;
             }
           } catch {}
@@ -872,13 +905,15 @@ export function useOrgStore() {
           let nextProjects = globalState.projects;
           let nextConversations = globalState.conversations;
           if (projRaw && Array.isArray(projRaw)) {
-            nextProjects = projRaw.filter((p: any) => p.mode === scope);
+            nextProjects = projRaw.filter((project) => belongsToScope(project, scope));
           }
           if (convRaw) {
             try {
               const parsed = JSON.parse(convRaw);
               if (Array.isArray(parsed)) {
-                nextConversations = parsed.filter((c: any) => c.mode === scope);
+                nextConversations = (parsed as OrgConversation[]).filter((conversation) =>
+                  belongsToScope(conversation, scope)
+                );
               }
             } catch {}
           }
@@ -895,7 +930,7 @@ export function useOrgStore() {
             focusedNodeId: 'root-ceo',
           };
           saveStored(STORAGE_KEYS.PROJECTS, nextProjects);
-          saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+          saveScopedConversations(nextConversations);
           saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
           notify();
         } catch (err) {
@@ -1096,7 +1131,7 @@ export function useOrgStore() {
     };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
     persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects }, globalState.activeScope);
-    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveScopedConversations(nextConversations);
     saveStored(STORAGE_KEYS.CRON_JOBS, nextCronJobs);
     saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
     removedCronJobs.forEach((job) => {
@@ -1141,7 +1176,7 @@ export function useOrgStore() {
           : globalState.selectedProjectId,
     };
     persistHierarchyAndProjects({ hierarchy: coherentHierarchy, projects: nextProjects }, globalState.activeScope);
-    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveScopedConversations(nextConversations);
     saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
     notify();
     return true;
@@ -1230,7 +1265,7 @@ export function useOrgStore() {
       : globalState.conversations;
     globalState = { ...globalState, hierarchy: nextHierarchy, conversations: nextConversations };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
-    if (pathsChanged) saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    if (pathsChanged) saveScopedConversations(nextConversations);
     notify();
   }, []);
 
@@ -1336,9 +1371,10 @@ export function useOrgStore() {
   }, []);
 
   const addOrgConversation = useCallback((conv: OrgConversation) => {
-    const nextConversations = [conv, ...globalState.conversations.filter((c) => c.id !== conv.id)];
+    const conversation = { ...conv, mode: conv.mode ?? globalState.activeScope };
+    const nextConversations = [conversation, ...globalState.conversations.filter((c) => c.id !== conversation.id)];
     globalState = { ...globalState, conversations: nextConversations };
-    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveScopedConversations(nextConversations);
     notify();
   }, []);
 
@@ -1402,7 +1438,7 @@ export function useOrgStore() {
         : globalState.conversations;
       globalState = { ...globalState, ...next, conversations: nextConversations };
       persistHierarchyAndProjects(next, globalState.activeScope);
-      if (pathsChanged) saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+      if (pathsChanged) saveScopedConversations(nextConversations);
       notify();
     });
   }, []);
@@ -1430,7 +1466,7 @@ export function useOrgStore() {
       selectedProjectId: globalState.selectedProjectId === projectId ? null : globalState.selectedProjectId,
     };
     persistHierarchyAndProjects(next, globalState.activeScope);
-    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveScopedConversations(nextConversations);
     saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, nextSelection);
     notify();
   }, []);
@@ -1801,7 +1837,7 @@ export function useOrgStore() {
     globalState = { ...globalState, ...(nextState as OrgStoreState) };
     saveStored(STORAGE_KEYS.SELECTED_CONVERSATION, result.conversation.id);
     persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects }, globalState.activeScope);
-    saveStored(STORAGE_KEYS.CONVERSATIONS, nextConversations);
+    saveScopedConversations(nextConversations);
     notify();
     return { ok: true };
   }, []);

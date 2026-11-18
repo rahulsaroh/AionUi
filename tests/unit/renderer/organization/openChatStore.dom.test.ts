@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { OrgConversation, OrgHierarchy, OrgProject } from '@/types/organization';
 
 vi.mock('@/common', () => ({
@@ -139,6 +139,16 @@ async function mountStore() {
   return renderHook(() => useOrgStore());
 }
 
+const makeConversation = (): OrgConversation => ({
+  id: 'conversation-1',
+  title: 'Organization chat',
+  type: 'team_execution',
+  sourceNodeId: 'team-1',
+  targetNodeId: 'team-1',
+  timestamp: 1,
+  messages: [{ id: 'message-1', sender: 'User', role: 'user', content: 'Keep this chat', timestamp: 1 }],
+});
+
 describe('useOrgStore.openChat', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -200,5 +210,62 @@ describe('useOrgStore.openChat', () => {
     expect(result.current.openChatError).toBe(outcome?.error);
     expect(result.current.selectedConversationId).toBeNull();
     expect(result.current.orgViewMode).toBe('chat');
+  });
+
+  it('keeps a legacy organization chat available after the backend sync', async () => {
+    localStorage.setItem('aionui:active-scope', 'organization');
+    const { ipcBridge } = await import('@/common');
+    vi.mocked(ipcBridge.org.loadData).mockImplementation(async (key) =>
+      key === STORAGE_KEYS.CONVERSATIONS ? JSON.stringify([makeConversation()]) : null
+    );
+
+    const { result } = await mountStore();
+
+    await waitFor(() => {
+      expect(result.current.conversations).toEqual([makeConversation()]);
+    });
+  });
+
+  it('assigns the active scope when saving a chat that has no mode', async () => {
+    localStorage.setItem('aionui:active-scope', 'organization');
+    const { result } = await mountStore();
+
+    act(() => {
+      result.current.addOrgConversation(makeConversation());
+    });
+
+    expect(readStoredConversations()).toEqual([{ ...makeConversation(), mode: 'organization' }]);
+  });
+
+  it('retains organization chats when a workplace chat is saved', async () => {
+    localStorage.setItem('aionui:active-scope', 'organization');
+    const { result } = await mountStore();
+
+    act(() => {
+      result.current.addOrgConversation(makeConversation());
+      result.current.setActiveScope('workplace');
+      result.current.addOrgConversation({ ...makeConversation(), id: 'workplace-conversation' });
+    });
+
+    expect(readStoredConversations()).toEqual([
+      { ...makeConversation(), id: 'workplace-conversation', mode: 'workplace' },
+      { ...makeConversation(), mode: 'organization' },
+    ]);
+  });
+
+  it('does not replace populated organization departments with an empty backend shell', async () => {
+    localStorage.setItem('aionui:active-scope', 'organization');
+    const { ipcBridge } = await import('@/common');
+    vi.mocked(ipcBridge.org.loadData).mockImplementation(async (key) =>
+      key === STORAGE_KEYS.HIERARCHY ? JSON.stringify({ ...makeHierarchy(), departments: [] }) : null
+    );
+
+    const { result } = await mountStore();
+
+    await waitFor(() => {
+      expect(ipcBridge.org.loadData).toHaveBeenCalledWith(STORAGE_KEYS.HIERARCHY);
+    });
+    expect(result.current.hierarchy.departments).toHaveLength(1);
+    expect(result.current.hierarchy.departments[0]?.name).toBe('Engineering');
   });
 });

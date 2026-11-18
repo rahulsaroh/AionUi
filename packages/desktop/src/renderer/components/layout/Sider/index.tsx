@@ -35,15 +35,17 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const { activeScope, setActiveScope } = useOrgStore();
   const [isBatchMode, setIsBatchMode] = useState(false);
   const isSettings = pathname.startsWith('/settings');
+  const isOrganizationRoute = pathname.startsWith('/organization');
   const lastNonSettingsPathRef = useRef('/guid');
   const showLogout =
     typeof window !== 'undefined' && !(window as { electronAPI?: unknown }).electronAPI && status === 'authenticated';
 
   useEffect(() => {
-    if (pathname.startsWith('/organization') && activeScope !== 'organization') {
-      setActiveScope('organization');
+    const routeScope = isOrganizationRoute ? 'organization' : pathname.startsWith('/guid') ? 'workplace' : null;
+    if (routeScope && activeScope !== routeScope) {
+      setActiveScope(routeScope);
     }
-  }, [pathname, activeScope, setActiveScope]);
+  }, [pathname, activeScope, isOrganizationRoute, setActiveScope]);
 
   useEffect(() => {
     if (!pathname.startsWith('/settings')) {
@@ -190,7 +192,7 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
           </Suspense>
         ) : (
           <div className='size-full flex flex-col gap-2px'>
-            {activeScope === 'organization' ? (
+            {isOrganizationRoute ? (
               <div className='flex-1 min-h-0 overflow-hidden'>
                 <OrganizationSiderContent
                   collapsed={collapsed}

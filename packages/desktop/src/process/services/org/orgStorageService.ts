@@ -317,7 +317,10 @@ export class OrgStorageService {
         'SELECT id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode FROM org_projects';
       const params: unknown[] = [];
       if (mode) {
-        query += ' WHERE mode = ?';
+        // Projects created before mode-scoped storage have a NULL mode. Keep
+        // those legacy rows visible in Organization mode, matching the mode
+        // fallback applied while mapping rows below.
+        query += mode === 'organization' ? ' WHERE mode = ? OR mode IS NULL' : ' WHERE mode = ?';
         params.push(mode);
       }
       query += ' ORDER BY name ASC';
