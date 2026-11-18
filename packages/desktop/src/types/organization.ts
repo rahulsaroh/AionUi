@@ -7,6 +7,24 @@
 export type AppMode = 'workplace' | 'organization';
 export type OrgScope = AppMode;
 
+/**
+ * Per-project approval policy (Codex-style), three levels:
+ * - 'read_only' : file reads are free; every file edit and shell command asks.
+ * - 'auto_edit' : in-folder file edits are free; shell commands ask. (default)
+ * - 'full_auto' : in-folder shell is free; outside/destructive/system actions still ask.
+ */
+export type OrgApprovalPolicy = 'read_only' | 'auto_edit' | 'full_auto';
+
+/**
+ * Execution engine (CLI agent backend) used to run a member or project head as a real
+ * coding agent. Chosen from the agent backends already available in Settings:
+ * - 'settings'  : use the model configured in Settings (legacy default behavior).
+ * - 'codex'     : OpenAI Codex CLI (ACP).
+ * - 'claude'    : Claude Code (ACP).
+ * - 'aionrs'    : built-in aionrs agent engine.
+ */
+export type OrgExecutionEngine = 'settings' | 'codex' | 'claude' | 'aionrs';
+
 export type OrgNodeStatus =
   | 'working'
   | 'department_standby'
@@ -54,6 +72,8 @@ export interface OrgAgentMember {
   skills?: string[];
   /** Backend slot ID in the backend team */
   backendSlotId?: string;
+  /** Execution engine (CLI agent backend) used to run this member. Defaults to 'settings'. */
+  executionEngine?: OrgExecutionEngine;
 }
 
 export interface OrgTeamNode {
@@ -129,7 +149,16 @@ export interface OrgProject {
   memberIds?: string[];
   goal?: string;
   description?: string;
-  context?: { repos?: string[]; skills?: string[]; notes?: string; workspacePaths?: string[] };
+  context?: {
+    repos?: string[];
+    skills?: string[];
+    notes?: string;
+    workspacePaths?: string[];
+    /** Persisted per-project approval policy (mirrors OrgProject.approvalPolicy). */
+    approvalPolicy?: OrgApprovalPolicy;
+    /** Persisted per-project allowlist (mirrors OrgProject.allowlist). */
+    allowlist?: string[];
+  };
   /** All project folders available to the project agent. workspacePath remains the primary folder for legacy clients. */
   workspacePaths?: string[];
   status: 'active' | 'dormant' | 'done';
@@ -140,6 +169,10 @@ export interface OrgProject {
   backendTeamId?: string;
   /** App mode: 'workplace' or 'organization' - isolates data between modes */
   mode?: 'workplace' | 'organization';
+  /** Per-project approval policy (Codex-style). Defaults to 'auto_edit'. */
+  approvalPolicy?: OrgApprovalPolicy;
+  /** Extra absolute folders (already validated within master root) the agent may additionally use. */
+  allowlist?: string[];
   createdAt?: number;
   updatedAt?: number;
 }

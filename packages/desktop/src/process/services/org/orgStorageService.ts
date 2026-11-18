@@ -17,6 +17,7 @@ import type {
   OrgConversation,
   OrgStorageBundle,
   RootCEO,
+  OrgExecutionEngine,
 } from '@/types/organization';
 
 export const MAX_STORAGE_VALUE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -58,6 +59,15 @@ export function validateMemberShape(m: any): boolean {
   if (typeof m.role !== 'string' || !m.role || m.role.length > 256) return false;
   if (m.systemPrompt !== undefined && (typeof m.systemPrompt !== 'string' || m.systemPrompt.length > 50000))
     return false;
+  if (m.executionEngine !== undefined && !['settings', 'codex', 'claude', 'aionrs'].includes(m.executionEngine))
+    return false;
+  if (m.model !== undefined && m.model !== null) {
+    if (typeof m.model !== 'object') return false;
+    if (m.model.modelId !== undefined && typeof m.model.modelId !== 'string') return false;
+    if (m.model.providerId !== undefined && typeof m.model.providerId !== 'string') return false;
+    if (m.model.executionEngine !== undefined && !['settings', 'codex', 'claude', 'aionrs'].includes(m.model.executionEngine))
+      return false;
+  }
   return true;
 }
 
@@ -77,6 +87,14 @@ export function validateProjectShape(p: any): boolean {
       !p.workspacePaths.every((item: unknown) => typeof item === 'string' && item.length <= 4096))
   )
     return false;
+  if (p.approvalPolicy !== undefined && !['read_only', 'auto_edit', 'full_auto'].includes(p.approvalPolicy)) return false;
+  if (
+    p.allowlist !== undefined &&
+    (!Array.isArray(p.allowlist) ||
+      p.allowlist.length > 20 ||
+      !p.allowlist.every((item: unknown) => typeof item === 'string' && item.length <= 4096))
+  )
+    return false;
   return true;
 }
 
@@ -84,6 +102,8 @@ function serializeProjectContext(project: OrgProject): string | null {
   const context = {
     ...project.context,
     ...(project.workspacePaths?.length ? { workspacePaths: project.workspacePaths } : {}),
+    ...(project.approvalPolicy ? { approvalPolicy: project.approvalPolicy } : {}),
+    ...(project.allowlist?.length ? { allowlist: project.allowlist } : {}),
   };
   return Object.keys(context).length > 0 ? JSON.stringify(context) : null;
 }
@@ -220,6 +240,7 @@ export class OrgStorageService {
           assignedTeamIds: [] as string[],
           lastActiveAt: null as number | null,
           status: 'idle',
+          executionEngine: (r.model ? JSON.parse(r.model).executionEngine : undefined) as OrgExecutionEngine | undefined,
         })
       );
     } catch (err) {
@@ -247,7 +268,12 @@ export class OrgStorageService {
         member.name,
         member.role,
         member.systemPrompt || null,
-        member.model ? JSON.stringify(member.model) : null,
+        member.model || member.executionEngine
+          ? JSON.stringify({
+              ...(member.model || {}),
+              executionEngine: member.executionEngine,
+            })
+          : null,
         member.skills ? JSON.stringify(member.skills) : JSON.stringify([]),
         now,
         now
@@ -360,6 +386,8 @@ export class OrgStorageService {
           context,
           workspacePaths: context?.workspacePaths,
           workspacePath: r.workspace_path || null,
+          approvalPolicy: context?.approvalPolicy,
+          allowlist: context?.allowlist,
           mode: (r.mode as 'workplace' | 'organization') || 'organization',
           updatedAt: r.updated_at,
         };

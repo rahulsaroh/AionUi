@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { OrgApprovalPolicy } from '@/types/organization';
+
+export type { OrgApprovalPolicy };
+
 /**
  * Per-project approval policy (Codex-style), three levels:
  * - `read_only`  : file reads are free; every file edit and shell command asks.
@@ -15,8 +19,6 @@
  *
  * Default policy is `auto_edit`.
  */
-export type OrgApprovalPolicy = 'read_only' | 'auto_edit' | 'full_auto';
-
 export const DEFAULT_APPROVAL_POLICY: OrgApprovalPolicy = 'auto_edit';
 
 /** Coarse classification of an agent tool for approval evaluation. */
