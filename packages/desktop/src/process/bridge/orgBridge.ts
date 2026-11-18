@@ -10,6 +10,7 @@ import { orgStorageService, isValidOrgStorageKey, MAX_STORAGE_VALUE_BYTES } from
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
 import { issueCommandApprovalToken, issueFileApprovalToken } from '../services/org/orgApproval';
+import { createCheckpoint, undoCheckpoint, listCheckpoints } from '../services/org/orgCheckpoint';
 import {
   setMasterRoot,
   getMasterRoot,
@@ -503,4 +504,25 @@ export function registerOrgBridge(): void {
       }
     }
   );
+
+  ipcMain.handle('org:createCheckpoint', async (_event, params: { projectId: string; projectFolder: string }) => {
+    if (!params || typeof params.projectId !== 'string' || typeof params.projectFolder !== 'string') {
+      throw new Error('Invalid arguments for org:createCheckpoint');
+    }
+    return createCheckpoint(params.projectFolder, params.projectId);
+  });
+
+  ipcMain.handle('org:undoCheckpoint', async (_event, params: { projectId: string; projectFolder: string }) => {
+    if (!params || typeof params.projectId !== 'string' || typeof params.projectFolder !== 'string') {
+      throw new Error('Invalid arguments for org:undoCheckpoint');
+    }
+    return undoCheckpoint(params.projectFolder, params.projectId);
+  });
+
+  ipcMain.handle('org:listCheckpoints', async (_event, params: { projectId: string; projectFolder: string }) => {
+    if (!params || typeof params.projectId !== 'string' || typeof params.projectFolder !== 'string') {
+      throw new Error('Invalid arguments for org:listCheckpoints');
+    }
+    return listCheckpoints(params.projectFolder, params.projectId);
+  });
 }

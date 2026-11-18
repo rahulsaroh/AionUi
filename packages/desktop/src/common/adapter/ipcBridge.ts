@@ -2931,8 +2931,9 @@ export const org = {
     return { isRisky: false };
   },
   getSessionMcpServer: async (params?: {
-    role?: 'ceo' | 'department_head' | 'project_head';
+    role?: 'ceo' | 'department_head' | 'team_lead' | 'project_head';
     deptId?: string;
+    teamId?: string;
     projectId?: string;
     deptWorkspacePath?: string;
     approvalPolicy?: string;
@@ -2997,6 +2998,21 @@ export const org = {
       window.electronAPI.orgApprovalDecision(params);
     }
   },
+
+  createCheckpoint: (params: { projectId: string; projectFolder: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgCreateCheckpoint
+      ? window.electronAPI.orgCreateCheckpoint(params)
+      : Promise.resolve({ success: false, error: 'not available' } as const),
+
+  undoCheckpoint: (params: { projectId: string; projectFolder: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgUndoCheckpoint
+      ? window.electronAPI.orgUndoCheckpoint(params)
+      : Promise.resolve({ success: false, error: 'not available' }),
+
+  listCheckpoints: (params: { projectId: string; projectFolder: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgListCheckpoints
+      ? window.electronAPI.orgListCheckpoints(params)
+      : Promise.resolve([]),
 };
 
 export const memberHandbook = {

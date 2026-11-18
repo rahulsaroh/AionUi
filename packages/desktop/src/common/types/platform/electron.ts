@@ -409,8 +409,9 @@ export interface ElectronBridgeAPI {
   }) => Promise<{ token: string; targetFilePath: string; expiresInMs: number }>;
   orgCheckRiskyCommand?: (params: { command: string }) => Promise<{ isRisky: boolean; reason?: string }>;
   orgGetSessionMcpServer?: (params?: {
-    role?: 'ceo' | 'department_head' | 'project_head';
+    role?: 'ceo' | 'department_head' | 'team_lead' | 'project_head';
     deptId?: string;
+    teamId?: string;
     projectId?: string;
     deptWorkspacePath?: string;
     approvalPolicy?: string;
@@ -440,6 +441,15 @@ export interface ElectronBridgeAPI {
     }) => void
   ) => () => void;
   orgApprovalDecision?: (params: { requestId: string; decision: 'allow' | 'deny' }) => void;
+  orgCreateCheckpoint?: (params: {
+    projectId: string;
+    projectFolder: string;
+  }) => Promise<{ success: boolean; checkpointId?: string; error?: string }>;
+  orgUndoCheckpoint?: (params: {
+    projectId: string;
+    projectFolder: string;
+  }) => Promise<{ success: boolean; message?: string; error?: string }>;
+  orgListCheckpoints?: (params: { projectId: string; projectFolder: string }) => Promise<string[]>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

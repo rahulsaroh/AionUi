@@ -711,6 +711,36 @@ export class OrgDelegationEngine {
     this.autoApprovePermissions = options?.autoApprovePermissions;
   }
 
+  private resolveDepartmentForAgent(agent: OrgAgentMember, projectId?: string): string | undefined {
+    // If projectId is known, get department from project
+    if (projectId) {
+      const proj = this.projects.find((p) => p.id === projectId);
+      if (proj?.departmentId) return proj.departmentId;
+    }
+    // Search departments for the agent
+    for (const dept of this.hierarchy.departments) {
+      if (dept.departmentCeoAgent?.id === agent.id) return dept.id;
+      if (dept.pmAgent?.id === agent.id) return dept.id;
+      for (const team of dept.teams) {
+        if (team.teamLeadAgent?.id === agent.id) return dept.id;
+        if (team.hrCoordinatorAgent?.id === agent.id) return dept.id;
+        if (team.specialistMembers?.some((m) => m.id === agent.id)) return dept.id;
+      }
+    }
+    return undefined;
+  }
+
+  private resolveTeamForAgent(agent: OrgAgentMember): string | undefined {
+    for (const dept of this.hierarchy.departments) {
+      for (const team of dept.teams) {
+        if (team.teamLeadAgent?.id === agent.id) return team.id;
+        if (team.hrCoordinatorAgent?.id === agent.id) return team.id;
+        if (team.specialistMembers?.some((m) => m.id === agent.id)) return team.id;
+      }
+    }
+    return undefined;
+  }
+
   private emitStep(step: DelegationStepLog) {
     if (this.onStepCallback) {
       this.onStepCallback(step);
@@ -774,7 +804,11 @@ export class OrgDelegationEngine {
     let finished = false;
     let contentCount = 0;
     let lastNoticeChunk = '';
-    let lastActivity = Date.now();
+    let startedAt = Date.now();
+    let lastActivity = startedAt;
+    let firstActivityAt: number | null = null;
+    const FIRST_TURN_TIMEOUT_MS = 120000;
+    const INACTIVITY_TIMEOUT_MS = 45000;
     let checkFinish: () => void = () => {};
     let unsubscribe: (() => void) | undefined;
     let unsubLiveStep: (() => void) | undefined;
@@ -786,11 +820,24 @@ export class OrgDelegationEngine {
       collectedText.push(notice);
       opts.onStreamUpdate?.(notice);
       this.onAgentStream?.(notice);
+      lastActivity = Date.now();
+      if (firstActivityAt === null) firstActivityAt = Date.now();
     };
+
+    // Variables needed in finally block
+    let assistantId = opts.agent.canonicalAgentId || opts.agent.id;
+    let resolvedModel: { id: string; use_model: string; provider_id?: string } | undefined;
+
+    // Emit "starting agent..." status
+    pushNotice(`[Starting agent ${opts.agent.name} (model: ${opts.agent.model?.modelId || 'default'})...]\n`);
+    if (OrgDelegationEngine.isSlowDrive(effectiveWorkspace)) {
+      console.warn(
+        `[OrgDelegationEngine] Workspace "${effectiveWorkspace}" is on a virtual/slow drive. Agent startup may be slow.`
+      );
+    }
 
     try {
       // 1. Resolve real available assistant from backend
-      let assistantId = opts.agent.canonicalAgentId || opts.agent.id;
       let isAcp = opts.agent.assistant_backend === 'acp';
       let acpAssistant: any = null;
       let allAssistants: any[] = [];
@@ -832,7 +879,6 @@ export class OrgDelegationEngine {
       }
 
       // 2. Resolve model from configured App Settings
-      let resolvedModel: { id: string; use_model: string } | undefined;
       const explicitModel = opts.agent.model?.modelId?.trim();
       const explicitProviderId = opts.agent.model?.providerId?.trim();
 
@@ -845,13 +891,13 @@ export class OrgDelegationEngine {
           if (explicitProviderId) {
             const matchedProvider = enabledProviders.find((p) => p.id === explicitProviderId);
             if (matchedProvider && matchedProvider.models?.includes(explicitModel)) {
-              resolvedModel = { id: matchedProvider.id, use_model: explicitModel };
+              resolvedModel = { id: matchedProvider.id, use_model: explicitModel, provider_id: matchedProvider.id };
             }
           }
           if (!resolvedModel) {
             const matchedProvider = enabledProviders.find((p) => p.models?.includes(explicitModel));
             if (matchedProvider) {
-              resolvedModel = { id: matchedProvider.id, use_model: explicitModel };
+              resolvedModel = { id: matchedProvider.id, use_model: explicitModel, provider_id: matchedProvider.id };
             }
           }
 
@@ -872,7 +918,7 @@ export class OrgDelegationEngine {
               (p) => (ceoModel.providerId && p.id === ceoModel.providerId) || p.models?.includes(ceoModel.modelId)
             );
             if (matchedProvider) {
-              resolvedModel = { id: matchedProvider.id, use_model: ceoModel.modelId };
+              resolvedModel = { id: matchedProvider.id, use_model: ceoModel.modelId, provider_id: matchedProvider.id };
             }
           }
           // Fall back to first available model from user's enabled providers
@@ -882,6 +928,7 @@ export class OrgDelegationEngine {
               resolvedModel = {
                 id: p.id,
                 use_model: p.models[0],
+                provider_id: p.id,
               };
             }
           }
@@ -944,18 +991,28 @@ export class OrgDelegationEngine {
         }
 
         let sessionMcpServers: any[] = [];
+        let orgRole: 'ceo' | 'department_head' | 'team_lead' | 'project_head';
+        let boundProjectId = opts.projectId;
+        let approvalPolicy: string | undefined;
+
         try {
-          const orgRole =
+          // Resolve department and team for the agent to pass scope to the bridge
+          const deptId = this.resolveDepartmentForAgent(opts.agent, opts.projectId);
+          const teamId = this.resolveTeamForAgent(opts.agent);
+          const dept = deptId ? this.hierarchy.departments.find((d) => d.id === deptId) : undefined;
+          const deptWorkspacePath = dept?.workspacePath;
+
+          orgRole =
             opts.agent.role === 'ceo'
               ? 'ceo'
               : opts.agent.role === 'department_head'
                 ? 'department_head'
-                : 'project_head';
+                : opts.agent.role === 'team_lead'
+                  ? 'team_lead'
+                  : 'project_head';
 
           // Resolve approval policy for the bound project (default auto_edit). Only project
-          // heads/members get execution tools, so policy is irrelevant for ceo/department_head.
-          let approvalPolicy: string | undefined;
-          let boundProjectId = opts.projectId;
+          // heads/members get execution tools, so policy is irrelevant for ceo/department_head/team_lead.
           if (orgRole === 'project_head') {
             const proj =
               (boundProjectId ? this.projects.find((p) => p.id === boundProjectId) : undefined) ||
@@ -968,7 +1025,9 @@ export class OrgDelegationEngine {
 
           const orgMcp = await ipcBridge.org.getSessionMcpServer({
             role: orgRole,
-            deptWorkspacePath: opts.workspacePath,
+            deptId,
+            teamId,
+            deptWorkspacePath,
             projectId: orgRole === 'project_head' ? boundProjectId : undefined,
             approvalPolicy,
           });
@@ -977,6 +1036,21 @@ export class OrgDelegationEngine {
           }
         } catch (mcpErr) {
           console.warn('[OrgDelegationEngine] Failed to resolve session MCP server:', mcpErr);
+        }
+
+        // Create a git checkpoint before running the member's task (project heads only)
+        if (orgRole === 'project_head' && boundProjectId && opts.workspacePath) {
+          try {
+            const cp = await ipcBridge.org.createCheckpoint({
+              projectId: boundProjectId,
+              projectFolder: opts.workspacePath,
+            });
+            if (cp.success && 'checkpointId' in cp && cp.checkpointId && cp.checkpointId !== 'empty') {
+              console.info(`[OrgDelegationEngine] Created checkpoint ${cp.checkpointId} for project ${boundProjectId}`);
+            }
+          } catch (cpErr) {
+            console.warn('[OrgDelegationEngine] Checkpoint creation failed (non-fatal):', cpErr);
+          }
         }
 
         const createPayload: Record<string, unknown> = {
@@ -1074,6 +1148,10 @@ export class OrgDelegationEngine {
             dataSnippet: typeof m.data === 'string' ? m.data.slice(0, 120) : m.data,
           });
         }
+
+        // Update activity timer for ANY message type (including tips, tool calls, etc.)
+        lastActivity = Date.now();
+        if (firstActivityAt === null) firstActivityAt = Date.now();
 
         if (m.type === 'error' || m.status === 'error') {
           const errText = typeof m.data === 'string' ? m.data : JSON.stringify(m.data);
@@ -1410,7 +1488,9 @@ export class OrgDelegationEngine {
             resolve();
             return;
           }
-          if (Date.now() - lastActivity > 45000) {
+          const timeoutMs = firstActivityAt === null ? FIRST_TURN_TIMEOUT_MS : INACTIVITY_TIMEOUT_MS;
+          const timeoutLabel = firstActivityAt === null ? 'first-turn' : 'inactivity';
+          if (Date.now() - lastActivity > timeoutMs) {
             clearInterval(inactivityCheck);
             // Check if backend recorded assistant messages before declaring timeout
             try {
@@ -1440,7 +1520,10 @@ export class OrgDelegationEngine {
                 }
               }
             } catch {}
-            reject(new Error('Org agent step timed out: no stream activity for 45s'));
+            const timeoutSec = (timeoutMs / 1000).toFixed(0);
+            reject(
+              new Error(`Org agent step timed out: no stream activity for ${timeoutSec}s (${timeoutLabel} timeout)`)
+            );
           }
         }, 500);
       });
@@ -1477,6 +1560,8 @@ export class OrgDelegationEngine {
     }
 
     const hasInferenceError = collectedText.some((t) => t.includes('[Inference Error:'));
+    const elapsedMs = Date.now() - startedAt;
+
     if (contentCount > 0) {
       return collectedText.join('');
     }
@@ -1485,16 +1570,39 @@ export class OrgDelegationEngine {
       return collectedText.join('');
     }
 
+    const modelInfo = resolvedModel
+      ? `model: ${resolvedModel.use_model} (provider: ${resolvedModel.provider_id || 'unknown'})`
+      : 'no model resolved';
+    const assistantInfo = assistantId ? `assistant: ${assistantId}` : 'no assistant';
+    const workspaceInfo = effectiveWorkspace ? `workspace: ${effectiveWorkspace}` : 'workspace: (organization root)';
+    const slowDriveWarning = OrgDelegationEngine.isSlowDrive(effectiveWorkspace)
+      ? '\n[Warning: Workspace is on a virtual/slow drive (Google Drive, OneDrive, network share). Startup may be slow.]'
+      : '';
+
     if (runError) {
-      return `Hello! I am ${opts.agent.name} (${opts.agent.title || opts.agent.role}). I received your directive: "${opts.userDirective}".\n\n(Notice: Model provider connection reported: ${runError}. Please configure your API key or active model under Settings -> Model).`;
+      const errorMsg = `Agent "${opts.agent.name}" failed to respond (${modelInfo}, ${assistantInfo}, ${workspaceInfo}). Reason: ${runError}. Elapsed: ${(elapsedMs / 1000).toFixed(1)}s.${slowDriveWarning}`;
+      console.error(`[OrgDelegationEngine] ${errorMsg}`);
+      return `[Error: ${errorMsg}]`;
     }
 
-    const noReplyMsg =
-      'The agent finished without producing a reply. Check the model/provider settings and the org MCP server.';
+    const noReplyMsg = `The agent finished without producing a reply (${modelInfo}, ${assistantInfo}, ${workspaceInfo}). Check the model/provider settings and the org MCP server. Elapsed: ${(elapsedMs / 1000).toFixed(1)}s.${slowDriveWarning}`;
     if (collectedText.length > 0) {
       return `${collectedText.join('')}\n\n${noReplyMsg}`;
     }
     return noReplyMsg;
+  }
+
+  private static isSlowDrive(workspacePath: string): boolean {
+    if (!workspacePath) return false;
+    const lower = workspacePath.toLowerCase();
+    return (
+      lower.includes('google drive') ||
+      lower.includes('my drive') ||
+      lower.includes('onedrive') ||
+      lower.includes('dropbox') ||
+      lower.startsWith('\\\\') ||
+      lower.includes('network')
+    );
   }
 
   /**

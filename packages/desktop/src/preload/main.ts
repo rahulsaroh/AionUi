@@ -290,8 +290,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   orgApproveFileRead: (params: { targetFilePath: string }) => ipcRenderer.invoke('org:approveFileRead', params),
   orgCheckRiskyCommand: (params: { command: string }) => ipcRenderer.invoke('org:checkRiskyCommand', params),
   orgGetSessionMcpServer: (params?: {
-    role?: 'ceo' | 'department_head' | 'project_head';
+    role?: 'ceo' | 'department_head' | 'team_lead' | 'project_head';
     deptId?: string;
+    teamId?: string;
     projectId?: string;
     deptWorkspacePath?: string;
     approvalPolicy?: string;
@@ -340,6 +341,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   orgApprovalDecision: (params: { requestId: string; decision: 'allow' | 'deny' }) =>
     ipcRenderer.send('org:approval-decision', params),
+  orgCreateCheckpoint: (params: { projectId: string; projectFolder: string }) =>
+    ipcRenderer.invoke('org:createCheckpoint', params),
+  orgUndoCheckpoint: (params: { projectId: string; projectFolder: string }) =>
+    ipcRenderer.invoke('org:undoCheckpoint', params),
+  orgListCheckpoints: (params: { projectId: string; projectFolder: string }) =>
+    ipcRenderer.invoke('org:listCheckpoints', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),
