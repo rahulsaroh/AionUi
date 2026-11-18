@@ -10,7 +10,7 @@ import { orgStorageService, isValidOrgStorageKey, MAX_STORAGE_VALUE_BYTES } from
 import { discoverProjectsInFolder, type DiscoveredProject } from '../services/org/projectDiscovery';
 import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
 import { issueCommandApprovalToken, issueFileApprovalToken } from '../services/org/orgApproval';
-import { createCheckpoint, undoCheckpoint, listCheckpoints } from '../services/org/orgCheckpoint';
+import { createCheckpoint, undoCheckpoint, listCheckpoints, clearCheckpoints } from '../services/org/orgCheckpoint';
 import {
   trackCommand,
   getRunningCommand,
@@ -19,6 +19,11 @@ import {
   untrackCommand,
   mapAutoApproveToPolicy,
 } from '../services/org/orgRunningCommands';
+import {
+  buildMemberFinalReport,
+  formatReportAsMarkdown,
+  type MemberFinalReport,
+} from '../services/org/orgReporting';
 import {
   setMasterRoot,
   getMasterRoot,
@@ -558,5 +563,33 @@ export function registerOrgBridge(): void {
       throw new Error('Invalid arguments for org:mapAutoApprove');
     }
     return mapAutoApproveToPolicy(params.level);
+  });
+
+  ipcMain.handle('org:generateFinalReport', async (_event, params: {
+    memberId: string;
+    memberName: string;
+    role: string;
+    projectId: string;
+    projectName: string;
+    projectFolder: string;
+    taskDescription: string;
+    startedAt: number;
+    toolExecutions: Array<{
+      tool: string;
+      args: Record<string, any>;
+      success: boolean;
+      error?: string;
+      durationMs?: number;
+      timestamp: number;
+    }>;
+  }) => {
+    if (!params || typeof params.memberId !== 'string') {
+      throw new Error('Invalid arguments for org:generateFinalReport');
+    }
+    const report = await buildMemberFinalReport(params);
+    return {
+      report,
+      markdown: formatReportAsMarkdown(report),
+    };
   });
 }

@@ -474,6 +474,27 @@ export interface ElectronBridgeAPI {
       }
   >;
   orgMapAutoApprove?: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) => Promise<'read_only' | 'auto_edit' | 'full_auto'>;
+  orgGenerateFinalReport?: (params: {
+    memberId: string;
+    memberName: string;
+    role: string;
+    projectId: string;
+    projectName: string;
+    projectFolder: string;
+    taskDescription: string;
+    startedAt: number;
+    toolExecutions: Array<{
+      tool: string;
+      args: Record<string, any>;
+      success: boolean;
+      error?: string;
+      durationMs?: number;
+      timestamp: number;
+    }>;
+  }) => Promise<{
+    report: import('@/process/services/org/orgReporting').MemberFinalReport | null;
+    markdown: string;
+  }>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

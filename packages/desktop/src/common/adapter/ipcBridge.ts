@@ -3038,6 +3038,28 @@ export const org = {
     typeof window !== 'undefined' && window.electronAPI?.orgMapAutoApprove
       ? window.electronAPI.orgMapAutoApprove(params)
       : Promise.resolve('auto_edit'),
+
+  generateFinalReport: (params: {
+    memberId: string;
+    memberName: string;
+    role: string;
+    projectId: string;
+    projectName: string;
+    projectFolder: string;
+    taskDescription: string;
+    startedAt: number;
+    toolExecutions: Array<{
+      tool: string;
+      args: Record<string, any>;
+      success: boolean;
+      error?: string;
+      durationMs?: number;
+      timestamp: number;
+    }>;
+  }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgGenerateFinalReport
+      ? window.electronAPI.orgGenerateFinalReport(params)
+      : Promise.resolve({ report: null, markdown: '' }),
 };
 
 export const memberHandbook = {

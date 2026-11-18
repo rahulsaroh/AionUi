@@ -357,6 +357,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('org:getRunningCommand', params),
   orgMapAutoApprove: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) =>
     ipcRenderer.invoke('org:mapAutoApprove', params),
+  orgGenerateFinalReport: (params: {
+    memberId: string;
+    memberName: string;
+    role: string;
+    projectId: string;
+    projectName: string;
+    projectFolder: string;
+    taskDescription: string;
+    startedAt: number;
+    toolExecutions: Array<{
+      tool: string;
+      args: Record<string, any>;
+      success: boolean;
+      error?: string;
+      durationMs?: number;
+      timestamp: number;
+    }>;
+  }) => ipcRenderer.invoke('org:generateFinalReport', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),
