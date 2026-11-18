@@ -347,6 +347,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('org:undoCheckpoint', params),
   orgListCheckpoints: (params: { projectId: string; projectFolder: string }) =>
     ipcRenderer.invoke('org:listCheckpoints', params),
+  orgClearCheckpoints: (params: { projectId: string; projectFolder: string }) =>
+    ipcRenderer.invoke('org:clearCheckpoints', params),
+  orgKillCommand: (params: { commandId: string }) =>
+    ipcRenderer.invoke('org:killCommand', params),
+  orgListRunningCommands: (params?: { projectId?: string }) =>
+    ipcRenderer.invoke('org:listRunningCommands', params),
+  orgGetRunningCommand: (params: { commandId: string }) =>
+    ipcRenderer.invoke('org:getRunningCommand', params),
+  orgMapAutoApprove: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) =>
+    ipcRenderer.invoke('org:mapAutoApprove', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),

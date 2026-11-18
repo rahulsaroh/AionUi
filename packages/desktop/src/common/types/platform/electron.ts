@@ -450,6 +450,30 @@ export interface ElectronBridgeAPI {
     projectFolder: string;
   }) => Promise<{ success: boolean; message?: string; error?: string }>;
   orgListCheckpoints?: (params: { projectId: string; projectFolder: string }) => Promise<string[]>;
+  orgClearCheckpoints?: (params: { projectId: string; projectFolder: string }) => Promise<number>;
+  orgKillCommand?: (params: { commandId: string }) => Promise<{ success: boolean; error?: string }>;
+  orgListRunningCommands?: (params?: { projectId?: string }) => Promise<
+    Array<{
+      id: string;
+      projectId: string;
+      command: string;
+      cwd: string;
+      startTime: number;
+      pid: number;
+    }>
+  >;
+  orgGetRunningCommand?: (params: { commandId: string }) => Promise<
+    | undefined
+    | {
+        id: string;
+        projectId: string;
+        command: string;
+        cwd: string;
+        startTime: number;
+        pid: number;
+      }
+  >;
+  orgMapAutoApprove?: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) => Promise<'read_only' | 'auto_edit' | 'full_auto'>;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

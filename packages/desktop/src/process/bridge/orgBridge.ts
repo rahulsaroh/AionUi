@@ -12,6 +12,14 @@ import { OrgFolderTools, checkRiskyCommand } from '../services/org/folderTools';
 import { issueCommandApprovalToken, issueFileApprovalToken } from '../services/org/orgApproval';
 import { createCheckpoint, undoCheckpoint, listCheckpoints } from '../services/org/orgCheckpoint';
 import {
+  trackCommand,
+  getRunningCommand,
+  listRunningCommands,
+  killCommand,
+  untrackCommand,
+  mapAutoApproveToPolicy,
+} from '../services/org/orgRunningCommands';
+import {
   setMasterRoot,
   getMasterRoot,
   resolveEffectiveScope,
@@ -519,10 +527,36 @@ export function registerOrgBridge(): void {
     return undoCheckpoint(params.projectFolder, params.projectId);
   });
 
-  ipcMain.handle('org:listCheckpoints', async (_event, params: { projectId: string; projectFolder: string }) => {
+  ipcMain.handle('org:clearCheckpoints', async (_event, params: { projectId: string; projectFolder: string }) => {
     if (!params || typeof params.projectId !== 'string' || typeof params.projectFolder !== 'string') {
-      throw new Error('Invalid arguments for org:listCheckpoints');
+      throw new Error('Invalid arguments for org:clearCheckpoints');
     }
-    return listCheckpoints(params.projectFolder, params.projectId);
+    const { clearCheckpoints } = await import('../services/org/orgCheckpoint');
+    return clearCheckpoints(params.projectFolder, params.projectId);
+  });
+
+  ipcMain.handle('org:killCommand', async (_event, params: { commandId: string }) => {
+    if (!params || typeof params.commandId !== 'string') {
+      throw new Error('Invalid arguments for org:killCommand');
+    }
+    return killCommand(params.commandId);
+  });
+
+  ipcMain.handle('org:listRunningCommands', async (_event, params?: { projectId?: string }) => {
+    return listRunningCommands(params?.projectId);
+  });
+
+  ipcMain.handle('org:getRunningCommand', async (_event, params: { commandId: string }) => {
+    if (!params || typeof params.commandId !== 'string') {
+      throw new Error('Invalid arguments for org:getRunningCommand');
+    }
+    return getRunningCommand(params.commandId);
+  });
+
+  ipcMain.handle('org:mapAutoApprove', async (_event, params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) => {
+    if (!params || typeof params.level !== 'string') {
+      throw new Error('Invalid arguments for org:mapAutoApprove');
+    }
+    return mapAutoApproveToPolicy(params.level);
   });
 }

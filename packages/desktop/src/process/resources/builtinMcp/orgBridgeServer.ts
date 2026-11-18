@@ -23,7 +23,14 @@ import { normalizeApprovalPolicy } from '@process/services/org/orgApprovalPolicy
 
 const EXECUTION_TOOLS = new Set(['list_dir', 'read_file', 'write_file', 'run_shell']);
 
-export type OrgRole = 'ceo' | 'department_head' | 'project_head';
+const TOOL_REQUIRED_ROLE: Record<string, string> = {
+  create_department: 'Root CEO',
+  propose_structure: 'Root CEO',
+  scan_folder: 'Department Head',
+  hire_member: 'Department Head or Team Lead',
+};
+
+export type OrgRole = 'ceo' | 'department_head' | 'team_lead' | 'project_head';
 
 export interface OrgToolExecutionRequest {
   tool: string;
@@ -255,6 +262,7 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
     const allowed = new Set([
       'scan_folder',
       'create_project',
+      'hire_member',
       'assign_member',
       'assign_task',
       'list_org',
@@ -264,9 +272,27 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'ask_user',
     ]);
     if (!allowed.has(tool)) {
+      const requiredRole = TOOL_REQUIRED_ROLE[tool];
       return {
         success: false,
-        error: `Access denied: Department Head role is not permitted to execute "${tool}".`,
+        error: `Access denied: Department Head role is not permitted to execute "${tool}". ${requiredRole ? `Only the ${requiredRole} can do this.` : ''}`,
+      };
+    }
+  } else if (role === 'team_lead') {
+    const allowed = new Set([
+      'list_org',
+      'create_project',
+      'hire_member',
+      'assign_member',
+      'assign_task',
+      'get_status',
+      'ask_user',
+    ]);
+    if (!allowed.has(tool)) {
+      const requiredRole = TOOL_REQUIRED_ROLE[tool];
+      return {
+        success: false,
+        error: `Access denied: role "team_lead" is not permitted to execute "${tool}". ${requiredRole ? `Only the ${requiredRole} can do this.` : ''}`,
       };
     }
   } else if (role === 'project_head') {
@@ -284,9 +310,10 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'run_shell',
     ]);
     if (!allowed.has(tool)) {
+      const requiredRole = TOOL_REQUIRED_ROLE[tool];
       return {
         success: false,
-        error: `Access denied: Project Head role is not permitted to execute "${tool}".`,
+        error: `Access denied: Project Head role is not permitted to execute "${tool}". ${requiredRole ? `Only the ${requiredRole} can do this.` : ''}`,
       };
     }
   }
@@ -333,11 +360,11 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
     } else if (tool === 'write_file') {
       result = await executeWriteFile({ path: args.path, content: args.content }, ctx, { masterRoot });
     } else {
-      result = await executeRunShell(
-        { command: args.command, cwd: args.cwd, timeoutMs: args.timeoutMs },
-        ctx,
-        { masterRoot, approvalToken: args.approvalToken }
-      );
+      result = await executeRunShell({ command: args.command, cwd: args.cwd, timeoutMs: args.timeoutMs }, ctx, {
+        masterRoot,
+        approvalToken: args.approvalToken,
+        projectId: projectId || 'unknown',
+      });
     }
 
     if (result.success) {
@@ -397,7 +424,20 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       return { success: false, error: 'create_project requires "departmentId", "name", and "folder".' };
     }
     broadcastOrgLiveStep({ step: `Creating project: ${args.name}`, tool, args });
-    const effectiveParentRoot = role === 'department_head' && deptWorkspacePath ? deptWorkspacePath : masterRoot!;
+
+    // Scope check: department_head/team_lead can only create projects in their own department
+    let effectiveParentRoot: string;
+    if ((role === 'department_head' || role === 'team_lead') && deptWorkspacePath) {
+      effectiveParentRoot = deptWorkspacePath;
+      if (deptId && args.departmentId !== deptId) {
+        return {
+          success: false,
+          error: `Access denied: ${role} can only create projects in its own department (${deptId}), not "${args.departmentId}".`,
+        };
+      }
+    } else {
+      effectiveParentRoot = masterRoot!;
+    }
     const check = await assertWithinScope(args.folder, effectiveParentRoot);
     if (!check.allowed) {
       return {
@@ -410,6 +450,13 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
   if (tool === 'hire_member') {
     if (!args.name || !args.role) {
       return { success: false, error: 'hire_member requires "name" and "role".' };
+    }
+    // Scope: department_head/team_lead must have deptId bound
+    if ((role === 'department_head' || role === 'team_lead') && !deptId && !deptWorkspacePath) {
+      return {
+        success: false,
+        error: `Access denied: ${role} cannot hire members without a bound department scope.`,
+      };
     }
     broadcastOrgLiveStep({ step: `Hiring member: ${args.name} (${args.role})`, tool, args });
   }

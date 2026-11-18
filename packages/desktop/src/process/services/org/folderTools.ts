@@ -12,6 +12,7 @@ import { resolveEffectiveScope } from './orgScope';
 import { consumeCommandApprovalToken, consumeFileApprovalToken } from './orgApproval';
 import { recordShellExecution } from './orgTelemetry';
 import { scanFolderCompact, type ScanFolderResult, type ScanFolderOptions } from './scanFolder';
+import { trackCommand, untrackCommand, type RunningCommand } from './orgRunningCommands';
 
 export interface FolderScanEntry {
   name: string;
@@ -566,6 +567,7 @@ export class OrgFolderTools {
       approvalToken?: string;
       requiresApproval?: boolean; // deprecated / ignored as bypass
       onOutput?: (chunk: string) => void;
+      projectId?: string;
     }
   ): Promise<ShellRunResult> {
     const startTime = Date.now();
@@ -611,6 +613,10 @@ export class OrgFolderTools {
         cwd,
         env: minimalEnv,
       });
+
+      // Track running command
+      const commandId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      trackCommand(commandId, options?.projectId ?? 'unknown', command, cwd, child);
 
       const timer = setTimeout(() => {
         timedOut = true;
@@ -662,8 +668,7 @@ export class OrgFolderTools {
         });
         reject(err);
       });
-
-      child.on('close', (code) => {
+child.on('close', (code) => {
         clearTimeout(timer);
         const exitCode = code ?? (timedOut ? 124 : 1);
         recordShellExecution({
@@ -673,6 +678,9 @@ export class OrgFolderTools {
           durationMs: Date.now() - startTime,
           timedOut,
         });
+
+        untrackCommand(commandId);
+
         resolve({
           exitCode,
           stdout,

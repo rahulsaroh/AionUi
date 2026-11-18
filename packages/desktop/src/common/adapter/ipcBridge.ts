@@ -3013,6 +3013,31 @@ export const org = {
     typeof window !== 'undefined' && window.electronAPI?.orgListCheckpoints
       ? window.electronAPI.orgListCheckpoints(params)
       : Promise.resolve([]),
+
+  clearCheckpoints: (params: { projectId: string; projectFolder: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgClearCheckpoints
+      ? window.electronAPI.orgClearCheckpoints(params)
+      : Promise.resolve(0),
+
+  killCommand: (params: { commandId: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgKillCommand
+      ? window.electronAPI.orgKillCommand(params)
+      : Promise.resolve({ success: false, error: 'not available' }),
+
+  listRunningCommands: (params?: { projectId?: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgListRunningCommands
+      ? window.electronAPI.orgListRunningCommands(params)
+      : Promise.resolve([]),
+
+  getRunningCommand: (params: { commandId: string }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgGetRunningCommand
+      ? window.electronAPI.orgGetRunningCommand(params)
+      : Promise.resolve(undefined),
+
+  mapAutoApprove: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) =>
+    typeof window !== 'undefined' && window.electronAPI?.orgMapAutoApprove
+      ? window.electronAPI.orgMapAutoApprove(params)
+      : Promise.resolve('auto_edit'),
 };
 
 export const memberHandbook = {

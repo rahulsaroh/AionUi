@@ -84,7 +84,10 @@ function isOutsideRiskReason(reason?: string): boolean {
   return /outside|traversal|home directory|system absolute|change directory out|Redirection/i.test(reason);
 }
 
-function audit(masterRoot: string | null, entry: Partial<OrgAuditEntry> & { kind: OrgAuditEntry['kind']; summary: string }): void {
+function audit(
+  masterRoot: string | null,
+  entry: Partial<OrgAuditEntry> & { kind: OrgAuditEntry['kind']; summary: string }
+): void {
   appendAuditEntry(masterRoot, {
     id: '',
     timestamp: Date.now(),
@@ -192,8 +195,16 @@ export async function executeReadFile(
         }
         const token = issueFileApprovalToken(target);
         try {
-          const retry = await OrgFolderTools.readFile(target, ctx.projectFolder, opts.maxBytes, { approvalToken: token });
-          return { success: true, content: retry.content, size: retry.size, truncated: retry.truncated, filePath: target };
+          const retry = await OrgFolderTools.readFile(target, ctx.projectFolder, opts.maxBytes, {
+            approvalToken: token,
+          });
+          return {
+            success: true,
+            content: retry.content,
+            size: retry.size,
+            truncated: retry.truncated,
+            filePath: target,
+          };
         } catch (retryErr) {
           return { success: false, error: retryErr instanceof Error ? retryErr.message : String(retryErr) };
         }
@@ -276,6 +287,7 @@ export async function executeRunShell(
     broker?: ApprovalBroker;
     approvalToken?: string;
     onOutput?: (chunk: string) => void;
+    projectId?: string;
   } = {}
 ): Promise<ExecResult> {
   return withProject(ctx.projectId, async () => {
@@ -344,6 +356,7 @@ export async function executeRunShell(
         timeoutMs: args.timeoutMs,
         approvalToken: effectiveToken,
         onOutput: opts.onOutput,
+        projectId: opts.projectId,
       });
       audit(opts.masterRoot ?? null, {
         kind: 'command',
