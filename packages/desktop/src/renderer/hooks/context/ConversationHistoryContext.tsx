@@ -22,7 +22,12 @@ export const ConversationHistoryProvider: React.FC<React.PropsWithChildren> = ({
 
   // Strict dual-namespace isolation: exclude any conversation created under the Organization scope
   const workplaceConversations = useMemo(() => {
-    return conversationListSync.conversations.filter((c) => (c as any).scope !== 'organization');
+    return conversationListSync.conversations.filter((c) => {
+      const item = c as any;
+      if (item.mode === 'organization' || item.scope === 'organization') return false;
+      if (item.extra?.mode === 'organization' || item.extra?.orgConversationId) return false;
+      return true;
+    });
   }, [conversationListSync.conversations]);
 
   const groupedHistory = useMemo(() => {

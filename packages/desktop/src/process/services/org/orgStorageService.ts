@@ -314,7 +314,7 @@ export class OrgStorageService {
     const db = await this.getDriver();
     try {
       let query =
-        'SELECT id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode FROM org_projects';
+        'SELECT id, name, department_id, workspace_path, member_ids, team_ids, goal, description, status, context, mode, updated_at FROM org_projects';
       const params: unknown[] = [];
       if (mode) {
         // Projects created before mode-scoped storage have a NULL mode. Keep
@@ -331,20 +331,28 @@ export class OrgStorageService {
         department_id: string;
         workspace_path: string | null;
         member_ids: string | null;
+        team_ids: string | null;
         goal: string | null;
         description: string | null;
         status: string | null;
         context: string | null;
         mode: string | null;
+        updated_at?: number;
       }>;
 
       return rows.map((r): OrgProject => {
         const context = r.context ? (JSON.parse(r.context) as OrgProject['context']) : undefined;
+        let parsedTeamIds: string[] = [];
+        if (r.team_ids) {
+          try {
+            parsedTeamIds = JSON.parse(r.team_ids);
+          } catch {}
+        }
         return {
           id: r.id,
           name: r.name,
           departmentId: r.department_id,
-          teamIds: [] as string[],
+          teamIds: parsedTeamIds,
           memberIds: r.member_ids ? JSON.parse(r.member_ids) : [],
           goal: r.goal || undefined,
           description: r.description || undefined,
@@ -353,6 +361,7 @@ export class OrgStorageService {
           workspacePaths: context?.workspacePaths,
           workspacePath: r.workspace_path || null,
           mode: (r.mode as 'workplace' | 'organization') || 'organization',
+          updatedAt: r.updated_at,
         };
       });
     } catch (err) {
@@ -363,16 +372,17 @@ export class OrgStorageService {
 
   public async saveProject(project: OrgProject): Promise<boolean> {
     const db = await this.getDriver();
-    const now = Date.now();
+    const now = project.updatedAt || Date.now();
     try {
       db.prepare(
-        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, team_ids, goal, description, status, context, mode, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            department_id = excluded.department_id,
            workspace_path = excluded.workspace_path,
            member_ids = excluded.member_ids,
+           team_ids = excluded.team_ids,
            goal = excluded.goal,
            description = excluded.description,
            status = excluded.status,
@@ -385,12 +395,13 @@ export class OrgStorageService {
         project.departmentId,
         project.workspacePath || null,
         JSON.stringify(project.memberIds || []),
+        JSON.stringify(project.teamIds || []),
         project.goal || null,
         project.description || null,
         project.status || 'active',
         serializeProjectContext(project),
         project.mode || 'organization',
-        now,
+        project.createdAt || now,
         now
       );
       return true;
@@ -400,22 +411,23 @@ export class OrgStorageService {
     }
   }
 
-  public async saveProjects(projects: OrgProject[]): Promise<boolean> {
-    if (!Array.isArray(projects) || projects.length > 500 || !projects.every(validateProjectShape)) {
-      console.error('[OrgStorageService] Invalid projects payload shape');
+  public async saveProjects(projects: OrgProject[], mode?: 'workplace' | 'organization'): Promise<boolean> {
+    if (!Array.isArray(projects)) {
+      console.error('[OrgStorageService] Invalid projects payload shape: not an array');
       return false;
     }
     const db = await this.getDriver();
     const now = Date.now();
     try {
       const stmt = db.prepare(
-        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, team_ids, goal, description, status, context, mode, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            department_id = excluded.department_id,
            workspace_path = excluded.workspace_path,
            member_ids = excluded.member_ids,
+           team_ids = excluded.team_ids,
            goal = excluded.goal,
            description = excluded.description,
            status = excluded.status,
@@ -425,19 +437,25 @@ export class OrgStorageService {
       );
       db.transaction(() => {
         for (const p of projects) {
+          if (!validateProjectShape(p)) {
+            console.warn('[OrgStorageService] Skipping invalid project row:', p);
+            continue;
+          }
+          const itemMode = p.mode || mode || 'organization';
           stmt.run(
             p.id,
             p.name,
             p.departmentId,
             p.workspacePath || null,
             JSON.stringify(p.memberIds || []),
+            JSON.stringify(p.teamIds || []),
             p.goal || null,
             p.description || null,
             p.status || 'active',
             serializeProjectContext(p),
-            p.mode || 'organization',
-            now,
-            now
+            itemMode,
+            p.createdAt || now,
+            p.updatedAt || now
           );
         }
       })();
@@ -695,13 +713,14 @@ export class OrgStorageService {
 
         // 4. Save projects into org_projects
         const stmtProj = db.prepare(
-          `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, goal, description, status, context, mode, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO org_projects (id, name, department_id, workspace_path, member_ids, team_ids, goal, description, status, context, mode, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              department_id = excluded.department_id,
              workspace_path = excluded.workspace_path,
              member_ids = excluded.member_ids,
+             team_ids = excluded.team_ids,
              goal = excluded.goal,
              description = excluded.description,
              status = excluded.status,
@@ -716,13 +735,14 @@ export class OrgStorageService {
             p.departmentId,
             p.workspacePath || null,
             JSON.stringify(p.memberIds || []),
+            JSON.stringify(p.teamIds || []),
             p.goal || null,
             p.description || null,
             p.status || 'active',
             serializeProjectContext(p),
             p.mode || 'organization',
-            now,
-            now
+            p.createdAt || now,
+            p.updatedAt || now
           );
         }
       })();

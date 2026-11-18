@@ -36,6 +36,7 @@ export type ICreateTeamParams = {
   parentId?: string | null;
   departmentRole?: string;
   description?: string;
+  mode?: 'workplace' | 'organization';
 };
 
 export type IAddTeamAssistantParams = {

@@ -167,6 +167,7 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
         description: description.trim() || undefined,
         status,
         backendTeamId,
+        mode: project?.mode || 'organization',
       });
       Message.success(t('team.organization.projectSaved', { defaultValue: 'Project saved' }));
       onClose();

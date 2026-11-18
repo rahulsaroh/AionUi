@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type OrgScope = 'workplace' | 'organization';
+export type AppMode = 'workplace' | 'organization';
+export type OrgScope = AppMode;
 
 export type OrgNodeStatus =
   | 'working'
@@ -97,6 +98,8 @@ export interface OrgDepartmentNode {
   description?: string;
   /** Persistent local disk directory bound to this department. */
   workspacePath?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface RootCEO {
@@ -137,6 +140,8 @@ export interface OrgProject {
   backendTeamId?: string;
   /** App mode: 'workplace' or 'organization' - isolates data between modes */
   mode?: 'workplace' | 'organization';
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface OrgStorageBundle {
@@ -189,6 +194,8 @@ export interface OrgConversation {
   messages: OrgConversationMessage[];
   /** App mode: 'workplace' or 'organization' - isolates data between modes */
   mode?: 'workplace' | 'organization';
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface OrgCronJob {

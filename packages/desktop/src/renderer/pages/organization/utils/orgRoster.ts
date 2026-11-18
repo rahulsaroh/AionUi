@@ -4,13 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  OrgAgentMember,
-  OrgConversation,
-  OrgDepartmentNode,
-  OrgProject,
-  OrgTeamNode,
-} from '@/types/organization';
+import type { OrgAgentMember, OrgConversation, OrgDepartmentNode, OrgProject, OrgTeamNode } from '@/types/organization';
 
 /**
  * Computes the derived roster for a department as the union of all members
@@ -97,12 +91,7 @@ export function deriveDepartmentRosterWithProjects(
 
 /** Lead, coordinator, and specialists on one team, without duplicate ids. */
 export function teamRoster(team: OrgTeamNode): OrgAgentMember[] {
-  const raw = [
-    team.teamLeadAgent,
-    team.hrCoordinatorAgent,
-    ...(team.specialistMembers ?? []),
-    ...(team.members ?? []),
-  ];
+  const raw = [team.teamLeadAgent, team.hrCoordinatorAgent, ...(team.specialistMembers ?? []), ...(team.members ?? [])];
   const seen = new Set<string>();
   const roster: OrgAgentMember[] = [];
   for (const member of raw) {
@@ -197,8 +186,8 @@ function memberIdentityKeys(member: OrgAgentMember, allMembers: OrgAgentMember[]
 }
 
 function conversationRefs(conversation: OrgConversation): string[] {
-  return [conversation.targetAgentId, conversation.agentId, conversation.targetNodeId].filter(
-    (id): id is string => Boolean(id)
+  return [conversation.targetAgentId, conversation.agentId, conversation.targetNodeId].filter((id): id is string =>
+    Boolean(id)
   );
 }
 

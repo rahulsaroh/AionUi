@@ -292,12 +292,12 @@ export type TChatConversation =
           pending_config_options?: Record<string, string>;
           /** Legacy marker for pre-provider-probe health-check conversations */
           is_health_check?: boolean;
-/** Cron job ID that spawned this conversation */
-           cron_job_id?: string;
-           /** App mode: 'workplace' or 'organization' - isolates data between modes */
-           mode?: 'workplace' | 'organization';
-           /** Fork lineage (present only on forked conversations). */
-           fork?: TConversationForkLineage;
+          /** Cron job ID that spawned this conversation */
+          cron_job_id?: string;
+          /** App mode: 'workplace' or 'organization' - isolates data between modes */
+          mode?: 'workplace' | 'organization';
+          /** Fork lineage (present only on forked conversations). */
+          fork?: TConversationForkLineage;
         }
       >,
       'model'

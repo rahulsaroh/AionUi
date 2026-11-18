@@ -223,26 +223,32 @@ export function registerOrgBridge(): void {
     }
   });
 
-  ipcMain.handle('org:getProjects', async (_event, params?: { mode?: 'workplace' | 'organization' }): Promise<unknown[]> => {
-    try {
-      return await orgStorageService.getProjects(params?.mode);
-    } catch (err) {
-      console.error('[OrgBridge] getProjects failed:', err);
-      return [];
+  ipcMain.handle(
+    'org:getProjects',
+    async (_event, params?: { mode?: 'workplace' | 'organization' }): Promise<unknown[]> => {
+      try {
+        return await orgStorageService.getProjects(params?.mode);
+      } catch (err) {
+        console.error('[OrgBridge] getProjects failed:', err);
+        return [];
+      }
     }
-  });
+  );
 
-  ipcMain.handle('org:saveProjects', async (_event, params: { projects: any[]; mode?: 'workplace' | 'organization' }): Promise<boolean> => {
-    try {
-      if (!Array.isArray(params.projects)) {
+  ipcMain.handle(
+    'org:saveProjects',
+    async (_event, params: { projects: any[]; mode?: 'workplace' | 'organization' }): Promise<boolean> => {
+      try {
+        if (!Array.isArray(params.projects)) {
+          return false;
+        }
+        return await orgStorageService.saveProjects(params.projects, params.mode);
+      } catch (err) {
+        console.error('[OrgBridge] saveProjects failed:', err);
         return false;
       }
-      return await orgStorageService.saveProjects(params.projects);
-    } catch (err) {
-      console.error('[OrgBridge] saveProjects failed:', err);
-      return false;
     }
-  });
+  );
 
   // Folder & Shell execution tools with boundary enforcement
   ipcMain.handle(

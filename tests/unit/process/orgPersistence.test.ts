@@ -217,4 +217,58 @@ describe('Organization SQLite Persistence & Migration v33', () => {
     expect(loaded!.members).toHaveLength(2);
     expect(loaded!.activeScope).toBe('organization');
   });
+
+  it('runs migration v35 and adds team_ids column to org_projects', () => {
+    const migration35 = ALL_MIGRATIONS.find((m) => m.version === 35);
+    expect(migration35).toBeDefined();
+
+    migration35!.up(db);
+
+    const columns = (db.pragma('table_info(org_projects)') as Array<{ name: string }>).map((c) => c.name);
+    expect(columns).toContain('team_ids');
+  });
+
+  it('persists and retrieves project teamIds and mode via saveProjects', async () => {
+    const service = new OrgStorageService(db);
+    const proj: OrgProject = {
+      id: 'proj-team-test',
+      name: 'Team Persistence Test',
+      departmentId: 'dept-eng',
+      teamIds: ['team-alpha', 'team-beta'],
+      memberIds: [],
+      mode: 'organization',
+      status: 'active',
+    };
+
+    const saved = await service.saveProjects([proj], 'organization');
+    expect(saved).toBe(true);
+
+    const projects = await service.getProjects('organization');
+    const loaded = projects.find((p) => p.id === 'proj-team-test');
+    expect(loaded).toBeDefined();
+    expect(loaded?.teamIds).toEqual(['team-alpha', 'team-beta']);
+    expect(loaded?.mode).toBe('organization');
+  });
+
+  it('skips invalid project rows during saveProjects without rejecting valid rows', async () => {
+    const service = new OrgStorageService(db);
+    const validProj: OrgProject = {
+      id: 'proj-valid',
+      name: 'Valid Project',
+      departmentId: 'dept-eng',
+      teamIds: ['team-1'],
+      status: 'active',
+    };
+    const invalidProj: any = {
+      id: '', // invalid empty id
+      name: 'Invalid Project',
+    };
+
+    const saved = await service.saveProjects([invalidProj, validProj], 'organization');
+    expect(saved).toBe(true);
+
+    const projects = await service.getProjects('organization');
+    expect(projects.some((p) => p.id === 'proj-valid')).toBe(true);
+    expect(projects.some((p) => p.id === '')).toBe(false);
+  });
 });

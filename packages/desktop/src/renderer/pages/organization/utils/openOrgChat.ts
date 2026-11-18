@@ -123,7 +123,8 @@ export function resolveOrgChatTarget(
 
     if (!team && dept) {
       // Reuse an existing team in the department (by id or case-insensitive name) instead of creating one.
-      team = dept.teams.find((tm) => tm.id === project.id) ||
+      team =
+        dept.teams.find((tm) => tm.id === project.id) ||
         dept.teams.find((tm) => tm.name?.toLowerCase() === project.name?.toLowerCase()) ||
         dept.teams[0];
     }
@@ -133,9 +134,7 @@ export function resolveOrgChatTarget(
       mutatedHierarchy = {
         ...hierarchyRef,
         departments: hierarchyRef.departments.map((d) =>
-          d.id === dept.id
-            ? { ...d, teams: [...d.teams, createTeamShell(dept.id, project.name || 'Core')] }
-            : d
+          d.id === dept.id ? { ...d, teams: [...d.teams, createTeamShell(dept.id, project.name || 'Core')] } : d
         ),
         lastUpdated: Date.now(),
       };

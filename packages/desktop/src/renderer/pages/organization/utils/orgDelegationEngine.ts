@@ -962,11 +962,14 @@ export class OrgDelegationEngine {
 
         const createPayload: Record<string, unknown> = {
           name: `Org: ${opts.agent.name}`,
+          mode: 'organization',
           assistant: { id: assistantId },
           extra: {
             workspace: effectiveWorkspace,
             custom_workspace: isCustomWorkspace,
             selected_session_mcp_servers: sessionMcpServers,
+            mode: 'organization',
+            orgConversationId: opts.conversationId,
           },
         };
         if (resolvedModel) {
@@ -990,10 +993,13 @@ export class OrgDelegationEngine {
           );
           const fallbackPayload: Record<string, unknown> = {
             name: `Org: ${opts.agent.name}`,
+            mode: 'organization',
             assistant: { id: 'bare:632f31d2' },
             extra: {
               workspace: effectiveWorkspace,
               custom_workspace: isCustomWorkspace,
+              mode: 'organization',
+              orgConversationId: opts.conversationId,
             },
           };
           if (resolvedModel) {
@@ -1321,10 +1327,13 @@ export class OrgDelegationEngine {
           // If previous session is stale, create fresh session and retry
           const createPayload: Record<string, unknown> = {
             name: `Org: ${opts.agent.name}`,
+            mode: 'organization',
             assistant: { id: assistantId },
             extra: {
               workspace: effectiveWorkspace,
               custom_workspace: isCustomWorkspace,
+              mode: 'organization',
+              orgConversationId: opts.conversationId,
             },
           };
           if (resolvedModel) {

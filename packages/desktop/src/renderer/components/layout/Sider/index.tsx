@@ -36,11 +36,12 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
   const [isBatchMode, setIsBatchMode] = useState(false);
   const isSettings = pathname.startsWith('/settings');
   const isOrganizationRoute = pathname.startsWith('/organization');
-  const lastNonSettingsPathRef = useRef('/guid');
+  const lastNonSettingsPathRef = useRef(activeScope === 'organization' ? '/organization' : '/guid');
   const showLogout =
     typeof window !== 'undefined' && !(window as { electronAPI?: unknown }).electronAPI && status === 'authenticated';
 
   useEffect(() => {
+    if (pathname.startsWith('/settings')) return;
     const routeScope = isOrganizationRoute ? 'organization' : pathname.startsWith('/guid') ? 'workplace' : null;
     if (routeScope && activeScope !== routeScope) {
       setActiveScope(routeScope);
@@ -70,7 +71,8 @@ const Sider: React.FC<SiderProps> = ({ onSessionClick, collapsed = false }) => {
     cleanupSiderTooltips();
     blurActiveElement();
     if (isSettings) {
-      const target = lastNonSettingsPathRef.current || '/guid';
+      const defaultTarget = activeScope === 'organization' ? '/organization' : '/guid';
+      const target = lastNonSettingsPathRef.current || defaultTarget;
       Promise.resolve(navigate(target)).catch((error) => {
         console.error('Navigation failed:', error);
       });

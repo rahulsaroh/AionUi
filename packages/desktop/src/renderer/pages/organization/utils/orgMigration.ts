@@ -268,7 +268,24 @@ export function reconcileConversationsWithProjects(
     if (conv.sourceNodeId === 'root-ceo' || conv.targetNodeId === 'root-ceo') {
       return conv;
     }
-    if (conv.projectId) return conv;
+    if (conv.projectId) {
+      const projectExists = nextProjects.some((p) => p.id === conv.projectId);
+      if (!projectExists) {
+        console.warn(
+          '[reconcileConversationsWithProjects] Conversation project missing, re-linking to recovered/general bucket:',
+          conv.id,
+          conv.projectId
+        );
+        const dept = hierarchy.departments.find((d) => d.id === conv.departmentId) || hierarchy.departments[0];
+        if (dept) {
+          const general = nextProjects.find((p) => p.departmentId === dept.id && p.name === 'General');
+          if (general) {
+            return { ...conv, projectId: general.id };
+          }
+        }
+      }
+      return conv;
+    }
 
     // Try to match via team (sourceNodeId or targetNodeId is a team)
     const teamId = teamToDept.has(conv.sourceNodeId)

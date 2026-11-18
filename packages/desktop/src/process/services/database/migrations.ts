@@ -1633,17 +1633,23 @@ const migration_v34: IMigration = {
     // Add mode column to conversations table
     const convColumns = new Set((db.pragma('table_info(conversations)') as Array<{ name: string }>).map((c) => c.name));
     if (!convColumns.has('mode')) {
-      db.exec("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'workplace' CHECK(mode IN ('workplace', 'organization'))");
+      db.exec(
+        "ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'workplace' CHECK(mode IN ('workplace', 'organization'))"
+      );
       console.log('[Migration v34] Added mode column to conversations table');
     }
     // Add indexes for conversations mode
     db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode)');
-    db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)');
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)'
+    );
 
     // Add mode column to teams table
     const teamColumns = new Set((db.pragma('table_info(teams)') as Array<{ name: string }>).map((c) => c.name));
     if (!teamColumns.has('mode')) {
-      db.exec("ALTER TABLE teams ADD COLUMN mode TEXT NOT NULL DEFAULT 'workplace' CHECK(mode IN ('workplace', 'organization'))");
+      db.exec(
+        "ALTER TABLE teams ADD COLUMN mode TEXT NOT NULL DEFAULT 'workplace' CHECK(mode IN ('workplace', 'organization'))"
+      );
       console.log('[Migration v34] Added mode column to teams table');
     }
     // Add indexes for teams mode
@@ -1651,9 +1657,13 @@ const migration_v34: IMigration = {
     db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_mode_updated ON teams(user_id, mode, updated_at DESC)');
 
     // Add mode column to org_projects table
-    const orgProjColumns = new Set((db.pragma('table_info(org_projects)') as Array<{ name: string }>).map((c) => c.name));
+    const orgProjColumns = new Set(
+      (db.pragma('table_info(org_projects)') as Array<{ name: string }>).map((c) => c.name)
+    );
     if (!orgProjColumns.has('mode')) {
-      db.exec("ALTER TABLE org_projects ADD COLUMN mode TEXT NOT NULL DEFAULT 'organization' CHECK(mode IN ('workplace', 'organization'))");
+      db.exec(
+        "ALTER TABLE org_projects ADD COLUMN mode TEXT NOT NULL DEFAULT 'organization' CHECK(mode IN ('workplace', 'organization'))"
+      );
       console.log('[Migration v34] Added mode column to org_projects table');
     }
     // Add index for org_projects mode
@@ -1669,6 +1679,26 @@ const migration_v34: IMigration = {
 };
 
 /**
+ * Migration v34 -> v35: Add team_ids column to org_projects table
+ */
+const migration_v35: IMigration = {
+  version: 35,
+  name: 'Add team_ids column to org_projects table',
+  up: (db) => {
+    const orgProjColumns = new Set(
+      (db.pragma('table_info(org_projects)') as Array<{ name: string }>).map((c) => c.name)
+    );
+    if (!orgProjColumns.has('team_ids')) {
+      db.exec('ALTER TABLE org_projects ADD COLUMN team_ids TEXT');
+      console.log('[Migration v35] Added team_ids column to org_projects table');
+    }
+  },
+  down: (_db) => {
+    console.warn('[Migration v35] Rollback skipped: Cannot safely drop team_ids column');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1678,7 +1708,7 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
   migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
   migration_v25, migration_v26, migration_v27, migration_v28, migration_v29, migration_v30,
-  migration_v31, migration_v32, migration_v33, migration_v34,
+  migration_v31, migration_v32, migration_v33, migration_v34, migration_v35,
 ];
 
 /**
@@ -1691,8 +1721,8 @@ export function getMigrationsToRun(fromVersion: number, toVersion: number): IMig
 }
 
 /**
-  * Get migrations needed to downgrade from one version to another
-  */
+ * Get migrations needed to downgrade from one version to another
+ */
 export function getMigrationsToRollback(fromVersion: number, toVersion: number): IMigration[] {
   return ALL_MIGRATIONS.filter((m) => m.version > toVersion && m.version <= fromVersion).toSorted(
     (a, b) => b.version - a.version

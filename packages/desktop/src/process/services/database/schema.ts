@@ -65,7 +65,9 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)');
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)'
+  );
 
   // Messages table (消息表 - 存储TMessage)
   db.exec(`CREATE TABLE IF NOT EXISTS messages (
@@ -367,6 +369,7 @@ export function initSchema(db: ISqliteDriver): void {
     department_id TEXT NOT NULL,
     workspace_path TEXT,
     member_ids TEXT,
+    team_ids TEXT,
     goal TEXT,
     description TEXT,
     status TEXT,

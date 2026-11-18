@@ -119,26 +119,54 @@ describe('resolveOrgChatTarget', () => {
   });
 
   it('creates then reuses CEO thread and keeps different target threads separate', () => {
-    const r1 = resolveOrgChatTarget({ type: 'ceo', id: 'root-ceo' }, hierarchy, projects, conversations, 'organization', t);
+    const r1 = resolveOrgChatTarget(
+      { type: 'ceo', id: 'root-ceo' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in r1).toBe(false);
     if ('error' in r1) throw new Error(r1.error);
     expect(r1.conversation.type).toBe('ceo_directive');
     expect(r1.workspacePath).toBe('/root');
 
     conversations = [r1.conversation];
-    const r2 = resolveOrgChatTarget({ type: 'ceo', id: 'root-ceo' }, hierarchy, projects, conversations, 'organization', t);
+    const r2 = resolveOrgChatTarget(
+      { type: 'ceo', id: 'root-ceo' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in r2).toBe(false);
     if ('error' in r2) throw new Error(r2.error);
     expect(r2.conversation.id).toBe(r1.conversation.id);
 
-    const dept = resolveOrgChatTarget({ type: 'department_head', id: 'dept-1' }, hierarchy, projects, conversations, 'organization', t);
+    const dept = resolveOrgChatTarget(
+      { type: 'department_head', id: 'dept-1' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in dept).toBe(false);
     if ('error' in dept) throw new Error(dept.error);
     expect(dept.conversation.id).not.toBe(r1.conversation.id);
   });
 
   it('creates then reuses department head thread and uses department workspace', () => {
-    const r1 = resolveOrgChatTarget({ type: 'department_head', id: 'dept-1' }, hierarchy, projects, conversations, 'organization', t);
+    const r1 = resolveOrgChatTarget(
+      { type: 'department_head', id: 'dept-1' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in r1).toBe(false);
     if ('error' in r1) throw new Error(r1.error);
     expect(r1.conversation.departmentId).toBe('dept-1');
@@ -146,21 +174,42 @@ describe('resolveOrgChatTarget', () => {
     expect(r1.workspacePath).toBe('/dept-eng');
 
     conversations = [r1.conversation];
-    const r2 = resolveOrgChatTarget({ type: 'department_head', id: 'dept-1' }, hierarchy, projects, conversations, 'organization', t);
+    const r2 = resolveOrgChatTarget(
+      { type: 'department_head', id: 'dept-1' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in r2).toBe(false);
     if ('error' in r2) throw new Error(r2.error);
     expect(r2.conversation.id).toBe(r1.conversation.id);
   });
 
   it('creates then reuses project head thread and uses project workspace', () => {
-    const r1 = resolveOrgChatTarget({ type: 'project_head', id: 'proj-1' }, hierarchy, projects, conversations, 'organization', t);
+    const r1 = resolveOrgChatTarget(
+      { type: 'project_head', id: 'proj-1' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in r1).toBe(false);
     if ('error' in r1) throw new Error(r1.error);
     expect(r1.conversation.projectId).toBe('proj-1');
     expect(r1.workspacePath).toBe('/proj-one');
 
     conversations = [r1.conversation];
-    const r2 = resolveOrgChatTarget({ type: 'project_head', id: 'proj-1' }, hierarchy, projects, conversations, 'organization', t);
+    const r2 = resolveOrgChatTarget(
+      { type: 'project_head', id: 'proj-1' },
+      hierarchy,
+      projects,
+      conversations,
+      'organization',
+      t
+    );
     expect('error' in r2).toBe(false);
     if ('error' in r2) throw new Error(r2.error);
     expect(r2.conversation.id).toBe(r1.conversation.id);
@@ -184,7 +233,14 @@ describe('resolveOrgChatTarget', () => {
     expect(r1.conversation.teamId).toBe('team-1');
 
     // Subsequent calls should reuse the same conversation
-    const r2 = resolveOrgChatTarget({ type: 'project_head', id: 'proj-no-team' }, hierarchy, projects, [r1.conversation], 'organization', t);
+    const r2 = resolveOrgChatTarget(
+      { type: 'project_head', id: 'proj-no-team' },
+      hierarchy,
+      projects,
+      [r1.conversation],
+      'organization',
+      t
+    );
     expect('error' in r2).toBe(false);
     if ('error' in r2) throw new Error(r2.error);
     expect(r2.conversation.id).toBe(r1.conversation.id);

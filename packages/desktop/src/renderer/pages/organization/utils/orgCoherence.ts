@@ -223,24 +223,55 @@ export function reconcileProjectsWithHierarchy(
   hierarchy: OrgHierarchy,
   projects: OrgProject[]
 ): { hierarchy: OrgHierarchy; projects: OrgProject[] } {
-  const validDepartmentIds = new Set(hierarchy.departments.map((department) => department.id));
-  const normalized = projects
-    .map(normalizeOrgProject)
-    .filter((project) => validDepartmentIds.has(project.departmentId));
+  const nextHierarchyDepartments = [...hierarchy.departments];
+  const validDepartmentIds = new Set(nextHierarchyDepartments.map((department) => department.id));
+
+  // If any project has a missing or unknown department, never drop it silently!
+  // Re-link or recreate the department shell in a recovered bucket.
+  for (const rawProj of projects) {
+    const project = normalizeOrgProject(rawProj);
+    if (!validDepartmentIds.has(project.departmentId)) {
+      console.warn(
+        '[reconcileProjectsWithHierarchy] Project department missing, re-linking orphan project:',
+        project.id,
+        project.name,
+        project.departmentId
+      );
+      const targetDeptId = project.departmentId || 'dept-recovered';
+      let recoveredDept = nextHierarchyDepartments.find((d) => d.id === targetDeptId);
+      if (!recoveredDept) {
+        recoveredDept = createDepartmentShell(project.departmentId ? 'Recovered Department' : 'Recovered Projects');
+        recoveredDept.id = targetDeptId;
+        recoveredDept.departmentCeoAgent.id = `agent-head-${targetDeptId}`;
+        recoveredDept.departmentCeoAgent.canonicalAgentId = `canonical-head-${targetDeptId}`;
+        nextHierarchyDepartments.push(recoveredDept);
+        validDepartmentIds.add(targetDeptId);
+      }
+    }
+  }
+
+  const updatedHierarchy: OrgHierarchy = {
+    ...hierarchy,
+    departments: nextHierarchyDepartments,
+  };
+
+  const normalized = projects.map(normalizeOrgProject);
   const reconciled = normalized.map((project) => {
-    const department = findDepartment(hierarchy, project.departmentId);
+    const department = findDepartment(updatedHierarchy, project.departmentId);
     const validTeamIds = project.teamIds.filter((teamId) => department?.teams.some((team) => team.id === teamId));
-    return validTeamIds.length === 0 ? { ...project, teamIds: [] } : { ...project, teamIds: validTeamIds };
+    return validTeamIds.length > 0 ? { ...project, teamIds: validTeamIds } : project;
   });
+
   return {
     projects: reconciled,
-    hierarchy: syncHierarchyProjectReferences(hierarchy, reconciled),
+    hierarchy: syncHierarchyProjectReferences(updatedHierarchy, reconciled),
   };
 }
 
 export function createDepartmentShell(name: string, defaultModel?: OrgAgentModelConfig): OrgDepartmentNode {
   const id = `dept-${Date.now()}`;
   const trimmed = name.trim();
+  const now = Date.now();
   return {
     id,
     name: trimmed,
@@ -252,15 +283,17 @@ export function createDepartmentShell(name: string, defaultModel?: OrgAgentModel
       title: 'Department CEO',
       role: 'department_head',
       assignedTeamIds: [],
-      lastActiveAt: Date.now(),
+      lastActiveAt: now,
       status: 'idle',
       assistant_backend: 'aionrs',
       model: defaultModel || undefined,
     },
     teams: [],
     linkedProjects: [],
-    lastActiveAt: Date.now(),
+    lastActiveAt: now,
     status: 'idle',
+    createdAt: now,
+    updatedAt: now,
   };
 }
 

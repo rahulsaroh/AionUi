@@ -112,6 +112,7 @@ export async function createProjectBackendTeam(params: CreateProjectBackendTeamP
     workspace_mode: 'shared',
     description: params.description?.trim(),
     agents: [agentInput],
+    mode: 'organization',
   };
 
   let newTeam: unknown;

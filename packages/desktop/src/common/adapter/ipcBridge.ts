@@ -1888,7 +1888,10 @@ export interface ICreateConversationParams {
     remote_agent_id?: string;
     extra_skill_paths?: string[];
     team_id?: string;
+    mode?: 'workplace' | 'organization';
+    orgConversationId?: string;
   };
+  mode?: 'workplace' | 'organization';
 }
 
 interface IResetConversationParams {
@@ -2279,6 +2282,7 @@ export const team = {
       ...(p.parentId ? { parent_id: p.parentId } : {}),
       ...(p.departmentRole ? { department_role: p.departmentRole } : {}),
       ...(p.description ? { description: p.description } : {}),
+      ...(p.mode ? { mode: p.mode } : {}),
     })),
     fromBackendTeam
   ),

@@ -264,7 +264,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   orgGetMembers: () => ipcRenderer.invoke('org:getMembers'),
   orgSaveMembers: (members: unknown[]) => ipcRenderer.invoke('org:saveMembers', members),
   orgGetProjects: (params?: { mode?: 'workplace' | 'organization' }) => ipcRenderer.invoke('org:getProjects', params),
-  orgSaveProjects: (params: { projects: unknown[]; mode?: 'workplace' | 'organization' }) => ipcRenderer.invoke('org:saveProjects', params),
+  orgSaveProjects: (params: { projects: unknown[]; mode?: 'workplace' | 'organization' }) =>
+    ipcRenderer.invoke('org:saveProjects', params),
   orgScanFolder: (params: {
     targetDir: string;
     allowedWorkspace: string;
