@@ -294,6 +294,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deptId?: string;
     projectId?: string;
     deptWorkspacePath?: string;
+    approvalPolicy?: string;
   }) => ipcRenderer.invoke('org:getSessionMcpServer', params),
   orgExecuteTool: (params: {
     tool: string;
@@ -320,6 +321,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('org:live-step', subscription);
     };
   },
+  onOrgApprovalRequest: (
+    callback: (payload: {
+      requestId: string;
+      kind: 'shell' | 'file_write' | 'file_read';
+      projectId: string;
+      reason: string;
+      command?: string;
+      cwd?: string;
+      filePath?: string;
+    }) => void
+  ) => {
+    const subscription = (_event: unknown, payload: any) => callback(payload);
+    ipcRenderer.on('org:approval-request', subscription);
+    return () => {
+      ipcRenderer.removeListener('org:approval-request', subscription);
+    };
+  },
+  orgApprovalDecision: (params: { requestId: string; decision: 'allow' | 'deny' }) =>
+    ipcRenderer.send('org:approval-decision', params),
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun: (runId: string) => ipcRenderer.invoke('pipeline:getRun', runId),
   pipelineListRuns: (projectId?: string) => ipcRenderer.invoke('pipeline:listRuns', projectId),

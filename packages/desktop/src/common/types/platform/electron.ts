@@ -413,6 +413,7 @@ export interface ElectronBridgeAPI {
     deptId?: string;
     projectId?: string;
     deptWorkspacePath?: string;
+    approvalPolicy?: string;
   }) => Promise<any>;
   orgExecuteTool?: (params: {
     tool: string;
@@ -427,6 +428,18 @@ export interface ElectronBridgeAPI {
     callback: (payload: { callId: string; tool: string; args: any; meta: any }) => void
   ) => () => void;
   onOrgLiveStep?: (callback: (payload: { step: string; tool?: string; args?: any }) => void) => () => void;
+  onOrgApprovalRequest?: (
+    callback: (payload: {
+      requestId: string;
+      kind: 'shell' | 'file_write' | 'file_read';
+      projectId: string;
+      reason: string;
+      command?: string;
+      cwd?: string;
+      filePath?: string;
+    }) => void
+  ) => () => void;
+  orgApprovalDecision?: (params: { requestId: string; decision: 'allow' | 'deny' }) => void;
   // Pipeline & Resumable Publishing APIs
   pipelineGetRun?: (runId: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun | null>;
   pipelineListRuns?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPipelineRun[]>;

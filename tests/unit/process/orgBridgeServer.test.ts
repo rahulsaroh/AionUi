@@ -15,6 +15,7 @@ import {
   handleOrgToolRequest,
 } from '@/process/resources/builtinMcp/orgBridgeServer';
 import { setMasterRootForTesting, resetMasterRoot } from '@/process/services/org/orgScope';
+import { setOrgBashApprovalBroker } from '@/process/services/org/orgExecution';
 
 describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
   let tempBase: string;
@@ -30,6 +31,7 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
   afterEach(async () => {
     await stopOrgBridgeServer();
     setOrgToolExecutor(null);
+    setOrgBashApprovalBroker(null);
     resetMasterRoot();
     try {
       fs.rmSync(tempBase, { recursive: true, force: true });
@@ -146,5 +148,58 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
 
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/Access denied.*outside organization master root/);
+  });
+
+  it('Root CEO cannot run shell or write files (planning-only)', async () => {
+    const shellRes = await handleOrgToolRequest({
+      tool: 'run_shell',
+      args: { command: 'echo hi' },
+      role: 'ceo',
+      deptWorkspacePath: path.join(masterRoot, 'app1'),
+    });
+    expect(shellRes.success).toBe(false);
+    expect(shellRes.error).toMatch(/not permitted|Access denied/);
+
+    const writeRes = await handleOrgToolRequest({
+      tool: 'write_file',
+      args: { path: path.join(masterRoot, 'app1', 'x.txt'), content: 'x' },
+      role: 'ceo',
+      deptWorkspacePath: path.join(masterRoot, 'app1'),
+    });
+    expect(writeRes.success).toBe(false);
+  });
+
+  it('Project Head can list_dir inside its folder', async () => {
+    const appDir = path.join(masterRoot, 'app1');
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(path.join(appDir, 'hello.txt'), 'hi');
+
+    const res = await handleOrgToolRequest({
+      tool: 'list_dir',
+      args: { path: appDir },
+      role: 'project_head',
+      projectId: 'p1',
+      projectFolder: appDir,
+      approvalPolicy: 'auto_edit',
+    });
+    expect(res.success).toBe(true);
+    const parsed = JSON.parse(res.result.content);
+    expect(parsed.some((e: any) => e.name === 'hello.txt')).toBe(true);
+  });
+
+  it('Project Head write_file is jailed to its folder (rejects .. escape)', async () => {
+    setOrgBashApprovalBroker(async () => 'deny');
+    const appDir = path.join(masterRoot, 'app1');
+    fs.mkdirSync(appDir, { recursive: true });
+
+    const res = await handleOrgToolRequest({
+      tool: 'write_file',
+      args: { path: path.join(appDir, '..', 'escape.txt'), content: 'x' },
+      role: 'project_head',
+      projectId: 'p1',
+      projectFolder: appDir,
+      approvalPolicy: 'full_auto',
+    });
+    expect(res.success).toBe(false);
   });
 });

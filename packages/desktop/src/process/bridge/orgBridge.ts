@@ -448,6 +448,7 @@ export function registerOrgBridge(): void {
         deptId?: string;
         projectId?: string;
         deptWorkspacePath?: string;
+        approvalPolicy?: string;
       }
     ) => {
       try {
@@ -467,6 +468,8 @@ export function registerOrgBridge(): void {
               ...(params?.deptId ? { AIONUI_ORG_DEPT_ID: params.deptId } : {}),
               ...(params?.projectId ? { AIONUI_ORG_PROJECT_ID: params.projectId } : {}),
               ...(params?.deptWorkspacePath ? { AIONUI_ORG_DEPT_WORKSPACE: params.deptWorkspacePath } : {}),
+              ...(params?.deptWorkspacePath ? { AIONUI_ORG_PROJECT_FOLDER: params.deptWorkspacePath } : {}),
+              ...(params?.approvalPolicy ? { AIONUI_ORG_APPROVAL_POLICY: params.approvalPolicy } : {}),
             },
           },
         };

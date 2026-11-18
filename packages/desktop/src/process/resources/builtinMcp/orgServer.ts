@@ -30,6 +30,8 @@ async function callBridgeTool(
   const deptId = process.env.AIONUI_ORG_DEPT_ID;
   const projectId = process.env.AIONUI_ORG_PROJECT_ID;
   const deptWorkspacePath = process.env.AIONUI_ORG_DEPT_WORKSPACE;
+  const projectFolder = process.env.AIONUI_ORG_PROJECT_FOLDER || deptWorkspacePath;
+  const approvalPolicy = process.env.AIONUI_ORG_APPROVAL_POLICY;
 
   if (!port || !token) {
     return {
@@ -52,6 +54,8 @@ async function callBridgeTool(
         deptId,
         projectId,
         deptWorkspacePath,
+        projectFolder,
+        approvalPolicy,
       }),
     });
 
@@ -229,6 +233,69 @@ async function main() {
       },
       async (args) => {
         const res = await callBridgeTool('propose_structure', args);
+        return formatToolResponse(res);
+      }
+    );
+  }
+
+  // Execution tools (shell + file ops) available to Project Heads and specialist members.
+  // These run strictly inside the agent's assigned project folder in the main process,
+  // gated by the per-project approval policy (read_only | auto_edit | full_auto) and the
+  // folder jail. The Root CEO (role === 'ceo') intentionally does NOT get these tools.
+  if (role === 'project_head') {
+    server.tool(
+      'list_dir',
+      'Lists the immediate files and subdirectories of a folder inside the project workspace. Free (read-only).',
+      {
+        path: z
+          .string()
+          .optional()
+          .describe('Absolute path to a folder inside the project workspace. Defaults to the project root.'),
+      },
+      async (args) => {
+        const res = await callBridgeTool('list_dir', args);
+        return formatToolResponse(res);
+      }
+    );
+
+    server.tool(
+      'read_file',
+      'Reads a UTF-8 text file inside the project workspace. Free (read-only). Sensitive files (e.g. .env, keys) require user approval.',
+      {
+        path: z.string().describe('Absolute path to the file inside the project workspace.'),
+      },
+      async (args) => {
+        const res = await callBridgeTool('read_file', args);
+        return formatToolResponse(res);
+      }
+    );
+
+    server.tool(
+      'write_file',
+      'Creates or overwrites a UTF-8 text file inside the project workspace. Whether this needs approval depends on the project approval policy.',
+      {
+        path: z.string().describe('Absolute path to the file inside the project workspace.'),
+        content: z.string().describe('Full new UTF-8 content of the file.'),
+      },
+      async (args) => {
+        const res = await callBridgeTool('write_file', args);
+        return formatToolResponse(res);
+      }
+    );
+
+    server.tool(
+      'run_shell',
+      'Runs a shell command with the project workspace as the working directory. Approval depends on the project policy (auto_edit asks, full_auto allows in-folder safe commands). Commands touching paths outside the folder or performing destructive/system actions always require approval. Returns exitCode, stdout, stderr.',
+      {
+        command: z.string().describe('Shell command to execute.'),
+        cwd: z
+          .string()
+          .optional()
+          .describe('Working directory inside the project workspace. Defaults to the project root.'),
+        timeoutMs: z.number().int().min(1000).max(300000).optional().describe('Timeout in ms (1s-5min, default 60s).'),
+      },
+      async (args) => {
+        const res = await callBridgeTool('run_shell', args);
         return formatToolResponse(res);
       }
     );

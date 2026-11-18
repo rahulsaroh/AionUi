@@ -671,6 +671,8 @@ export interface AgentExecutionOptions {
   conversationId?: string;
   /** True when the workspace path was explicitly requested for this step (not inherited/fallback). */
   workspaceExplicit?: boolean;
+  /** Bound project id (for project heads / members); used for audit + approval policy. */
+  projectId?: string;
 }
 
 type UpdateNodeStatus = (nodeId: string, status: OrgNodeStatus) => void;
@@ -949,9 +951,26 @@ export class OrgDelegationEngine {
               : opts.agent.role === 'department_head'
                 ? 'department_head'
                 : 'project_head';
+
+          // Resolve approval policy for the bound project (default auto_edit). Only project
+          // heads/members get execution tools, so policy is irrelevant for ceo/department_head.
+          let approvalPolicy: string | undefined;
+          let boundProjectId = opts.projectId;
+          if (orgRole === 'project_head') {
+            const proj =
+              (boundProjectId ? this.projects.find((p) => p.id === boundProjectId) : undefined) ||
+              this.projects.find((p) => p.workspacePath && p.workspacePath === opts.workspacePath);
+            if (proj) {
+              boundProjectId = proj.id;
+              approvalPolicy = (proj as any).approvalPolicy;
+            }
+          }
+
           const orgMcp = await ipcBridge.org.getSessionMcpServer({
             role: orgRole,
             deptWorkspacePath: opts.workspacePath,
+            projectId: orgRole === 'project_head' ? boundProjectId : undefined,
+            approvalPolicy,
           });
           if (orgMcp) {
             sessionMcpServers.push(orgMcp);
@@ -1160,8 +1179,15 @@ export class OrgDelegationEngine {
             }
 
             let shouldAutoApprove = false;
-            if (autoApproveMode === 'all') {
-              shouldAutoApprove = true;
+            if (toolName === 'ask_user') {
+              shouldAutoApprove = false;
+            } else if (autoApproveMode === 'all') {
+              // Enabling/changing global assistants is never auto-approved
+              if (toolName.includes('assistant') || toolName.includes('global')) {
+                shouldAutoApprove = false;
+              } else {
+                shouldAutoApprove = true;
+              }
             } else if (autoApproveMode === 'read_only') {
               const READ_ONLY_TOOLS = new Set([
                 'scan_folder',

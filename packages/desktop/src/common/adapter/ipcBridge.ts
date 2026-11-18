@@ -2935,6 +2935,7 @@ export const org = {
     deptId?: string;
     projectId?: string;
     deptWorkspacePath?: string;
+    approvalPolicy?: string;
   }): Promise<ISessionMcpServer | null> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgGetSessionMcpServer) {
       return window.electronAPI.orgGetSessionMcpServer(params);
@@ -2972,6 +2973,29 @@ export const org = {
       return window.electronAPI.onOrgLiveStep(callback);
     }
     return () => {};
+  },
+
+  onApprovalRequest: (
+    callback: (payload: {
+      requestId: string;
+      kind: 'shell' | 'file_write' | 'file_read';
+      projectId: string;
+      reason: string;
+      command?: string;
+      cwd?: string;
+      filePath?: string;
+    }) => void
+  ): (() => void) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.onOrgApprovalRequest) {
+      return window.electronAPI.onOrgApprovalRequest(callback);
+    }
+    return () => {};
+  },
+
+  sendApprovalDecision: (params: { requestId: string; decision: 'allow' | 'deny' }): void => {
+    if (typeof window !== 'undefined' && window.electronAPI?.orgApprovalDecision) {
+      window.electronAPI.orgApprovalDecision(params);
+    }
   },
 };
 

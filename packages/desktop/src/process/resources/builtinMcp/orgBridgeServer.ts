@@ -10,6 +10,18 @@ import { BrowserWindow, ipcMain } from 'electron';
 import { assertWithinScope } from '@process/services/org/pathGuard';
 import { getMasterRoot } from '@process/services/org/orgScope';
 import { scanFolderCompact } from '@process/services/org/scanFolder';
+import {
+  executeListDir,
+  executeReadFile,
+  executeWriteFile,
+  executeRunShell,
+  setOrgBashApprovalBroker,
+  type OrgCtx,
+  type ApprovalRequest,
+} from '@process/services/org/orgExecution';
+import { normalizeApprovalPolicy } from '@process/services/org/orgApprovalPolicy';
+
+const EXECUTION_TOOLS = new Set(['list_dir', 'read_file', 'write_file', 'run_shell']);
 
 export type OrgRole = 'ceo' | 'department_head' | 'project_head';
 
@@ -20,6 +32,10 @@ export interface OrgToolExecutionRequest {
   deptId?: string;
   projectId?: string;
   deptWorkspacePath?: string;
+  /** Project folder jail root for execution tools (defaults to deptWorkspacePath). */
+  projectFolder?: string;
+  /** Per-project approval policy for execution tools. */
+  approvalPolicy?: string;
 }
 
 export interface OrgToolExecutionResponse {
@@ -54,6 +70,44 @@ const pendingCalls = new Map<
 
 let ipcRegistered = false;
 
+// Pending approval requests awaiting a renderer decision (org:approval-decision).
+const pendingApprovals = new Map<string, (decision: 'allow' | 'deny') => void>();
+
+/**
+ * Approval broker for process-side shell/file execution. Forwards the request to the
+ * renderer (which shows a blocking approval card) and resolves with the user's decision.
+ * Fails closed (deny) if no window is available or the request times out.
+ */
+async function rendererApprovalBroker(req: ApprovalRequest): Promise<'allow' | 'deny'> {
+  ensureIpcRegistered();
+  let targetWindow: BrowserWindow | null = null;
+  try {
+    targetWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+  } catch {
+    targetWindow = null;
+  }
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return 'deny';
+  }
+
+  const requestId = crypto.randomUUID();
+  return new Promise<'allow' | 'deny'>((resolve) => {
+    const timer = setTimeout(() => {
+      pendingApprovals.delete(requestId);
+      resolve('deny');
+    }, 120000); // 2 minutes
+
+    pendingApprovals.set(requestId, (decision) => {
+      clearTimeout(timer);
+      resolve(decision);
+    });
+
+    targetWindow!.webContents.send('org:approval-request', { requestId, ...req });
+  });
+}
+
+setOrgBashApprovalBroker(rendererApprovalBroker);
+
 function ensureIpcRegistered(): void {
   if (ipcRegistered) return;
   ipcRegistered = true;
@@ -73,6 +127,14 @@ function ensureIpcRegistered(): void {
         }
       }
     );
+
+    ipcMain.on('org:approval-decision', (_event, payload: { requestId: string; decision: 'allow' | 'deny' }) => {
+      const resolver = pendingApprovals.get(payload.requestId);
+      if (resolver) {
+        pendingApprovals.delete(payload.requestId);
+        resolver(payload.decision === 'allow' ? 'allow' : 'deny');
+      }
+    });
   } catch {
     // ipcMain might not be available in non-electron test environments
   }
@@ -186,7 +248,7 @@ async function forwardToolToRenderer(
  * or forwards to the renderer store.
  */
 export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Promise<OrgToolExecutionResponse> {
-  const { tool, args, role = 'ceo', deptId, projectId, deptWorkspacePath } = request;
+  const { tool, args, role = 'ceo', deptId, projectId, deptWorkspacePath, projectFolder, approvalPolicy } = request;
 
   // 1. Role-based tool access control
   if (role === 'department_head') {
@@ -215,6 +277,11 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'list_project_tasks',
       'list_org',
       'ask_user',
+      // Process-side execution tools (jailed + policy-gated + audited):
+      'list_dir',
+      'read_file',
+      'write_file',
+      'run_shell',
     ]);
     if (!allowed.has(tool)) {
       return {
@@ -226,6 +293,63 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
 
   // 2. Folder boundaries enforcement
   const masterRoot = await getMasterRoot();
+
+  // 2a. Process-side execution tools (shell + file ops) for project heads / members.
+  // These run jailed to the assigned project folder, gated by the per-project approval
+  // policy, and recorded in the audit log. The Root CEO never reaches this path because
+  // these tools are not in the CEO allowlist and EXECUTION_TOOLS are denied for ceo below.
+  if (EXECUTION_TOOLS.has(tool)) {
+    if (role === 'ceo' || role === 'department_head') {
+      return {
+        success: false,
+        error: `Access denied: role "${role}" is not permitted to execute "${tool}".`,
+      };
+    }
+
+    // Resolve the jail root: the bound workspace (projectFolder/deptWorkspacePath) MUST be
+    // provided and is treated as the project folder for this session.
+    const jailFolder = projectFolder || deptWorkspacePath;
+    if (!jailFolder) {
+      return { success: false, error: `Cannot execute "${tool}": no project folder bound to this session.` };
+    }
+
+    const ctx: OrgCtx = {
+      projectId: projectId || 'unknown',
+      projectFolder: jailFolder,
+      policy: normalizeApprovalPolicy(approvalPolicy),
+    };
+
+    broadcastOrgLiveStep({
+      step: `Executing ${tool} in ${jailFolder}`,
+      tool,
+      args,
+    });
+
+    let result;
+    if (tool === 'list_dir') {
+      result = await executeListDir({ path: args.path }, ctx, { masterRoot });
+    } else if (tool === 'read_file') {
+      result = await executeReadFile({ path: args.path }, ctx, { masterRoot, approvalToken: args.approvalToken });
+    } else if (tool === 'write_file') {
+      result = await executeWriteFile({ path: args.path, content: args.content }, ctx, { masterRoot });
+    } else {
+      result = await executeRunShell(
+        { command: args.command, cwd: args.cwd, timeoutMs: args.timeoutMs },
+        ctx,
+        { masterRoot, approvalToken: args.approvalToken }
+      );
+    }
+
+    if (result.success) {
+      return { success: true, result: result };
+    }
+    return {
+      success: false,
+      error: result.error || 'Execution failed',
+      result,
+    };
+  }
+
   if (
     !masterRoot &&
     tool !== 'ask_user' &&
