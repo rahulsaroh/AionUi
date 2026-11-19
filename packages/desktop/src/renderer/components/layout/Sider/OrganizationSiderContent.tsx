@@ -39,6 +39,7 @@ import SiderBreadcrumb from './SiderBreadcrumb';
 import SiderSectionLabel from './SiderSectionLabel';
 import SiderDepartmentHeader from './SiderDepartmentHeader';
 import SiderSubSectionLabel from './SiderSubSectionLabel';
+import SiderTeamRow from './SiderTeamRow';
 import SiderProjectRow from './SiderProjectRow';
 import SiderMemberRow from './SiderMemberRow';
 import SiderChatRow from './SiderChatRow';
@@ -912,6 +913,26 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                   return proj.status === activeFilter;
                 });
 
+                const filteredTeams = deptTeams.filter((team) => {
+                  if (query) {
+                    const matchesName = team.name.toLowerCase().includes(query);
+                    const matchesMember = teamRoster(team).some((m) => m.name.toLowerCase().includes(query));
+                    if (!matchesName && !matchesMember) return false;
+                  }
+                  if (activeFilter === 'all') return true;
+                  if (activeFilter === 'shared') {
+                    return team.specialistMembers.some((m) => m.assignedTeamIds.length > 1);
+                  }
+                  return teamStatus(team) === activeFilter;
+                });
+
+                const unassignedMembers = departmentMembers.filter(
+                  (m) =>
+                    !deptTeams.some((t) =>
+                      teamRoster(t).some((tm) => tm.id === m.id || tm.canonicalAgentId === m.canonicalAgentId)
+                    )
+                );
+
                 return (
                   <div key={dept.id} className='flex flex-col'>
                     <SiderDepartmentHeader
@@ -944,11 +965,11 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                         {subTab === 'teams' ? (
                           <>
                             <SiderSubSectionLabel
-                              label={t('team.organization.teamRoster', { defaultValue: 'Team roster' })}
-                              count={departmentMembers.length}
+                              label={t('team.organization.teams', { defaultValue: 'Teams' })}
+                              count={filteredTeams.length}
                             />
-                            <div className='flex flex-col gap-0.5px'>
-                              {departmentMembers.length === 0 ? (
+                            <div className='flex flex-col gap-1px'>
+                              {filteredTeams.length === 0 ? (
                                 <div className='px-6px py-4px text-10px text-t-tertiary'>
                                   {activeFilter === 'all'
                                     ? t('team.organization.noTeams', {
@@ -957,14 +978,67 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                     : t('team.organization.noMatchingTeams', { defaultValue: 'No matching teams.' })}
                                 </div>
                               ) : (
-                                departmentMembers.map((member) =>
-                                  renderMemberThread(
-                                    member,
-                                    chatsWithMember(conversations, member, allAgentMembers, {
-                                      departments: hierarchy.departments,
-                                    })
-                                  )
-                                )
+                                filteredTeams.map((team) => {
+                                  const tStatus = teamStatus(team);
+                                  const isTeamSelected = selectedTeamId === team.id;
+                                  const teamMembers = teamRoster(team).filter(memberVisible);
+                                  return (
+                                    <div key={team.id} className='flex flex-col'>
+                                      <SiderTeamRow
+                                        team={team}
+                                        status={tStatus}
+                                        isSelected={isTeamSelected}
+                                        onSelect={() => handleSelectTeam(team.id)}
+                                        onEdit={(e) => {
+                                          e?.stopPropagation();
+                                          handleOpenEntityEdit('team', team, {
+                                            departmentId: dept.id,
+                                            teamId: team.id,
+                                          });
+                                        }}
+                                        onNewChat={(e) => {
+                                          e?.stopPropagation();
+                                          handleNewTeamChat(dept.id, team);
+                                        }}
+                                        siderTooltipProps={siderTooltipProps}
+                                      />
+                                      {teamMembers.length === 0 ? (
+                                        <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {t('team.organization.noProjectMembers', {
+                                            defaultValue: 'No team members on this team.',
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {teamMembers.map((member) =>
+                                            renderMemberThread(
+                                              member,
+                                              chatsWithMember(conversations, member, allAgentMembers, {
+                                                departments: hierarchy.departments,
+                                              })
+                                            )
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              )}
+                              {unassignedMembers.length > 0 && (
+                                <div className='mt-4px flex flex-col gap-0.5px'>
+                                  <SiderSubSectionLabel
+                                    label={t('team.organization.unassignedMembers', { defaultValue: 'Other members' })}
+                                    count={unassignedMembers.length}
+                                  />
+                                  {unassignedMembers.map((member) =>
+                                    renderMemberThread(
+                                      member,
+                                      chatsWithMember(conversations, member, allAgentMembers, {
+                                        departments: hierarchy.departments,
+                                      })
+                                    )
+                                  )}
+                                </div>
                               )}
                             </div>
                           </>

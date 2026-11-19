@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
+import { buildOrgDirectory, getOrgDirectoryPrompt } from './orgDirectory';
 import {
   MAX_DELEGATION_DEPTH,
   type OrgHierarchy,
@@ -1155,7 +1156,10 @@ export class OrgDelegationEngine {
 
         if (m.type === 'error' || m.status === 'error') {
           const errText = typeof m.data === 'string' ? m.data : JSON.stringify(m.data);
-          pushNotice(`\n[Inference Error: ${errText}]\n`);
+          const remedy = /provider[^a-z]*not found/i.test(errText)
+            ? '\n[Remedy: The configured model provider is not recognized by the backend. Reconfigure your model under Settings -> Model, or clear the agent model assignment.]'
+            : '';
+          pushNotice(`\n[Inference Error: ${errText}]${remedy}\n`);
           finished = true;
           checkFinish();
           lastActivity = Date.now();
@@ -1395,6 +1399,11 @@ export class OrgDelegationEngine {
         console.warn('[OrgDelegationEngine] Failed to build handbook for agent:', err);
       }
 
+      const directoryPrefix = `${getOrgDirectoryPrompt(
+        buildOrgDirectory({ hierarchy: this.hierarchy, projects: this.projects }),
+        { conversationId: convId }
+      )}\n\n`;
+
       let knowledgePrefix = '';
       if (!opts.userDirective.includes('### Authoritative Knowledge Playbook')) {
         try {
@@ -1418,8 +1427,8 @@ export class OrgDelegationEngine {
       }
 
       const promptToSend = opts.conversationId
-        ? `${handbookPrefix}${knowledgePrefix}${opts.userDirective}`
-        : `${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+        ? `${directoryPrefix}${handbookPrefix}${knowledgePrefix}${opts.userDirective}`
+        : `${directoryPrefix}${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
 
       try {
         await ipcBridge.conversation.sendMessage.invoke({
@@ -1454,7 +1463,7 @@ export class OrgDelegationEngine {
           if (freshConv?.id) {
             convId = freshConv.id;
             this.lastBackendConversationId = convId;
-            const fullPrompt = `${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+            const fullPrompt = `${directoryPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
             await ipcBridge.conversation.sendMessage.invoke({
               conversation_id: convId,
               input: fullPrompt,
@@ -2863,7 +2872,30 @@ export class OrgDelegationEngine {
         try {
           const leadOutput = await this.runOrgAgentStep({
             agent: leadAgent,
-            systemPrompt: `You are ${leadAgent.name}, leading ${targetTeam.name}. Operating in workspace: ${projectFolder}. Coordinate and address the user's directive directly.`,
+            systemPrompt:
+              leadAgent.systemPrompt ||
+              `You are ${leadAgent.name}, Team Lead for "${targetTeam.name}".
+Project workspace: "${projectFolder}".
+
+TOOLS AVAILABLE TO YOU — call them yourself, never ask the user to run them:
+- scan_folder({ path }) — inspect any folder structure to understand project type and contents
+- hire_member({ name, role, skills, systemPrompt }) — recruit a new specialist bot to the shared pool
+- assign_member({ memberId, teamId }) — assign a hired member to a team
+- create_team({ departmentId, name }) — create a named sub-team
+- list_org() — view current organization state
+
+MANDATE — when asked to "create a team", "build a team", or "set up bots for this folder":
+1. Call scan_folder({ path: "${projectFolder}" }) to inspect the folder structure.
+2. Analyze contents: identify project type (code, content, assets, data, etc.) and subfolders.
+3. Based on findings, decide which specialists are needed.
+4. Call hire_member() for each specialist with a clear name, role, skills, and a brief systemPrompt.
+5. Call assign_member() to assign each hired specialist to this team using their returned member ID.
+6. Report the assembled team to the user with a summary of who was hired and why.
+
+RULES:
+- NEVER ask the user to run scan_folder or any tool on your behalf. You have full access — use it.
+- NEVER hire the same specialist twice. Check list_org() if unsure.
+- Keep teams focused: 2–6 specialists per team. Justify each hire based on actual folder contents.`,
             userDirective: userPrompt,
             workspacePath: projectFolder,
             onStreamUpdate: (text) => {

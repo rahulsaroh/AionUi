@@ -65,7 +65,10 @@ export function validateMemberShape(m: any): boolean {
     if (typeof m.model !== 'object') return false;
     if (m.model.modelId !== undefined && typeof m.model.modelId !== 'string') return false;
     if (m.model.providerId !== undefined && typeof m.model.providerId !== 'string') return false;
-    if (m.model.executionEngine !== undefined && !['settings', 'codex', 'claude', 'aionrs'].includes(m.model.executionEngine))
+    if (
+      m.model.executionEngine !== undefined &&
+      !['settings', 'codex', 'claude', 'aionrs'].includes(m.model.executionEngine)
+    )
       return false;
   }
   return true;
@@ -87,7 +90,8 @@ export function validateProjectShape(p: any): boolean {
       !p.workspacePaths.every((item: unknown) => typeof item === 'string' && item.length <= 4096))
   )
     return false;
-  if (p.approvalPolicy !== undefined && !['read_only', 'auto_edit', 'full_auto'].includes(p.approvalPolicy)) return false;
+  if (p.approvalPolicy !== undefined && !['read_only', 'auto_edit', 'full_auto'].includes(p.approvalPolicy))
+    return false;
   if (
     p.allowlist !== undefined &&
     (!Array.isArray(p.allowlist) ||
@@ -240,7 +244,9 @@ export class OrgStorageService {
           assignedTeamIds: [] as string[],
           lastActiveAt: null as number | null,
           status: 'idle',
-          executionEngine: (r.model ? JSON.parse(r.model).executionEngine : undefined) as OrgExecutionEngine | undefined,
+          executionEngine: (r.model ? JSON.parse(r.model).executionEngine : undefined) as
+            | OrgExecutionEngine
+            | undefined,
         })
       );
     } catch (err) {
@@ -270,7 +276,7 @@ export class OrgStorageService {
         member.systemPrompt || null,
         member.model || member.executionEngine
           ? JSON.stringify({
-              ...(member.model || {}),
+              ...member.model,
               executionEngine: member.executionEngine,
             })
           : null,

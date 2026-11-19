@@ -113,8 +113,8 @@ async function main() {
     version: '1.0.0',
   });
 
-  // Tools available to CEO and Department Head
-  if (role === 'ceo' || role === 'department_head') {
+  // Tools available to CEO, Department Head, and Team Lead
+  if (role === 'ceo' || role === 'department_head' || role === 'team_lead') {
     server.tool(
       'scan_folder',
       'Scans a folder and returns a compact directory tree with domain/project-type hints (Flutter, YouTube, Digital Products, Web, Python). Refuses paths outside master root.',
@@ -155,11 +155,46 @@ async function main() {
     );
 
     server.tool(
-      'assign_member',
-      'Assigns an existing member from the shared pool to a project.',
+      'create_team',
+      'Creates a new sub-team under a department.',
       {
-        projectId: z.string().describe('Target project ID'),
+        departmentId: z.string().describe('ID of the parent department'),
+        name: z.string().describe('Name of the team (e.g. Conditioning and Exercise Team, Backend Team)'),
+      },
+      async (args) => {
+        const res = await callBridgeTool('create_team', args);
+        return formatToolResponse(res);
+      }
+    );
+
+    server.tool(
+      'hire_member',
+      'Recruits a new specialist into the shared member pool and optionally assigns them to a project or team. Duplicate members (same name + role) are detected and reused instead of creating duplicates.',
+      {
+        name: z.string().describe('Name of the new member (e.g. "Backend Engineer", "UX Designer")'),
+        role: z.string().describe('Role or specialty of the member'),
+        projectId: z.string().optional().describe('Optional project ID to immediately assign the new member to'),
+        teamId: z.string().optional().describe('Optional team ID to immediately assign the new member to'),
+        departmentId: z
+          .string()
+          .optional()
+          .describe('Optional department ID to scope the hire (required for team_lead, optional for department_head)'),
+        skills: z.array(z.string()).optional().describe('Technical or creative skills'),
+        systemPrompt: z.string().optional().describe('Custom system instructions for this member'),
+      },
+      async (args) => {
+        const res = await callBridgeTool('hire_member', args);
+        return formatToolResponse(res);
+      }
+    );
+
+    server.tool(
+      'assign_member',
+      'Assigns an existing member from the shared pool to a project or team.',
+      {
         memberId: z.string().describe('ID of member from shared pool'),
+        projectId: z.string().optional().describe('Target project ID'),
+        teamId: z.string().optional().describe('Target team ID'),
       },
       async (args) => {
         const res = await callBridgeTool('assign_member', args);
@@ -180,21 +215,6 @@ async function main() {
       },
       async (args) => {
         const res = await callBridgeTool('create_department', args);
-        return formatToolResponse(res);
-      }
-    );
-
-    server.tool(
-      'hire_member',
-      'Adds a new autonomous agent specialist to the shared organizational member pool.',
-      {
-        name: z.string().describe('Member name (e.g. Alex Rivera)'),
-        role: z.string().describe('Specialty or role (e.g. flutter-specialist, video-editor, copywriter, qa-engineer)'),
-        skills: z.array(z.string()).optional().describe('Technical or creative skills'),
-        systemPrompt: z.string().optional().describe('Custom system instructions for this member'),
-      },
-      async (args) => {
-        const res = await callBridgeTool('hire_member', args);
         return formatToolResponse(res);
       }
     );
@@ -302,6 +322,28 @@ async function main() {
   }
 
   // Tools available to all roles (CEO, Dept Head, Project Head)
+  server.tool(
+    'get_org_directory',
+    'Returns the full Organization Directory document: which department owns which folders, its projects/teams/members, and who to contact. Read this before scanning folders or asking for data.',
+    {},
+    async () => {
+      const res = await callBridgeTool('get_org_directory', {});
+      return formatToolResponse(res);
+    }
+  );
+
+  server.tool(
+    'find_owner',
+    'Finds which department owns a topic, artifact name, project name, or folder path using the Organization Directory. Returns the owning department, its folders/projects, and the person to contact. Use this before scanning folders.',
+    {
+      query: z.string().describe('Topic, artifact name, project name, or absolute folder path'),
+    },
+    async (args) => {
+      const res = await callBridgeTool('find_owner', args);
+      return formatToolResponse(res);
+    }
+  );
+
   server.tool(
     'list_org',
     'Lists the full current organization state including departments, projects, and active shared members.',

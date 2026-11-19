@@ -74,6 +74,8 @@ export interface OrgAgentMember {
   backendSlotId?: string;
   /** Execution engine (CLI agent backend) used to run this member. Defaults to 'settings'. */
   executionEngine?: OrgExecutionEngine;
+  /** Department ID this member was hired into (for scope tracking). */
+  departmentId?: string | null;
 }
 
 export interface OrgTeamNode {
@@ -240,6 +242,77 @@ export interface OrgCronJob {
   enabled: boolean;
   lastRunAt?: number;
   nextRunAt?: number;
+}
+
+/**
+ * Organization Directory ("org knowledge map").
+ * A single authoritative document describing which department owns which folders,
+ * which projects/members live there, and who to contact for a given topic. It is
+ * generated from the live org graph, persisted as ORG_DIRECTORY.md, and injected
+ * into agent prompts so work is routed instead of rediscovered by folder scans.
+ */
+export interface OrgDirectoryMemberEntry {
+  id: string;
+  name: string;
+  role: string;
+  title?: string;
+  skills?: string[];
+  workspacePath?: string | null;
+  knowledgeRepos?: string[];
+}
+
+export interface OrgDirectoryTeamEntry {
+  id: string;
+  name: string;
+  workspacePath?: string | null;
+  workspacePaths?: string[];
+  lead?: OrgDirectoryMemberEntry;
+  members: OrgDirectoryMemberEntry[];
+  description?: string;
+}
+
+export interface OrgDirectoryProjectEntry {
+  id: string;
+  name: string;
+  workspacePath?: string | null;
+  goal?: string;
+  description?: string;
+  memberIds?: string[];
+  backendTeamId?: string;
+}
+
+export interface OrgDirectoryDepartmentEntry {
+  id: string;
+  name: string;
+  description?: string;
+  workspacePath?: string | null;
+  head?: OrgDirectoryMemberEntry;
+  projectManager?: OrgDirectoryMemberEntry;
+  teams: OrgDirectoryTeamEntry[];
+  projects: OrgDirectoryProjectEntry[];
+  members: OrgDirectoryMemberEntry[];
+}
+
+export interface OrgDirectoryDoc {
+  rootWorkspace?: string | null;
+  rootCeo?: OrgDirectoryMemberEntry;
+  chiefOfStaff?: OrgDirectoryMemberEntry;
+  departments: OrgDirectoryDepartmentEntry[];
+  sharedMembers: OrgDirectoryMemberEntry[];
+  generatedAt: number;
+}
+
+export interface OrgDirectoryOwnerMatch {
+  departmentId: string;
+  departmentName: string;
+  score: number;
+  workspacePaths: string[];
+  projectIds: string[];
+  projectNames: string[];
+  contactName?: string;
+  contactRole?: string;
+  contactId?: string;
+  reasons: string[];
 }
 
 export interface OrgDelegationPayload {

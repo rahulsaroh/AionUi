@@ -7,7 +7,7 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Tag, Tooltip, Button } from '@arco-design/web-react';
-import { Peoples, Down, Right, Plus, Edit, FolderPlus } from '@icon-park/react';
+import { Peoples, Down, Right, Plus, Edit, FolderPlus, FolderOpen } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import type { OrgDepartmentNode, OrgNodeStatus } from '@/types/organization';
 import { ORG_THEME_PALETTE, computeLifecycleStatus, getDepartmentAccent } from '../utils/orgTheme';
@@ -18,6 +18,7 @@ export type DepartmentNodeData = {
   department: OrgDepartmentNode;
   deptIndex?: number;
   isCollapsed?: boolean;
+  hasDescendants?: boolean;
   orientation?: 'TB' | 'LR';
   isDescendantWorking?: boolean;
   isDimmed?: boolean;
@@ -29,6 +30,7 @@ export type DepartmentNodeData = {
   onSelectNode?: (nodeId: string, nodeType: 'department') => void;
   onSelectProject?: (projectId: string) => void;
   onSelectMember?: (memberId: string) => void;
+  onSetFolder?: (nodeId: string) => void;
 };
 
 export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boolean }> = ({
@@ -40,6 +42,7 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
     department,
     deptIndex = 0,
     isCollapsed = false,
+    hasDescendants = false,
     orientation = 'TB',
     isDescendantWorking,
     onToggleCollapse,
@@ -152,18 +155,18 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
             </Tooltip>
           )}
 
-          {department.teams.length > 0 && onToggleCollapse && (
+          {hasDescendants && onToggleCollapse && (
             <Tooltip content={isCollapsed ? 'Expand branch' : 'Collapse branch'}>
-              <button
-                type='button'
+              <Button
+                size='mini'
+                type='text'
+                icon={isCollapsed ? <Right size={12} /> : <Down size={12} />}
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleCollapse(department.id);
                 }}
-                className='p-2px rounded bg-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer border-none'
-              >
-                {isCollapsed ? <Right size={12} /> : <Down size={12} />}
-              </button>
+                className='!p-2px !rounded !text-slate-400 hover:!text-slate-200'
+              />
             </Tooltip>
           )}
         </div>
@@ -181,6 +184,15 @@ export const DepartmentNode: React.FC<{ data: DepartmentNodeData; selected?: boo
             {department.departmentCeoAgent.title || 'Department Head'}
           </span>
         </div>
+
+        {department.workspacePath && (
+          <Tooltip content={department.workspacePath}>
+            <div className='flex items-center gap-6px px-8px py-4px rounded-8px bg-slate-800/40 border border-slate-700/50 text-10px text-slate-400 min-w-0'>
+              <FolderOpen size={12} style={{ color: accent.border }} className='shrink-0' />
+              <span className='truncate font-mono'>{department.workspacePath}</span>
+            </div>
+          </Tooltip>
+        )}
 
         {/* Quick add sub-team and project actions */}
         <div className='flex items-center gap-6px mt-2px'>
@@ -246,6 +258,7 @@ export function areDepartmentPropsEqual(
   if (p.isDimmed !== n.isDimmed) return false;
   if (p.isDescendantWorking !== n.isDescendantWorking) return false;
   if (p.isCollapsed !== n.isCollapsed) return false;
+  if (p.hasDescendants !== n.hasDescendants) return false;
   if (p.orientation !== n.orientation) return false;
   if (p.deptIndex !== n.deptIndex) return false;
   if (p.department !== n.department) return false;

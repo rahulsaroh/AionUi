@@ -7,12 +7,15 @@
 import { ipcBridge } from '@/common';
 import {
   getOrgStoreSnapshot,
+  setOrgStoreSnapshot,
   updateApprovedLineupInStore,
   recordApprovedLineupInStore,
   type ApprovedLineupRecord,
 } from './useOrgStore';
 import { updateNodeStatus, updateActivityTicker } from './useOrgTelemetryStore';
 import { validateOrgFolder } from '../utils/orgPathUtils';
+import { buildOrgDirectory, findOrgOwners } from '../utils/orgDirectory';
+import { createTeamShell } from '../utils/orgCoherence';
 import { createProjectBackendTeam } from './orgBackendTeam';
 import type {
   ITeamRunStateResponse,
@@ -110,6 +113,28 @@ export async function executeOrgToolInStore(
   const store = getOrgStoreSnapshot();
 
   switch (tool) {
+    case 'find_owner': {
+      const query = String(args.query || args.topic || args.path || '').trim();
+      if (!query) {
+        return { success: false, error: 'find_owner requires "query" (a topic, artifact name, or folder path).' };
+      }
+      const directory = buildOrgDirectory({
+        hierarchy: store.hierarchy,
+        projects: store.projects,
+        members: store.members,
+      });
+      const matches = findOrgOwners(directory, query, 5);
+      return {
+        success: true,
+        query,
+        matches,
+        message:
+          matches.length > 0
+            ? `Found ${matches.length} owning department(s). Contact the named owner and read only that folder.`
+            : 'No department owns this topic. Ask the user or the Root CEO before searching further.',
+      };
+    }
+
     case 'list_org': {
       const depts = store.hierarchy.departments.map((d) => ({
         id: d.id,
@@ -215,6 +240,8 @@ export async function executeOrgToolInStore(
         localStorage.setItem('aionui:org-hierarchy', JSON.stringify(nextHierarchy));
         void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(nextHierarchy)).catch(() => {});
       } catch {}
+      // Notify React subscribers so the sidebar re-renders with the new department
+      setOrgStoreSnapshot({ hierarchy: nextHierarchy });
 
       return {
         id: newDept.id,
@@ -238,6 +265,17 @@ export async function executeOrgToolInStore(
       const dept = store.hierarchy.departments.find((d) => d.id === departmentId);
       if (!dept) {
         throw new Error(`Parent department "${departmentId}" not found.`);
+      }
+
+      // Scope check: department_head/team_lead can only create projects in their own department
+      const callerRole = meta?.role ? String(meta.role).trim() : undefined;
+      const metaDeptId = meta?.deptId ? String(meta.deptId).trim() : undefined;
+      if ((callerRole === 'department_head' || callerRole === 'team_lead') && metaDeptId) {
+        if (departmentId !== metaDeptId) {
+          throw new Error(
+            `Access denied: ${callerRole} can only create projects in its own department (${metaDeptId}), not "${departmentId}".`
+          );
+        }
       }
 
       const masterRoot = store.hierarchy.rootCeo.workspacePath || (await ipcBridge.org.getMasterRoot()) || undefined;
@@ -301,6 +339,8 @@ export async function executeOrgToolInStore(
         void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
         void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(nextHierarchy)).catch(() => {});
       } catch {}
+      // Notify React subscribers so the sidebar re-renders with the new project
+      setOrgStoreSnapshot({ projects: nextProjects, hierarchy: nextHierarchy });
 
       return {
         id: newProj.id,
@@ -312,58 +352,200 @@ export async function executeOrgToolInStore(
       };
     }
 
+    case 'create_team': {
+      const departmentId = String(args.departmentId || meta?.deptId || '').trim();
+      const name = String(args.name || '').trim();
+
+      if (!departmentId || !name) {
+        throw new Error('create_team requires "departmentId" and "name".');
+      }
+
+      const dept = store.hierarchy.departments.find((d) => d.id === departmentId);
+      if (!dept) {
+        throw new Error(`Parent department "${departmentId}" not found.`);
+      }
+
+      const callerRole = meta?.role ? String(meta.role).trim() : undefined;
+      const metaDeptId = meta?.deptId ? String(meta.deptId).trim() : undefined;
+      if ((callerRole === 'department_head' || callerRole === 'team_lead') && metaDeptId) {
+        if (departmentId !== metaDeptId) {
+          throw new Error(
+            `Access denied: ${callerRole} can only create teams in its own department (${metaDeptId}), not "${departmentId}".`
+          );
+        }
+      }
+
+      const newTeam = createTeamShell(departmentId, name);
+      const nextHierarchy = {
+        ...store.hierarchy,
+        lastUpdated: Date.now(),
+        departments: store.hierarchy.departments.map((d) =>
+          d.id === departmentId
+            ? {
+                ...d,
+                teams: [...d.teams, newTeam],
+                lastActiveAt: Date.now(),
+              }
+            : d
+        ),
+      };
+
+      store.hierarchy = nextHierarchy;
+      try {
+        localStorage.setItem('aionui:org-hierarchy', JSON.stringify(nextHierarchy));
+        void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(nextHierarchy)).catch(() => {});
+      } catch {}
+      // Notify React subscribers so the sidebar re-renders with the new team
+      setOrgStoreSnapshot({ hierarchy: nextHierarchy });
+
+      return {
+        id: newTeam.id,
+        name: newTeam.name,
+        departmentId,
+        created: true,
+      };
+    }
+
     case 'hire_member': {
       const name = String(args.name || '').trim();
       const role = String(args.role || '').trim();
       const skills = Array.isArray(args.skills) ? args.skills : [];
       const systemPrompt = args.systemPrompt ? String(args.systemPrompt) : undefined;
+      const projectId = args.projectId ? String(args.projectId).trim() : undefined;
+      const teamId = args.teamId ? String(args.teamId).trim() : undefined;
+      const departmentId = args.departmentId ? String(args.departmentId).trim() : undefined;
 
       if (!name || !role) {
         throw new Error('hire_member requires "name" and "role".');
       }
 
-      const memberId = `m-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const newMember: OrgAgentMember = {
-        id: memberId,
-        canonicalAgentId: `c-${memberId}`,
-        name,
-        role,
-        skills,
-        systemPrompt,
-        status: 'idle',
-        assignedTeamIds: [],
-        lastActiveAt: null,
-      };
+      // Scope check: department_head/team_lead must have deptId bound
+      const metaDeptId = meta?.deptId ? String(meta.deptId).trim() : undefined;
+      const effectiveDeptId = departmentId || metaDeptId;
 
-      const currentMembers = store.members || [];
-      const nextMembers = [...currentMembers, newMember];
-      store.members = nextMembers;
-      try {
-        localStorage.setItem('aionui:org-members', JSON.stringify(nextMembers));
-        void ipcBridge.org.saveData('aionui:org-members', JSON.stringify(nextMembers)).catch(() => {});
-        void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
-      } catch {}
+      // Dedupe: check for existing member with same name + role (case-insensitive)
+      const existingMembers = store.members || [];
+      const existing = existingMembers.find(
+        (m) => m.name.toLowerCase() === name.toLowerCase() && m.role.toLowerCase() === role.toLowerCase()
+      );
+
+      let memberToUse: OrgAgentMember;
+      let created = false;
+
+      if (existing) {
+        // Reuse existing member
+        memberToUse = existing;
+        created = false;
+      } else {
+        // Create new member
+        const memberId = `m-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        memberToUse = {
+          id: memberId,
+          canonicalAgentId: `c-${memberId}`,
+          name,
+          role,
+          skills,
+          systemPrompt,
+          status: 'idle',
+          assignedTeamIds: teamId ? [teamId] : [],
+          lastActiveAt: null,
+          departmentId: effectiveDeptId || null,
+        };
+
+        const nextMembers = [...existingMembers, memberToUse];
+        store.members = nextMembers;
+        try {
+          localStorage.setItem('aionui:org-members', JSON.stringify(nextMembers));
+          void ipcBridge.org.saveData('aionui:org-members', JSON.stringify(nextMembers)).catch(() => {});
+          void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
+        } catch {}
+        // Notify React subscribers so the sidebar re-renders with the new member
+        setOrgStoreSnapshot({ members: nextMembers });
+        created = true;
+      }
+
+      // If teamId provided, assign member to that team
+      if (teamId) {
+        let teamFound = false;
+        const nextDepartments = store.hierarchy.departments.map((d) => ({
+          ...d,
+          teams: d.teams.map((t) => {
+            if (t.id === teamId) {
+              teamFound = true;
+              const currentSpecs = t.specialistMembers || [];
+              const alreadyMember = currentSpecs.some(
+                (m) => m.id === memberToUse.id || m.canonicalAgentId === memberToUse.canonicalAgentId
+              );
+              if (alreadyMember) return t;
+              return {
+                ...t,
+                specialistMembers: [...currentSpecs, { ...memberToUse, assignedTeamIds: [t.id] }],
+                lastActiveAt: Date.now(),
+              };
+            }
+            return t;
+          }),
+        }));
+        if (teamFound) {
+          store.hierarchy = {
+            ...store.hierarchy,
+            departments: nextDepartments,
+            lastUpdated: Date.now(),
+          };
+          try {
+            localStorage.setItem('aionui:org-hierarchy', JSON.stringify(store.hierarchy));
+            void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(store.hierarchy)).catch(() => {});
+          } catch {}
+          // Notify React subscribers so the sidebar re-renders with team members
+          setOrgStoreSnapshot({ hierarchy: store.hierarchy });
+        }
+      }
+
+      // If projectId provided, assign member to that project
+      if (projectId) {
+        const proj = store.projects.find((p) => p.id === projectId);
+        if (proj) {
+          // Scope check: project must belong to caller's department
+          if (effectiveDeptId && proj.departmentId !== effectiveDeptId) {
+            throw new Error(
+              `Access denied: cannot assign member to project "${projectId}" outside your department (${effectiveDeptId}).`
+            );
+          }
+
+          const currentIds = proj.memberIds || [];
+          if (!currentIds.includes(memberToUse.id)) {
+            const nextProjects = store.projects.map((p) =>
+              p.id === projectId ? { ...p, memberIds: [...currentIds, memberToUse.id] } : p
+            );
+            store.projects = nextProjects;
+            try {
+              localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
+              void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
+            } catch {}
+            // Notify React subscribers so the sidebar re-renders
+            setOrgStoreSnapshot({ projects: nextProjects });
+          }
+        }
+      }
 
       return {
-        id: newMember.id,
-        name: newMember.name,
-        role: newMember.role,
-        skills: newMember.skills,
-        created: true,
+        id: memberToUse.id,
+        name: memberToUse.name,
+        role: memberToUse.role,
+        skills: memberToUse.skills,
+        created,
+        assignedToProject: projectId || null,
+        assignedToTeam: teamId || null,
       };
     }
 
     case 'assign_member': {
       const projectId = String(args.projectId || '').trim();
+      const teamId = String(args.teamId || '').trim();
       const memberId = String(args.memberId || '').trim();
 
-      if (!projectId || !memberId) {
-        throw new Error('assign_member requires "projectId" and "memberId".');
-      }
-
-      const proj = store.projects.find((p) => p.id === projectId);
-      if (!proj) {
-        throw new Error(`Project "${projectId}" not found.`);
+      if (!memberId || (!projectId && !teamId)) {
+        throw new Error('assign_member requires "memberId" and either "projectId" or "teamId".');
       }
 
       const member = (store.members || []).find((m) => m.id === memberId);
@@ -371,21 +553,84 @@ export async function executeOrgToolInStore(
         throw new Error(`Member "${memberId}" not found in shared pool.`);
       }
 
-      const currentIds = proj.memberIds || [];
-      if (!currentIds.includes(memberId)) {
-        const nextProjects = store.projects.map((p) =>
-          p.id === projectId ? { ...p, memberIds: [...currentIds, memberId] } : p
-        );
-        store.projects = nextProjects;
-        try {
-          localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
-          void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
-        } catch {}
+      // Scope check: department_head/team_lead can only assign to projects in their department
+      const callerRole = meta?.role ? String(meta.role).trim() : undefined;
+      const metaDeptId = meta?.deptId ? String(meta.deptId).trim() : undefined;
+
+      if (teamId) {
+        let teamFound = false;
+        const nextDepartments = store.hierarchy.departments.map((d) => {
+          if (metaDeptId && (callerRole === 'department_head' || callerRole === 'team_lead') && d.id !== metaDeptId) {
+            return d;
+          }
+          return {
+            ...d,
+            teams: d.teams.map((t) => {
+              if (t.id === teamId) {
+                teamFound = true;
+                const currentSpecs = t.specialistMembers || [];
+                const alreadyMember = currentSpecs.some(
+                  (m) => m.id === member.id || m.canonicalAgentId === member.canonicalAgentId
+                );
+                if (alreadyMember) return t;
+                return {
+                  ...t,
+                  specialistMembers: [...currentSpecs, { ...member, assignedTeamIds: [t.id] }],
+                  lastActiveAt: Date.now(),
+                };
+              }
+              return t;
+            }),
+          };
+        });
+        if (teamFound) {
+          store.hierarchy = {
+            ...store.hierarchy,
+            departments: nextDepartments,
+            lastUpdated: Date.now(),
+          };
+          try {
+            localStorage.setItem('aionui:org-hierarchy', JSON.stringify(store.hierarchy));
+            void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(store.hierarchy)).catch(() => {});
+          } catch {}
+          // Notify React subscribers so the sidebar re-renders
+          setOrgStoreSnapshot({ hierarchy: store.hierarchy });
+        }
+      }
+
+      if (projectId) {
+        const proj = store.projects.find((p) => p.id === projectId);
+        if (!proj) {
+          throw new Error(`Project "${projectId}" not found.`);
+        }
+
+        if ((callerRole === 'department_head' || callerRole === 'team_lead') && metaDeptId) {
+          if (proj.departmentId !== metaDeptId) {
+            throw new Error(
+              `Access denied: ${callerRole} can only assign members to projects in its own department (${metaDeptId}), not "${proj.departmentId}".`
+            );
+          }
+        }
+
+        const currentIds = proj.memberIds || [];
+        if (!currentIds.includes(memberId)) {
+          const nextProjects = store.projects.map((p) =>
+            p.id === projectId ? { ...p, memberIds: [...currentIds, memberId] } : p
+          );
+          store.projects = nextProjects;
+          try {
+            localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
+            void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
+          } catch {}
+          // Notify React subscribers so the sidebar re-renders
+          setOrgStoreSnapshot({ projects: nextProjects });
+        }
       }
 
       return {
         success: true,
-        projectId,
+        projectId: projectId || null,
+        teamId: teamId || null,
         memberId,
         assigned: true,
       };
@@ -403,6 +648,17 @@ export async function executeOrgToolInStore(
         (d) => d.id === target || d.name.toLowerCase() === target.toLowerCase()
       );
       const proj = store.projects.find((p) => p.id === target || p.name.toLowerCase() === target.toLowerCase());
+
+      if (!dept && !proj) {
+        return {
+          success: false,
+          error: `No department named ${target}; create it first with create_department`,
+          dispatched: false,
+          target,
+          targetName: target,
+          status: 'error',
+        };
+      }
 
       const resolvedTargetId = dept ? dept.id : proj ? proj.id : target;
       const targetName = dept ? dept.name : proj ? proj.name : target;

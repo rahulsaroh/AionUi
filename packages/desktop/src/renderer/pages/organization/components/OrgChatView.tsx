@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Button, Input, Message, Spin, Dropdown, Menu, Popover, Radio } from '@arco-design/web-react';
+import { Button, Input, Message, Spin, Dropdown, Menu, Popover, Radio, Tooltip } from '@arco-design/web-react';
 import {
   Send,
   NetworkTree,
@@ -18,6 +18,8 @@ import {
   Loading,
   Close,
   Setting,
+  Left,
+  Right,
 } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +30,9 @@ import { OrgModelSelector } from './OrgModelSelector';
 import { runAgentTurn, buildAgentSystemContext, type OrgChatTarget } from '../utils/agentTurn';
 import { OrgMasterFolderModal } from './OrgMasterFolderModal';
 import { OrgProposalCard, type StructureProposalData } from './OrgProposalCard';
+import { OrgTeamChatHeader } from './teamChat/OrgTeamChatHeader';
+import { OrgTeamChatSlot } from './teamChat/OrgTeamChatSlot';
+import type { OrgTeamChatViewMode } from './teamChat/types';
 import {
   setupOrgToolBridgeListener,
   onStructureProposed,
@@ -86,6 +91,7 @@ export const OrgChatView: React.FC = () => {
     projects,
     conversations,
     selectedConversationId,
+    selectedTeamId,
     setSelectedConversationId,
     setOrgViewMode,
     setSelectedDepartment,
@@ -201,32 +207,6 @@ export const OrgChatView: React.FC = () => {
     return undefined;
   }, [activeProject, activeConversation?.targetNodeId, hierarchy.departments]);
 
-  const activeTeam = useMemo(() => {
-    if (activeConversation?.teamId) {
-      for (const dept of hierarchy.departments) {
-        const team = dept.teams.find((t) => t.id === activeConversation.teamId);
-        if (team) return team;
-      }
-    }
-    if (activeProject && activeProject.teamIds && activeProject.teamIds.length > 0) {
-      for (const dept of hierarchy.departments) {
-        const team = dept.teams.find((t) => activeProject.teamIds.includes(t.id));
-        if (team) return team;
-      }
-    }
-    return undefined;
-  }, [activeConversation?.teamId, activeProject, hierarchy.departments]);
-
-  const activeProjectHead = useMemo(() => {
-    if (!activeProject) return undefined;
-    if (activeTeam?.teamLeadAgent) return activeTeam.teamLeadAgent;
-    if (activeProject.teamIds.length > 0 && activeDept) {
-      const team = activeDept.teams.find((t) => activeProject.teamIds.includes(t.id));
-      if (team?.teamLeadAgent) return team.teamLeadAgent;
-    }
-    return activeDept?.departmentCeoAgent || activeDept?.pmAgent;
-  }, [activeProject, activeDept, activeTeam]);
-
   // Specific agent target if this is a direct 1:1 chat
   const activeTargetAgent = useMemo<import('@/types/organization').OrgAgentMember | undefined>(() => {
     if (!activeConversation?.targetAgentId) return undefined;
@@ -238,13 +218,60 @@ export const OrgChatView: React.FC = () => {
       if (dept.pmAgent?.id === targetId) return dept.pmAgent;
       for (const team of dept.teams) {
         if (team.teamLeadAgent.id === targetId) return team.teamLeadAgent;
-        if (team.hrCoordinatorAgent.id === targetId) return team.hrCoordinatorAgent;
-        const spec = team.specialistMembers.find((m) => m.id === targetId);
+        if (team.hrCoordinatorAgent?.id === targetId) return team.hrCoordinatorAgent;
+        const spec = team.specialistMembers.find((m) => m.id === targetId || m.canonicalAgentId === targetId);
         if (spec) return spec;
       }
     }
     return undefined;
   }, [activeConversation?.targetAgentId, hierarchy]);
+
+  const activeTeam = useMemo(() => {
+    if (selectedTeamId) {
+      for (const dept of hierarchy.departments) {
+        const team = dept.teams.find((tm) => tm.id === selectedTeamId);
+        if (team) return team;
+      }
+    }
+    if (activeConversation?.teamId) {
+      for (const dept of hierarchy.departments) {
+        const team = dept.teams.find((tm) => tm.id === activeConversation.teamId);
+        if (team) return team;
+      }
+    }
+    if (activeTargetAgent) {
+      for (const dept of hierarchy.departments) {
+        for (const team of dept.teams) {
+          if (
+            team.teamLeadAgent.id === activeTargetAgent.id ||
+            team.hrCoordinatorAgent?.id === activeTargetAgent.id ||
+            team.specialistMembers.some(
+              (m) => m.id === activeTargetAgent.id || m.canonicalAgentId === activeTargetAgent.id
+            )
+          ) {
+            return team;
+          }
+        }
+      }
+    }
+    if (activeProject && activeProject.teamIds && activeProject.teamIds.length > 0) {
+      for (const dept of hierarchy.departments) {
+        const team = dept.teams.find((tm) => activeProject.teamIds.includes(tm.id));
+        if (team) return team;
+      }
+    }
+    return undefined;
+  }, [selectedTeamId, activeConversation?.teamId, activeTargetAgent, activeProject, hierarchy.departments]);
+
+  const activeProjectHead = useMemo(() => {
+    if (!activeProject) return undefined;
+    if (activeTeam?.teamLeadAgent) return activeTeam.teamLeadAgent;
+    if (activeProject.teamIds.length > 0 && activeDept) {
+      const team = activeDept.teams.find((tm) => activeProject.teamIds.includes(tm.id));
+      if (team?.teamLeadAgent) return team.teamLeadAgent;
+    }
+    return activeDept?.departmentCeoAgent || activeDept?.pmAgent;
+  }, [activeProject, activeDept, activeTeam]);
 
   const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
 
@@ -329,6 +356,342 @@ export const OrgChatView: React.FC = () => {
   }, [activeConversation, activeDept, currentTargetAgent.id, hierarchy.rootCeo.ceoAgent.id]);
 
   const isCeoChat = activeChatTarget.type === 'ceo';
+
+  const teamMembers = useMemo<OrgAgentMember[]>(() => {
+    if (!activeTeam) return [];
+    const membersList: OrgAgentMember[] = [];
+    if (activeTeam.teamLeadAgent) {
+      membersList.push({ ...activeTeam.teamLeadAgent, role: activeTeam.teamLeadAgent.role || 'lead' });
+    }
+    if (activeTeam.hrCoordinatorAgent) {
+      membersList.push({ ...activeTeam.hrCoordinatorAgent, role: activeTeam.hrCoordinatorAgent.role || 'hr' });
+    }
+    if (activeTeam.specialistMembers) {
+      for (const spec of activeTeam.specialistMembers) {
+        membersList.push({ ...spec, role: spec.role || 'specialist' });
+      }
+    }
+    return membersList;
+  }, [activeTeam]);
+
+  const [teamViewMode, setTeamViewModeState] = useState<OrgTeamChatViewMode>('parallel');
+  const [activeMemberId, setActiveMemberId] = useState<string>('');
+  const [executingMemberIds, setExecutingMemberIds] = useState<Record<string, boolean>>({});
+  const [memberLiveSteps, setMemberLiveSteps] = useState<Record<string, string | null>>({});
+  const [memberStreaming, setMemberStreaming] = useState<Record<string, string>>({});
+
+  const teamScrollContainerRef = useRef<HTMLDivElement>(null);
+  const memberSlotRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!activeTeam) return;
+    try {
+      const stored = localStorage.getItem(`org-team-view-mode-${activeTeam.id}`);
+      if (stored === 'single') setTeamViewModeState('single');
+      else setTeamViewModeState('parallel');
+    } catch {
+      setTeamViewModeState('parallel');
+    }
+  }, [activeTeam?.id]);
+
+  const setTeamViewMode = useCallback(
+    (mode: OrgTeamChatViewMode) => {
+      setTeamViewModeState(mode);
+      if (activeTeam) {
+        try {
+          localStorage.setItem(`org-team-view-mode-${activeTeam.id}`, mode);
+        } catch {}
+      }
+    },
+    [activeTeam]
+  );
+
+  useEffect(() => {
+    if (activeTargetAgent && teamMembers.some((m) => m.id === activeTargetAgent.id)) {
+      setActiveMemberId(activeTargetAgent.id);
+    } else if (teamMembers.length > 0 && (!activeMemberId || !teamMembers.some((m) => m.id === activeMemberId))) {
+      setActiveMemberId(teamMembers[0].id);
+    }
+  }, [activeTargetAgent, teamMembers, activeMemberId]);
+
+  const activeMemberIdx = teamMembers.findIndex((m) => m.id === activeMemberId);
+  const currentMember = teamMembers[activeMemberIdx] || teamMembers[0];
+  const hasPrev = teamMembers.length > 1 && activeMemberIdx > 0;
+  const hasNext = teamMembers.length > 1 && activeMemberIdx < teamMembers.length - 1;
+
+  const scrollToPrev = useCallback(() => {
+    if (activeMemberIdx > 0) {
+      setActiveMemberId(teamMembers[activeMemberIdx - 1].id);
+    }
+  }, [activeMemberIdx, teamMembers]);
+
+  const scrollToNext = useCallback(() => {
+    if (activeMemberIdx < teamMembers.length - 1) {
+      setActiveMemberId(teamMembers[activeMemberIdx + 1].id);
+    }
+  }, [activeMemberIdx, teamMembers]);
+
+  useEffect(() => {
+    if (!activeTeam || teamMembers.length <= 1) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        scrollToPrev();
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        scrollToNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTeam, teamMembers.length, scrollToPrev, scrollToNext]);
+
+  const handleSelectMemberTab = useCallback(
+    (memberId: string) => {
+      setActiveMemberId(memberId);
+      if (teamViewMode === 'parallel') {
+        memberSlotRefs.current[memberId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    },
+    [teamViewMode]
+  );
+
+  const getMemberConversation = useCallback(
+    (member: OrgAgentMember): OrgConversation => {
+      if (
+        activeConversation &&
+        activeConversation.targetAgentId === member.id &&
+        (activeTeam
+          ? activeConversation.teamId === activeTeam.id || activeConversation.sourceNodeId === activeTeam.id
+          : true)
+      ) {
+        return activeConversation;
+      }
+      const match = conversations.find(
+        (c) =>
+          c.targetAgentId === member.id &&
+          (activeTeam ? c.teamId === activeTeam.id || c.sourceNodeId === activeTeam.id : true)
+      );
+      if (match) return match;
+
+      if (activeTeam && member.id === activeTeam.teamLeadAgent.id) {
+        const teamExec = conversations.find(
+          (c) =>
+            c.teamId === activeTeam.id &&
+            c.type === 'team_execution' &&
+            (!c.targetAgentId || c.targetAgentId === member.id)
+        );
+        if (teamExec) return teamExec;
+      }
+
+      const anyTarget = conversations.find((c) => c.targetAgentId === member.id);
+      if (anyTarget) return anyTarget;
+
+      return {
+        id: `conv-${activeTeam?.id || 'team'}-${member.id}`,
+        title: `${member.name} - Chat`,
+        type: 'agent_direct',
+        sourceNodeId: activeTeam?.id || 'root-ceo',
+        targetNodeId: member.id,
+        teamId: activeTeam?.id,
+        targetAgentId: member.id,
+        targetRole: member.role,
+        targetAgentName: member.name,
+        targetAgentModel: member.model,
+        timestamp: Date.now(),
+        summary: '',
+        messages: [],
+      };
+    },
+    [activeConversation, conversations, activeTeam]
+  );
+
+  const handleSendMemberMessage = useCallback(
+    async (member: OrgAgentMember, promptText: string) => {
+      const prompt = promptText.trim();
+      if (!prompt || executingMemberIds[member.id]) return;
+
+      const conv = getMemberConversation(member);
+      setExecutingMemberIds((prev) => ({ ...prev, [member.id]: true }));
+      setMemberLiveSteps((prev) => ({
+        ...prev,
+        [member.id]: t('team.organization.startingAgent', {
+          defaultValue: 'Starting {{agent}}...',
+          agent: member.name,
+        }),
+      }));
+      setMemberStreaming((prev) => ({ ...prev, [member.id]: '' }));
+      updateNodeStatus(member.id, 'working');
+
+      const userMessage: OrgConversationMessage = {
+        id: `msg-${Date.now()}-u`,
+        sender: 'User',
+        role: 'user',
+        content: prompt,
+        timestamp: Date.now(),
+      };
+
+      const cleanMessages = conv.messages || [];
+      const updatedMessages = [...cleanMessages, userMessage];
+      const interimConversation: OrgConversation = {
+        ...conv,
+        messages: updatedMessages,
+        timestamp: Date.now(),
+      };
+      addOrgConversation(interimConversation);
+
+      const resolvedModel =
+        member.model && member.model.modelId !== 'claude-3-7-sonnet' ? member.model : firstAvailableConfiguredModel;
+
+      const targetAgent: OrgAgentMember = {
+        ...member,
+        model: resolvedModel || member.model,
+        assistant_backend:
+          member.assistant_backend === 'acp' && (!resolvedModel || resolvedModel.modelId !== 'claude-3-7-sonnet')
+            ? 'aionrs'
+            : member.assistant_backend || 'aionrs',
+      };
+
+      const activeWorkspace =
+        activeWorkspacePath ||
+        activeProject?.workspacePath ||
+        activeProject?.path ||
+        activeTeam?.workspacePath ||
+        targetAgent.workspacePath ||
+        hierarchy.rootCeo.workspacePath ||
+        'workspace';
+
+      const systemContext = buildAgentSystemContext({
+        agent: targetAgent,
+        projectName: activeProject?.name,
+        projectGoal: activeProject?.goal || activeProject?.description,
+        workspacePath: activeWorkspace,
+        workspacePaths: activeWorkspacePaths,
+        departmentName: activeDept?.name,
+        roleLabel: targetAgent.title || targetAgent.role,
+      });
+
+      let accumulatedText = '';
+      let finalSynthesis = '';
+      const memberTarget: OrgChatTarget = { type: 'member', id: member.id };
+      const memberAbortController = new AbortController();
+
+      try {
+        const { events } = runAgentTurn({
+          hierarchy,
+          projects,
+          threadId: interimConversation.id,
+          target: memberTarget,
+          userText: prompt,
+          agent: targetAgent,
+          workspacePath: activeWorkspace,
+          systemContext,
+          conversation: interimConversation,
+          isCeo: false,
+          onNodeStatusUpdate: updateNodeStatus,
+          signal: memberAbortController.signal,
+        });
+
+        for await (const event of events) {
+          switch (event.type) {
+            case 'step':
+              if (event.data.step) {
+                const stepStr = `${event.data.step.fromName} -> ${event.data.step.toName}: ${event.data.step.message}`;
+                setMemberLiveSteps((prev) => ({ ...prev, [member.id]: stepStr }));
+              }
+              break;
+            case 'text-delta':
+              if (event.data.text) {
+                accumulatedText += event.data.text;
+                setMemberStreaming((prev) => ({ ...prev, [member.id]: accumulatedText }));
+              }
+              break;
+            case 'created-entities':
+              if (event.data.createdEntities) {
+                const {
+                  departments,
+                  teams,
+                  projects: createdProjects,
+                  members: createdMembers,
+                } = event.data.createdEntities;
+                if (departments?.length) {
+                  for (const d of departments) await addDepartment(d);
+                }
+                if (teams?.length) {
+                  for (const { departmentId, team } of teams) addSubTeam(departmentId, team);
+                }
+                if (createdProjects?.length) {
+                  for (const p of createdProjects) await addOrgProject(p);
+                }
+                if (createdMembers?.length) {
+                  for (const { teamId, member: m } of createdMembers) addTeamMember(teamId, m);
+                }
+              }
+              break;
+            case 'error':
+              throw new Error(event.data.error || 'Unknown error');
+            case 'done':
+              finalSynthesis = event.data.finalSynthesis || accumulatedText;
+              break;
+          }
+        }
+
+        const agentMessage: OrgConversationMessage = {
+          id: `msg-${Date.now()}-a`,
+          sender: targetAgent.name,
+          role: 'assistant',
+          content: finalSynthesis || accumulatedText,
+          timestamp: Date.now(),
+        };
+
+        const finalConversation: OrgConversation = {
+          ...interimConversation,
+          summary: (finalSynthesis || accumulatedText).slice(0, 80),
+          messages: [...updatedMessages, agentMessage],
+          timestamp: Date.now(),
+        };
+        addOrgConversation(finalConversation);
+      } catch (err) {
+        const errorContent = err instanceof Error ? err.message : String(err);
+        const errorMsg: OrgConversationMessage = {
+          id: `msg-${Date.now()}-err`,
+          sender: targetAgent.name,
+          role: 'system',
+          content: `Error: ${errorContent}`,
+          timestamp: Date.now(),
+        };
+        addOrgConversation({
+          ...interimConversation,
+          messages: [...updatedMessages, errorMsg],
+          timestamp: Date.now(),
+        });
+      } finally {
+        setExecutingMemberIds((prev) => ({ ...prev, [member.id]: false }));
+        setMemberLiveSteps((prev) => ({ ...prev, [member.id]: null }));
+        setMemberStreaming((prev) => ({ ...prev, [member.id]: '' }));
+        updateNodeStatus(member.id, 'recently_finished');
+        setTimeout(() => updateNodeStatus(member.id, 'idle'), 3000);
+      }
+    },
+    [
+      executingMemberIds,
+      getMemberConversation,
+      t,
+      updateNodeStatus,
+      addOrgConversation,
+      firstAvailableConfiguredModel,
+      activeWorkspacePath,
+      activeProject,
+      activeTeam,
+      hierarchy.rootCeo.workspacePath,
+      activeWorkspacePaths,
+      activeDept,
+      addDepartment,
+      addSubTeam,
+      addOrgProject,
+      addTeamMember,
+    ]
+  );
 
   // Synchronize inputPrompt with per-thread draft
   const activeThreadId = activeConversation?.id;
@@ -935,6 +1298,164 @@ export const OrgChatView: React.FC = () => {
       : runStatus === 'error'
         ? t('team.organization.statusError', { defaultValue: 'Error' })
         : t('team.organization.statusIdle', { defaultValue: 'Idle' });
+
+  const isTeamChat =
+    !isCeoChat &&
+    !activeProject &&
+    Boolean(activeTeam) &&
+    teamMembers.length > 1 &&
+    (Boolean(selectedTeamId) ||
+      Boolean(activeConversation?.teamId) ||
+      Boolean(
+        activeTargetAgent &&
+        activeTeam &&
+        (activeTeam.teamLeadAgent.id === activeTargetAgent.id ||
+          activeTeam.hrCoordinatorAgent?.id === activeTargetAgent.id ||
+          activeTeam.specialistMembers.some((m) => m.id === activeTargetAgent.id))
+      ));
+
+  if (isTeamChat && activeTeam) {
+    return (
+      <div className='flex flex-col h-full w-full bg-[var(--color-bg-1)] overflow-hidden select-text'>
+        <OrgChatErrorPanel error={openChatError} onDismiss={clearOpenChatError} />
+
+        <OrgTeamChatHeader
+          team={activeTeam}
+          departmentName={activeDept?.name}
+          members={teamMembers}
+          activeMemberId={currentMember?.id || teamMembers[0].id}
+          viewMode={teamViewMode}
+          onChangeViewMode={setTeamViewMode}
+          onSelectMember={handleSelectMemberTab}
+          onOpenFolder={() => void handleOpenWorkspaceFolder()}
+          workspacePath={activeWorkspacePath}
+          onNewConversation={handleNewConversation}
+        />
+
+        <div className='relative flex flex-1 h-full w-full overflow-hidden min-h-0'>
+          {teamViewMode === 'single' ? (
+            <div className='relative flex-1 h-full w-full min-w-0'>
+              {hasPrev && (
+                <Tooltip
+                  content={`${t('team.prevMember', { defaultValue: 'Previous member' })} (Alt+←)`}
+                  position='right'
+                >
+                  <div
+                    className='absolute start-0 top-0 bottom-0 w-48px z-20 flex items-center justify-center cursor-pointer group select-none'
+                    style={{ background: 'linear-gradient(90deg, var(--color-bg-1) 40%, transparent)' }}
+                    onClick={scrollToPrev}
+                  >
+                    <div className='w-32px h-32px rounded-full flex items-center justify-center transition-transform duration-150 group-hover:scale-110 bg-[var(--color-bg-3)] border border-[var(--color-border-2)] text-t-primary shadow-sm'>
+                      <Left size={18} theme='outline' fill='currentColor' />
+                    </div>
+                  </div>
+                </Tooltip>
+              )}
+
+              {teamMembers.map((member) => {
+                const isCurrent = member.id === currentMember?.id;
+                const isLeader = member.id === activeTeam.teamLeadAgent.id;
+                const isHr = member.id === activeTeam.hrCoordinatorAgent?.id;
+                const conv = getMemberConversation(member);
+
+                return (
+                  <div
+                    key={member.id}
+                    className='h-full w-full flex flex-col min-w-0'
+                    style={{ display: isCurrent ? 'flex' : 'none' }}
+                  >
+                    <OrgTeamChatSlot
+                      member={member}
+                      team={activeTeam}
+                      departmentName={activeDept?.name}
+                      conversation={conv}
+                      isLeader={isLeader}
+                      isHr={isHr}
+                      isFullscreen={true}
+                      isExecuting={Boolean(executingMemberIds[member.id])}
+                      liveStepText={memberLiveSteps[member.id]}
+                      streamingContent={memberStreaming[member.id]}
+                      onToggleFullscreen={() => setTeamViewMode('parallel')}
+                      onSendMessage={(text) => handleSendMemberMessage(member, text)}
+                      onSelectModel={(model) => updateAgentModel(member.id, model)}
+                      onSelectCreatedEntity={handleSelectCreatedEntity}
+                    />
+                  </div>
+                );
+              })}
+
+              {hasNext && (
+                <Tooltip content={`${t('team.nextMember', { defaultValue: 'Next member' })} (Alt+→)`} position='left'>
+                  <div
+                    className='absolute end-0 top-0 bottom-0 w-48px z-20 flex items-center justify-center cursor-pointer group select-none'
+                    style={{ background: 'linear-gradient(270deg, var(--color-bg-1) 40%, transparent)' }}
+                    onClick={scrollToNext}
+                  >
+                    <div className='w-32px h-32px rounded-full flex items-center justify-center transition-transform duration-150 group-hover:scale-110 bg-[var(--color-bg-3)] border border-[var(--color-border-2)] text-t-primary shadow-sm'>
+                      <Right size={18} theme='outline' fill='currentColor' />
+                    </div>
+                  </div>
+                </Tooltip>
+              )}
+            </div>
+          ) : (
+            <div
+              ref={teamScrollContainerRef}
+              className='flex h-full w-full overflow-x-auto overflow-y-hidden [scrollbar-width:thin]'
+              style={{ scrollSnapType: 'x proximity' }}
+            >
+              {teamMembers.map((member, index) => {
+                const isLeader = member.id === activeTeam.teamLeadAgent.id;
+                const isHr = member.id === activeTeam.hrCoordinatorAgent?.id;
+                const isLast = index === teamMembers.length - 1;
+                const conv = getMemberConversation(member);
+
+                return (
+                  <div
+                    key={member.id}
+                    ref={(el) => {
+                      memberSlotRefs.current[member.id] = el;
+                    }}
+                    data-slot-id={member.id}
+                    className={classNames('relative h-full flex flex-col', {
+                      'border-r border-[var(--color-border-2)]': !isLast,
+                    })}
+                    style={{
+                      flex: '1 1 380px',
+                      minWidth: teamMembers.length <= 2 ? '300px' : '380px',
+                      scrollSnapAlign: 'start',
+                    }}
+                  >
+                    <OrgTeamChatSlot
+                      member={member}
+                      team={activeTeam}
+                      departmentName={activeDept?.name}
+                      conversation={conv}
+                      isLeader={isLeader}
+                      isHr={isHr}
+                      isFullscreen={false}
+                      isExecuting={Boolean(executingMemberIds[member.id])}
+                      liveStepText={memberLiveSteps[member.id]}
+                      streamingContent={memberStreaming[member.id]}
+                      onToggleFullscreen={() => {
+                        setActiveMemberId(member.id);
+                        setTeamViewMode('single');
+                      }}
+                      onSendMessage={(text) => handleSendMemberMessage(member, text)}
+                      onSelectModel={(model) => updateAgentModel(member.id, model)}
+                      onSelectCreatedEntity={handleSelectCreatedEntity}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <OrgMasterFolderModal visible={isMasterModalOpen} onClose={() => setIsMasterModalOpen(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className='flex flex-col h-full w-full bg-[var(--color-bg-1)] overflow-hidden select-text'>

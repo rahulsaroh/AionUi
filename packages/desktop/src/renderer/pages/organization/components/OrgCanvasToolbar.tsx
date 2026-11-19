@@ -155,146 +155,158 @@ export const OrgCanvasToolbar: React.FC<OrgCanvasToolbarProps> = ({
   );
 
   return (
-    <div className='absolute bottom-20px left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-8px select-none pointer-events-auto'>
-      <div className='flex flex-wrap items-center gap-6px bg-[var(--color-bg-2)]/95 backdrop-blur-md px-12px py-8px rounded-12px border border-solid border-[var(--color-border-2)] shadow-2xl max-w-[calc(100vw-260px)]'>
-        {/* Back to Chat button */}
-        <Button
-          size='small'
-          type='primary'
-          icon={<MessageOne size={13} theme='outline' />}
-          onClick={() => setOrgViewMode('chat')}
-          className='text-12px font-medium'
-        >
-          💬 Chat View
-        </Button>
-
-        <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
-
-        {/* View controls */}
-        <div className='flex items-center gap-6px pr-8px border-r border-[var(--color-border-2)]'>
-          <span className='size-22px rounded-6px bg-primary-light-1 text-primary flex items-center justify-center'>
-            <NetworkTree size={14} theme='outline' fill='currentColor' />
-          </span>
-          <span className='font-bold text-13px text-t-primary'>2D Org Command Center</span>
+    <div className='absolute bottom-20px left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-8px select-none pointer-events-auto w-[min(960px,calc(100vw-24px))]'>
+      <div className='overflow-hidden rounded-20px border border-solid border-primary/60 bg-[var(--color-bg-2)]/95 shadow-2xl backdrop-blur-md'>
+        <div className='flex items-center justify-between gap-12px px-18px py-14px border-b border-[var(--color-border-2)] bg-gradient-to-r from-primary-light-1/60 via-transparent to-primary-light-1/30'>
+          <div className='flex min-w-0 items-center gap-10px'>
+            <span className='size-42px shrink-0 rounded-12px bg-primary-light-1 text-primary flex items-center justify-center'>
+              <NetworkTree size={25} theme='outline' fill='currentColor' />
+            </span>
+            <div className='min-w-0'>
+              <div className='font-bold text-20px leading-tight text-t-primary'>2D Org Command Center</div>
+              <div className='mt-2px text-12px text-t-secondary'>Visualize · Plan · Organize</div>
+            </div>
+          </div>
+          <div className='hidden lg:flex items-center gap-6px rounded-full border border-[var(--color-border-2)] px-10px py-5px text-12px font-medium text-primary'>
+            <span className='size-7px rounded-full bg-primary animate-pulse' /> Ready
+          </div>
         </div>
-
-        <div className='flex items-center gap-6px'>
-          <Tooltip
-            content={direction === 'TB' ? 'Switch to Horizontal (LR)' : 'Switch to Vertical (TB)'}
-            position='bottom'
+        <div className='flex flex-wrap items-center gap-8px px-16px py-12px'>
+          {/* Back to Chat button */}
+          <Button
+            size='small'
+            type='primary'
+            icon={<MessageOne size={13} theme='outline' />}
+            onClick={() => setOrgViewMode('chat')}
+            className='text-12px font-medium'
           >
-            <Button size='small' type='secondary' onClick={onToggleDirection} className='text-12px'>
-              {direction === 'TB' ? 'Vertical (TB)' : 'Horizontal (LR)'}
-            </Button>
-          </Tooltip>
+            Chat View
+          </Button>
 
-          <Tooltip content='Fit Viewport to content' position='bottom'>
-            <Button size='small' type='secondary' icon={<FullScreen size={13} />} onClick={onFitView}>
-              Fit View
-            </Button>
-          </Tooltip>
+          <Button size='small' type='secondary' icon={<NetworkTree size={13} />} className='text-12px'>
+            2D Org View
+          </Button>
 
-          <Tooltip content={isAllExpanded ? 'Collapse All Branches' : 'Expand All Branches'} position='bottom'>
-            <Button size='small' type='secondary' onClick={onToggleExpandAll} className='text-12px'>
-              {isAllExpanded ? 'Collapse All' : 'Expand All'}
-            </Button>
-          </Tooltip>
-        </div>
+          <div className='flex items-center gap-6px'>
+            <Tooltip
+              content={direction === 'TB' ? 'Switch to Horizontal (LR)' : 'Switch to Vertical (TB)'}
+              position='bottom'
+            >
+              <Button size='small' type='secondary' onClick={onToggleDirection} className='text-12px'>
+                {direction === 'TB' ? 'Vertical (TB)' : 'Horizontal (LR)'}
+              </Button>
+            </Tooltip>
 
-        <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
+            <Tooltip content='Fit Viewport to content' position='bottom'>
+              <Button size='small' type='secondary' icon={<FullScreen size={13} />} onClick={onFitView}>
+                Fit View
+              </Button>
+            </Tooltip>
 
-        {/* Canvas Filter Chips: All / Active / Dormant / Shared */}
-        <div className='flex items-center gap-2px bg-fill-2 p-2px rounded-8px border border-[var(--color-border-2)]'>
-          {(['all', 'active', 'dormant', 'shared'] as const).map((filterKey) => {
-            const isSelected = activeFilter === filterKey;
-            return (
-              <button
-                key={filterKey}
-                type='button'
-                onClick={() => setActiveFilter(filterKey)}
-                className={`px-8px py-3px rounded-6px text-11px font-medium capitalize transition-all border-none cursor-pointer select-none ${
-                  isSelected
-                    ? '!bg-primary !text-white shadow-xs font-semibold'
-                    : '!bg-transparent !text-t-secondary hover:!text-t-primary hover:!bg-fill-3'
-                }`}
-              >
-                {filterKey}
-              </button>
-            );
-          })}
-        </div>
+            <Tooltip content={isAllExpanded ? 'Collapse All Branches' : 'Expand All Branches'} position='bottom'>
+              <Button size='small' type='secondary' onClick={onToggleExpandAll} className='text-12px'>
+                {isAllExpanded ? 'Collapse All' : 'Expand All'}
+              </Button>
+            </Tooltip>
+          </div>
 
-        <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
+          <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
 
-        {/* Organization actions */}
-        <div className='flex items-center gap-6px pr-8px border-r border-[var(--color-border-2)]'>
-          <Tooltip content={t('team.organization.addDepartment', { defaultValue: 'Add Department' })} position='bottom'>
-            <Button size='small' type='outline' icon={<Plus size={13} />} onClick={onNewRootDepartment}>
-              {t('team.organization.addDepartment', { defaultValue: 'Add Department' })}
-            </Button>
-          </Tooltip>
+          {/* Canvas Filter Chips: All / Active / Dormant / Shared */}
+          <div className='flex items-center gap-2px bg-fill-2 p-2px rounded-8px border border-[var(--color-border-2)]'>
+            {(['all', 'active', 'dormant', 'shared'] as const).map((filterKey) => {
+              const isSelected = activeFilter === filterKey;
+              return (
+                <Button
+                  key={filterKey}
+                  size='mini'
+                  type={isSelected ? 'primary' : 'text'}
+                  onClick={() => setActiveFilter(filterKey)}
+                  className={`!px-8px !py-3px !rounded-6px text-11px font-medium capitalize ${
+                    isSelected ? 'shadow-xs font-semibold' : '!text-t-secondary hover:!text-t-primary hover:!bg-fill-3'
+                  }`}
+                >
+                  {filterKey}
+                </Button>
+              );
+            })}
+          </div>
 
-          <Tooltip content={t('team.organization.addProject', { defaultValue: 'Add Project' })} position='bottom'>
-            <Button size='small' type='outline' icon={<FolderPlus size={13} />} onClick={onNewProject}>
-              {t('team.organization.addProject', { defaultValue: 'Add Project' })}
-            </Button>
-          </Tooltip>
+          <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
 
-          <Tooltip content='Import / Export Org Seed JSON' position='bottom'>
-            <Button size='small' type='text' icon={<Upload size={13} />} onClick={onOpenSeedModal} />
-          </Tooltip>
-        </div>
+          {/* Organization actions */}
+          <div className='flex items-center gap-6px pr-8px border-r border-[var(--color-border-2)]'>
+            <Tooltip
+              content={t('team.organization.addDepartment', { defaultValue: 'Add Department' })}
+              position='bottom'
+            >
+              <Button size='small' type='outline' icon={<Plus size={13} />} onClick={onNewRootDepartment}>
+                {t('team.organization.addDepartment', { defaultValue: 'Add Department' })}
+              </Button>
+            </Tooltip>
 
-        <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
+            <Tooltip content={t('team.organization.addProject', { defaultValue: 'Add Project' })} position='bottom'>
+              <Button size='small' type='outline' icon={<FolderPlus size={13} />} onClick={onNewProject}>
+                {t('team.organization.addProject', { defaultValue: 'Add Project' })}
+              </Button>
+            </Tooltip>
 
-        {/* Dev Status Simulation Control (Gated to development builds only) */}
-        <div className='flex items-center gap-6px'>
-          {import.meta.env.DEV && (
-            <Dropdown droplist={simulationMenu} position='top'>
+            <Tooltip content='Import / Export Org Seed JSON' position='bottom'>
+              <Button size='small' type='text' icon={<Upload size={13} />} onClick={onOpenSeedModal} />
+            </Tooltip>
+          </div>
+
+          <div className='h-16px w-1px bg-[var(--color-border-2)] mx-2px' />
+
+          {/* Dev Status Simulation Control (Gated to development builds only) */}
+          <div className='flex items-center gap-6px'>
+            {import.meta.env.DEV && (
+              <Dropdown droplist={simulationMenu} position='top'>
+                <Button
+                  size='small'
+                  type='outline'
+                  className='text-12px !text-cyan-400 !border-cyan-500/50 hover:!bg-cyan-950/40 font-mono'
+                  icon={<Lightning size={13} theme='outline' />}
+                >
+                  Simulate Glow
+                </Button>
+              </Dropdown>
+            )}
+
+            <Tooltip content='Demo autonomous delegation flow' position='bottom'>
               <Button
                 size='small'
-                type='outline'
-                className='text-12px !text-cyan-400 !border-cyan-500/50 hover:!bg-cyan-950/40 font-mono'
-                icon={<Lightning size={13} theme='outline' />}
+                type='primary'
+                loading={isSimulating}
+                className='!bg-emerald-600 hover:!bg-emerald-500 !border-none !font-medium !text-12px shadow-sm'
+                icon={<Play size={12} theme='outline' />}
+                onClick={() => void runSimulation()}
               >
-                Simulate Glow
+                {isSimulating ? `Step ${simulationStep}/4...` : 'Demo Tour'}
               </Button>
-            </Dropdown>
-          )}
+            </Tooltip>
 
-          <Tooltip content='Demo autonomous delegation flow' position='bottom'>
-            <Button
-              size='small'
-              type='primary'
-              loading={isSimulating}
-              className='!bg-emerald-600 hover:!bg-emerald-500 !border-none !font-medium !text-12px shadow-sm'
-              icon={<Play size={12} theme='outline' />}
-              onClick={() => void runSimulation()}
-            >
-              {isSimulating ? `Step ${simulationStep}/4...` : 'Demo Tour'}
-            </Button>
-          </Tooltip>
-
-          <Tooltip content='Clear organization data and return to a blank canvas' position='bottom'>
-            <Button
-              size='small'
-              type='secondary'
-              icon={<Refresh size={13} />}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    'Are you sure you want to reset the organization to a blank canvas (Root CEO only)? All departments and custom projects will be reset.'
+            <Tooltip content='Clear organization data and return to a blank canvas' position='bottom'>
+              <Button
+                size='small'
+                type='secondary'
+                icon={<Refresh size={13} />}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      'Are you sure you want to reset the organization to a blank canvas (Root CEO only)? All departments and custom projects will be reset.'
+                    )
                   )
-                )
-                  return;
-                resetToDefault();
-                setTimeout(onFitView, 100);
-              }}
-              className='text-12px'
-            >
-              Reset
-            </Button>
-          </Tooltip>
+                    return;
+                  resetToDefault();
+                  setTimeout(onFitView, 100);
+                }}
+                className='text-12px'
+              >
+                Reset
+              </Button>
+            </Tooltip>
+          </div>
         </div>
       </div>
 

@@ -65,26 +65,26 @@ describe('orgCheckpoint: git stash-based checkpoint/undo', () => {
     expect(res.checkpointId).toMatch(/^org-checkpoint-p1-\d+$/);
   });
 
-it('undoes the last checkpoint restoring previous state', async () => {
+  it('undoes the last checkpoint restoring previous state', async () => {
     const { spawnSync } = require('node:child_process');
     // Setup: commit v1
     fs.writeFileSync(path.join(projectDir, 'file1.txt'), 'v1');
     spawnSync('git', ['add', 'file1.txt'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['commit', '-m', 'add file1 v1'], { cwd: projectDir, stdio: 'ignore' });
-    
+
     // Before task runs, create checkpoint (saves v1 state)
     const cp = await createCheckpoint(projectDir, 'p1');
     expect(cp.success).toBe(true);
-    
+
     // Task runs and modifies file to v2
     fs.writeFileSync(path.join(projectDir, 'file1.txt'), 'v2');
     expect(fs.readFileSync(path.join(projectDir, 'file1.txt'), 'utf8')).toBe('v2');
-    
+
     // Undo - restores checkpoint state (v1)
     const undo = await undoCheckpoint(projectDir, 'p1');
     expect(undo.success).toBe(true);
     expect(undo.message).toContain('Restored checkpoint');
-    
+
     // File should be back to v1
     expect(fs.readFileSync(path.join(projectDir, 'file1.txt'), 'utf8')).toBe('v1');
   });
@@ -95,20 +95,20 @@ it('undoes the last checkpoint restoring previous state', async () => {
     expect(undo.error).toContain('No org checkpoint found');
   });
 
-it('lists checkpoints for a project', async () => {
+  it('lists checkpoints for a project', async () => {
     fs.writeFileSync(path.join(projectDir, 'a.txt'), 'a');
     const { spawnSync } = require('node:child_process');
     spawnSync('git', ['add', 'a.txt'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['commit', '-m', 'add a'], { cwd: projectDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(projectDir, 'a.txt'), 'a2');
     await createCheckpoint(projectDir, 'p1');
-    
+
     fs.writeFileSync(path.join(projectDir, 'b.txt'), 'b');
     spawnSync('git', ['add', 'b.txt'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['commit', '-m', 'add b'], { cwd: projectDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(projectDir, 'b.txt'), 'b2');
     await createCheckpoint(projectDir, 'p1');
-    
+
     const list = await listCheckpoints(projectDir, 'p1');
     expect(list.length).toBe(2);
     expect(list[0]).toContain('org-checkpoint-p1-');
@@ -121,16 +121,16 @@ it('lists checkpoints for a project', async () => {
     spawnSync('git', ['commit', '-m', 'add a'], { cwd: projectDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(projectDir, 'a.txt'), 'a2');
     await createCheckpoint(projectDir, 'p1');
-    
+
     fs.writeFileSync(path.join(projectDir, 'b.txt'), 'b');
     spawnSync('git', ['add', 'b.txt'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['commit', '-m', 'add b'], { cwd: projectDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(projectDir, 'b.txt'), 'b2');
     await createCheckpoint(projectDir, 'p1');
-    
+
     const cleared = await clearCheckpoints(projectDir, 'p1');
     expect(cleared).toBe(2);
-    
+
     const list = await listCheckpoints(projectDir, 'p1');
     expect(list.length).toBe(0);
   });

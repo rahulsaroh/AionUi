@@ -169,11 +169,9 @@ describe('orgExecution: jailed shell/file tools with policy + audit', () => {
 
   it('audit records a successful command', async () => {
     const masterRoot = path.join(tempRoot, 'org');
-    await executeRunShell(
-      { command: process.platform === 'win32' ? 'Write-Output done' : 'echo done' },
-      ctxFull(),
-      { masterRoot }
-    );
+    await executeRunShell({ command: process.platform === 'win32' ? 'Write-Output done' : 'echo done' }, ctxFull(), {
+      masterRoot,
+    });
     const entries = readAuditLog(masterRoot, 'p1');
     expect(entries.some((e) => e.kind === 'command' && e.exitCode === 0)).toBe(true);
   });

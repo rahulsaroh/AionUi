@@ -6,8 +6,8 @@
 
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Tag, Tooltip } from '@arco-design/web-react';
-import { Workbench } from '@icon-park/react';
+import { Button, Tag, Tooltip } from '@arco-design/web-react';
+import { Down, Right, Workbench } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import type { OrgTeamNode, OrgNodeStatus } from '@/types/organization';
 import { ORG_THEME_PALETTE, computeLifecycleStatus, TIER_NEON_THEMES } from '../utils/orgTheme';
@@ -21,6 +21,8 @@ export interface TeamNodeData {
   sharedCountsMap?: Record<string, number>;
   isDescendantWorking?: boolean;
   isDimmed?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: (teamId: string) => void;
   onSelectNode?: (nodeId: string, nodeType: 'team') => void;
   onSelectMember?: (memberId: string) => void;
 }
@@ -33,6 +35,8 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
     orientation = 'TB',
     sharedCountsMap = {},
     isDescendantWorking,
+    isCollapsed = false,
+    onToggleCollapse,
     onSelectNode,
     onSelectMember,
   } = data;
@@ -112,54 +116,82 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
             <span className='text-emerald-400 font-mono text-9px'>LEAD:</span>
             <span className='font-medium text-slate-200 truncate'>{team.teamLeadAgent.name}</span>
           </div>
-          <span className='text-slate-400 text-8px font-mono shrink-0'>
-            {team.hrCoordinatorAgent ? `HR: ${team.hrCoordinatorAgent.name.split(' ')[0]}` : ''}
-          </span>
-        </div>
-
-        {/* Members Avatar Row (Up to 3 avatars + +N badge) */}
-        <div className='flex items-center gap-5px flex-wrap pt-2px'>
-          {allMembers.length === 0 ? (
-            <span className='text-9px text-slate-500 italic'>No specialists assigned</span>
-          ) : (
-            <>
-              {visibleMembers.map((spec) => (
-                <AgentMemberPill
-                  key={spec.id}
-                  member={spec}
-                  currentDepartmentName={departmentName}
-                  sharedCount={sharedCountsMap[spec.canonicalAgentId] || 1}
-                  variant='chip'
-                  onHover={(id) => setHoveredCanonicalAgentId(id)}
-                  onClick={(id) => {
-                    setSelectedCanonicalAgentId(id);
-                    onSelectMember?.(spec.id);
-                  }}
-                />
-              ))}
-
-              {overflowMembers.length > 0 && (
-                <Tooltip
-                  content={
-                    <div className='flex flex-col gap-2px text-10px'>
-                      <span className='font-semibold text-slate-200'>Additional Specialists:</span>
-                      {overflowMembers.map((m) => (
-                        <span key={m.id} className='text-slate-400'>
-                          • {m.name} ({m.title || m.role})
-                        </span>
-                      ))}
-                    </div>
-                  }
-                  position='top'
-                >
-                  <span className='px-6px py-2px rounded-full bg-slate-800 border border-slate-700 text-emerald-300 font-mono text-9px cursor-pointer hover:border-emerald-500/50 transition-colors select-none'>
-                    +{overflowMembers.length}
-                  </span>
-                </Tooltip>
-              )}
-            </>
+          {team.hrCoordinatorAgent && (
+            <span
+              className='text-slate-400 text-8px font-mono shrink-0 hover:text-blue-300 transition-colors cursor-pointer'
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectMember?.(team.hrCoordinatorAgent!.id);
+              }}
+              title={team.hrCoordinatorAgent.name}
+            >
+              {`HR: ${team.hrCoordinatorAgent.name.split(' ')[0]}`}
+            </span>
           )}
         </div>
+
+        {allMembers.length > 0 && onToggleCollapse && (
+          <div className='flex justify-end'>
+            <Tooltip content={isCollapsed ? 'Show team members' : 'Hide team members'}>
+              <Button
+                size='mini'
+                type='text'
+                icon={isCollapsed ? <Right size={12} /> : <Down size={12} />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleCollapse(team.id);
+                }}
+                className='!p-2px !text-slate-400 hover:!text-slate-200'
+              />
+            </Tooltip>
+          </div>
+        )}
+
+        {/* Members Avatar Row (Up to 3 avatars + +N badge) */}
+        {!isCollapsed && (
+          <div className='flex items-center gap-5px flex-wrap pt-2px'>
+            {allMembers.length === 0 ? (
+              <span className='text-9px text-slate-500 italic'>No specialists assigned</span>
+            ) : (
+              <>
+                {visibleMembers.map((spec) => (
+                  <AgentMemberPill
+                    key={spec.id}
+                    member={spec}
+                    currentDepartmentName={departmentName}
+                    sharedCount={sharedCountsMap[spec.canonicalAgentId] || 1}
+                    variant='chip'
+                    onHover={(id) => setHoveredCanonicalAgentId(id)}
+                    onClick={(id) => {
+                      setSelectedCanonicalAgentId(id);
+                      onSelectMember?.(spec.id);
+                    }}
+                  />
+                ))}
+
+                {overflowMembers.length > 0 && (
+                  <Tooltip
+                    content={
+                      <div className='flex flex-col gap-2px text-10px'>
+                        <span className='font-semibold text-slate-200'>Additional Specialists:</span>
+                        {overflowMembers.map((m) => (
+                          <span key={m.id} className='text-slate-400'>
+                            • {m.name} ({m.title || m.role})
+                          </span>
+                        ))}
+                      </div>
+                    }
+                    position='top'
+                  >
+                    <span className='px-6px py-2px rounded-full bg-slate-800 border border-slate-700 text-emerald-300 font-mono text-9px cursor-pointer hover:border-emerald-500/50 transition-colors select-none'>
+                      +{overflowMembers.length}
+                    </span>
+                  </Tooltip>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <Handle
@@ -188,6 +220,7 @@ export function areTeamPropsEqual(
   const n = next.data;
   if (p.isDimmed !== n.isDimmed) return false;
   if (p.isDescendantWorking !== n.isDescendantWorking) return false;
+  if (p.isCollapsed !== n.isCollapsed) return false;
   if (p.orientation !== n.orientation) return false;
   if (p.departmentName !== n.departmentName) return false;
   if (p.sharedCountsMap !== n.sharedCountsMap) return false;

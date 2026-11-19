@@ -117,7 +117,7 @@ describe('runAgentTurn', () => {
     for await (const ev of result.events) events.push(ev);
     expect(mocks.runCeoTurnMock).toHaveBeenCalledWith(
       't1',
-      'hello',
+      expect.stringMatching(/Organization Directory[\s\S]*hello$/),
       expect.objectContaining({ conversationId: 'backend-conv-123' })
     );
   });

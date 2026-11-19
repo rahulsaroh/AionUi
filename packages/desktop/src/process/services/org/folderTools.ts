@@ -668,7 +668,7 @@ export class OrgFolderTools {
         });
         reject(err);
       });
-child.on('close', (code) => {
+      child.on('close', (code) => {
         clearTimeout(timer);
         const exitCode = code ?? (timedOut ? 124 : 1);
         recordShellExecution({

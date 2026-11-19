@@ -60,14 +60,16 @@ function logFile(masterRoot: string, projectId: string): string {
 /** Defensive secret redaction for any string that may be persisted. */
 export function redactSecrets(text: string): string {
   if (!text) return text;
-  return text
-    // KEY=value / TOKEN: value / password=... style assignments
-    .replace(
-      /((?:api[_-]?key|secret|token|password|passwd|pwd|credential|access[_-]?key)\s*[:=]\s*)(\S+)/gi,
-      (_m, p1: string) => `${p1}[REDACTED]`
-    )
-    // Bearer tokens
-    .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]');
+  return (
+    text
+      // KEY=value / TOKEN: value / password=... style assignments
+      .replace(
+        /((?:api[_-]?key|secret|token|password|passwd|pwd|credential|access[_-]?key)\s*[:=]\s*)(\S+)/gi,
+        (_m, p1: string) => `${p1}[REDACTED]`
+      )
+      // Bearer tokens
+      .replace(/\bBearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+  );
 }
 
 export function sanitizeAuditEntry(entry: OrgAuditEntry): OrgAuditEntry {

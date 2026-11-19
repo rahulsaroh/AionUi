@@ -128,10 +128,11 @@ const extractPathsFromTool = (
       (typeof args?.filename === 'string' && args.filename);
 
     if (p) {
+      const path = normalizeActivityPath(p);
       return {
-        paths: [normalizeActivityPath(p)],
+        paths: [path],
         tone: 'write',
-        label: `Editing ${p.split('/').pop() || p}`,
+        label: `Editing: ${path}`,
       };
     }
   }
@@ -154,10 +155,11 @@ const extractPathsFromTool = (
       (typeof args?.filename === 'string' && args.filename);
 
     if (p) {
+      const path = normalizeActivityPath(p);
       return {
-        paths: [normalizeActivityPath(p)],
+        paths: [path],
         tone: 'read',
-        label: `Reading ${p.split('/').pop() || p}`,
+        label: `Reading: ${path}`,
       };
     }
   }

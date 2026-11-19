@@ -45,10 +45,11 @@ function getCheckpointPath(projectFolder: string, checkpointId: string): string 
 function listCheckpointIds(projectFolder: string, projectId: string): string[] {
   const root = getCheckpointRoot(projectFolder);
   if (!fs.existsSync(root)) return [];
-  return fs.readdirSync(root)
+  return fs
+    .readdirSync(root)
     .filter((name) => name.startsWith(`${CHECKPOINT_PREFIX}${projectId}-`))
-    .sort()
-    .reverse(); // most recent first
+    .toSorted()
+    .toReversed(); // most recent first
 }
 
 /**
@@ -100,20 +101,17 @@ export async function undoCheckpoint(projectFolder: string, projectId: string): 
     if (ids.length === 0) {
       return { success: false, error: 'No org checkpoint found for this project' };
     }
-    
+
     const latestId = ids[0];
     const checkpointPath = getCheckpointPath(projectFolder, latestId);
-    
+
     if (!fs.existsSync(checkpointPath)) {
       return { success: false, error: 'Checkpoint data not found' };
     }
-    
+
     // Restore from checkpoint (overwrite project files)
-    copyFolderSync(checkpointPath, projectFolder, [
-      '.git',
-      CHECKPOINT_DIR_NAME,
-    ]);
-    
+    copyFolderSync(checkpointPath, projectFolder, ['.git', CHECKPOINT_DIR_NAME]);
+
     return { success: true, message: `Restored checkpoint ${latestId}` };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -147,9 +145,9 @@ export async function clearCheckpoints(projectFolder: string, projectId: string)
 
 function copyFolderSync(src: string, dest: string, excludeDirs: string[] = []): void {
   if (!fs.existsSync(src)) return;
-  
+
   const entries = fs.readdirSync(src, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     if (entry.isDirectory()) {
       if (excludeDirs.includes(entry.name)) continue;

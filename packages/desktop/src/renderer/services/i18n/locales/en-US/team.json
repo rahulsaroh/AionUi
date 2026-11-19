@@ -126,6 +126,7 @@
     "communicatingWithProjectLead": "Communicating with {{agent}} for {{project}} [Model: {{model}}]...",
     "communicatingWithTeamLead": "Communicating with {{agent}} ({{team}}) [Model: {{model}}]...",
     "communicatingWithAgent": "Communicating with {{agent}} [Model: {{model}}]...",
+    "startingAgent": "Starting {{agent}} [Model: {{model}}]...",
     "evaluatingDirective": "Evaluating directive at Global Executive HQ...",
     "consultingCeo": "Consulting Root CEO {{agent}}...",
     "delegating": "Delegating...",

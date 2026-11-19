@@ -20,6 +20,7 @@ import {
   type ApprovalRequest,
 } from '@process/services/org/orgExecution';
 import { normalizeApprovalPolicy } from '@process/services/org/orgApprovalPolicy';
+import { readOrgDirectory } from '@process/services/org/orgDirectory';
 
 const EXECUTION_TOOLS = new Set(['list_dir', 'read_file', 'write_file', 'run_shell']);
 
@@ -28,6 +29,7 @@ const TOOL_REQUIRED_ROLE: Record<string, string> = {
   propose_structure: 'Root CEO',
   scan_folder: 'Department Head',
   hire_member: 'Department Head or Team Lead',
+  create_team: 'Root CEO, Department Head, or Team Lead',
 };
 
 export type OrgRole = 'ceo' | 'department_head' | 'team_lead' | 'project_head';
@@ -262,10 +264,13 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
     const allowed = new Set([
       'scan_folder',
       'create_project',
+      'create_team',
       'hire_member',
       'assign_member',
       'assign_task',
       'list_org',
+      'find_owner',
+      'get_org_directory',
       'get_status',
       'get_project_status',
       'list_project_tasks',
@@ -281,7 +286,10 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
   } else if (role === 'team_lead') {
     const allowed = new Set([
       'list_org',
+      'find_owner',
+      'get_org_directory',
       'create_project',
+      'create_team',
       'hire_member',
       'assign_member',
       'assign_task',
@@ -302,6 +310,8 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'get_project_status',
       'list_project_tasks',
       'list_org',
+      'find_owner',
+      'get_org_directory',
       'ask_user',
       // Process-side execution tools (jailed + policy-gated + audited):
       'list_dir',
@@ -316,6 +326,20 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
         error: `Access denied: Project Head role is not permitted to execute "${tool}". ${requiredRole ? `Only the ${requiredRole} can do this.` : ''}`,
       };
     }
+  }
+
+  // Read-only access to the persisted Organization Directory document.
+  if (tool === 'get_org_directory') {
+    const directory = await readOrgDirectory();
+    if (!directory) {
+      return {
+        success: false,
+        error:
+          'Organization Directory has not been generated yet. Visit the Organization canvas or refresh the organization to create it.',
+      };
+    }
+    broadcastOrgLiveStep({ step: 'Reading Organization Directory', tool, args });
+    return { success: true, result: { content: directory.content, path: directory.path } };
   }
 
   // 2. Folder boundaries enforcement
@@ -382,7 +406,8 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
     tool !== 'ask_user' &&
     tool !== 'get_status' &&
     tool !== 'get_project_status' &&
-    tool !== 'list_project_tasks'
+    tool !== 'list_project_tasks' &&
+    tool !== 'find_owner'
   ) {
     return {
       success: false,

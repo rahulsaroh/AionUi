@@ -91,10 +91,12 @@ describe('OrgDelegationEngine responseStream handling', () => {
 
     const result = await stepPromise;
     expect(result).not.toContain('The installed claude is newer');
-    expect(result).toBe(
-      'The agent finished without producing a reply. Check the model/provider settings and the org MCP server.'
-    );
-    expect(streamUpdates).toHaveLength(0);
+    expect(result).toContain('The agent finished without producing a reply');
+    expect(result).toContain('model: test-model');
+    expect(result).toContain('provider: test-prov');
+    // streamUpdates now receives the "Starting agent..." notice
+    expect(streamUpdates.length).toBeGreaterThanOrEqual(1);
+    expect(streamUpdates[0]).toContain('Starting agent');
   });
 
   it('returns real content message when received', async () => {
@@ -142,8 +144,12 @@ describe('OrgDelegationEngine responseStream handling', () => {
     });
 
     const result = await stepPromise;
-    expect(result).toBe('Folder analysis complete: 3 subfolders found.');
-    expect(streamUpdates).toEqual(['Folder analysis complete: 3 subfolders found.']);
+    expect(result).toContain('Folder analysis complete: 3 subfolders found.');
+    expect(result).toContain('Starting agent');
+    // streamUpdates now includes the starting notice + the content
+    expect(streamUpdates.length).toBeGreaterThanOrEqual(2);
+    expect(streamUpdates[0]).toContain('Starting agent');
+    expect(streamUpdates[1]).toBe('Folder analysis complete: 3 subfolders found.');
   });
 
   it('surfaces inference error and finishes if tips has type error', async () => {
@@ -694,7 +700,7 @@ describe('OrgDelegationEngine responseStream handling', () => {
       // Because gpt-4o is foreign to claude-cli-assistant, it must switch to API assistant (bare:632f31d2)
       expect(createdPayload).toBeDefined();
       expect(createdPayload.assistant.id).toBe('bare:632f31d2');
-      expect(createdPayload.model).toEqual({ id: 'openai', use_model: 'gpt-4o' });
+      expect(createdPayload.model).toEqual({ id: 'openai', use_model: 'gpt-4o', provider_id: 'openai' });
       expect(createdPayload.extra.current_model_id).toBeUndefined();
     });
   });

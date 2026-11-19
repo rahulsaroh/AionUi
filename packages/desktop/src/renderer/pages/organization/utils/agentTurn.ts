@@ -6,6 +6,7 @@
 
 import { OrgDelegationEngine } from './orgDelegationEngine';
 import { runCeoTurn, type CeoEvent } from './ceoExecutionService';
+import { buildOrgDirectory, getOrgDirectoryPrompt } from './orgDirectory';
 import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
 import type { OrgAgentMember, OrgConversation, OrgHierarchy, OrgProject } from '@/types/organization';
 
@@ -38,6 +39,7 @@ export interface RunAgentTurnOptions {
   target: OrgChatTarget;
   userText: string;
   agent: OrgAgentMember;
+  members?: OrgAgentMember[];
   workspacePath: string;
   systemContext: string;
   conversation?: OrgConversation | null;
@@ -59,6 +61,7 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
     target,
     userText,
     agent,
+    members,
     workspacePath,
     systemContext,
     conversation,
@@ -67,6 +70,11 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
     signal,
   } = options;
 
+  const directoryDoc = buildOrgDirectory({ hierarchy, projects, members });
+  const directoryBlock = getOrgDirectoryPrompt(directoryDoc, {
+    conversationId: conversation?.backendConversationId || conversation?.id,
+  });
+
   if (isCeo || target.type === 'ceo') {
     const msgs = conversation?.messages || [];
     const lastAssistantIdx = msgs.findLastIndex((m) => m.role === 'assistant');
@@ -74,10 +82,10 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
       .slice(lastAssistantIdx >= 0 ? lastAssistantIdx + 1 : 0)
       .filter((m) => m.role === 'system' && m.content);
 
-    let effectivePrompt = userText;
+    let effectivePrompt = `${directoryBlock}\n\n${userText}`;
     if (recentSystemMsgs.length > 0) {
       const systemContextPrefix = recentSystemMsgs.map((m) => m.content).join('\n\n');
-      effectivePrompt = `${systemContextPrefix}\n\n${userText}`;
+      effectivePrompt = `${directoryBlock}\n\n${systemContextPrefix}\n\n${userText}`;
     }
 
     const effectiveCeoAgent: OrgAgentMember = {
@@ -169,18 +177,35 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
         .join('\n\n')
         .slice(-24_000);
       const promptBlocks = [
+        directoryBlock,
         handbookBlock,
         knowledgeBlock,
         systemContext,
         conversationHistory ? `Previous conversation:\n${conversationHistory}` : '',
       ].filter(Boolean);
       const composedPrompt = `${promptBlocks.join('\n\n')}\n\n---\nUser: ${userText}`;
+      // For Team Lead agents in direct chat, inject workspace path into the system prompt
+      // so the agent knows which path to pass when it calls scan_folder autonomously.
+      const resolvedWorkspace = workspacePath || agent.workspacePath || hierarchy.rootCeo.workspacePath || '';
+      let resolvedSystemPrompt = agent.systemPrompt || undefined;
+      if (agent.role === 'team_lead' && resolvedWorkspace) {
+        const basePrompt =
+          resolvedSystemPrompt ||
+          `You are ${agent.name}, Team Lead. Coordinate and address the user's directive directly.`;
+        // Inject workspace path into the prompt if it isn't already there
+        if (!basePrompt.includes(resolvedWorkspace)) {
+          resolvedSystemPrompt = `${basePrompt}\n\nCurrent workspace folder: "${resolvedWorkspace}"\nWhen calling scan_folder, use this path: scan_folder({ path: "${resolvedWorkspace}" })\nNEVER ask the user to run scan_folder for you — call it yourself.`;
+        } else {
+          resolvedSystemPrompt = basePrompt;
+        }
+      }
+
       const response = await engine.executeDirectMessage(
         agent,
         composedPrompt,
-        workspacePath || agent.workspacePath || hierarchy.rootCeo.workspacePath || '',
+        resolvedWorkspace,
         true,
-        agent.systemPrompt || undefined,
+        resolvedSystemPrompt,
         conversation?.backendConversationId
       );
 
@@ -230,6 +255,15 @@ export function buildAgentSystemContext(opts: {
     parts.push('Assigned folders available in this session:');
     for (const folderPath of opts.workspacePaths) parts.push(`- ${folderPath}`);
     parts.push('Work across all assigned folders as needed. Keep file operations inside the listed folders.');
+  }
+  // Remind Team Lead agents of their autonomous tool access
+  if (opts.agent.role === 'team_lead' && opts.workspacePath) {
+    parts.push('');
+    parts.push(
+      `TOOL REMINDER: You have full access to scan_folder, hire_member, assign_member, create_team, and list_org.`
+    );
+    parts.push(`To inspect your workspace, call: scan_folder({ path: "${opts.workspacePath}" })`);
+    parts.push(`NEVER ask the user to run scan_folder for you — call it yourself.`);
   }
   return parts.join('\n');
 }

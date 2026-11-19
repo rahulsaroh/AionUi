@@ -43,7 +43,7 @@ export const FileTreeFooter: React.FC<FileTreeFooterProps> = ({ selectedPath }) 
           title={`${latestChip.label} ${latestChip.detail}`}
         >
           {latestChip.inFlight && <span className={`${styles.pulseDot} ${pulseDotClass}`} />}
-          <span className='truncate max-w-160px'>{latestChip.label}</span>
+          <span className='truncate max-w-360px'>{latestChip.label}</span>
         </div>
       )}
     </div>

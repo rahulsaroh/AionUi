@@ -86,7 +86,7 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('enforces role boundaries: Department Head cannot create departments or hire members', async () => {
+  it('enforces role boundaries: Department Head cannot create departments but CAN hire members', async () => {
     const resDept = await handleOrgToolRequest({
       tool: 'create_department',
       args: { name: 'Illegal Dept', folder: path.join(masterRoot, 'dept') },
@@ -95,13 +95,15 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
     expect(resDept.success).toBe(false);
     expect(resDept.error).toMatch(/Department Head role is not permitted/);
 
+    // Department Head CAN hire members within their department (but needs dept scope)
     const resHire = await handleOrgToolRequest({
       tool: 'hire_member',
       args: { name: 'Illegal Member', role: 'specialist' },
       role: 'department_head',
     });
+    // Without deptId/deptWorkspacePath, should fail with scope error
     expect(resHire.success).toBe(false);
-    expect(resHire.error).toMatch(/Department Head role is not permitted/);
+    expect(resHire.error).toMatch(/cannot hire members without a bound department scope/);
   });
 
   it('enforces role boundaries: Project Head can only assign_task and get_status', async () => {
@@ -112,6 +114,57 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
     });
     expect(resCreate.success).toBe(false);
     expect(resCreate.error).toMatch(/Project Head role is not permitted/);
+  });
+
+  it('enforces role boundaries: Team Lead has recruiting powers within own department', async () => {
+    const deptFolder = path.join(masterRoot, 'engineering');
+    fs.mkdirSync(deptFolder, { recursive: true });
+
+    // Team Lead cannot create_project outside its own department
+    const resCreate = await handleOrgToolRequest({
+      tool: 'create_project',
+      args: { departmentId: 'other-dept', name: 'MyProject', folder: path.join(deptFolder, 'myproj') },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+    });
+    expect(resCreate.success).toBe(false);
+    expect(resCreate.error).toMatch(/can only create projects in its own department/);
+
+    // Team Lead without dept scope cannot hire
+    const resHireNoScope = await handleOrgToolRequest({
+      tool: 'hire_member',
+      args: { name: 'New Member', role: 'specialist' },
+      role: 'team_lead',
+    });
+    expect(resHireNoScope.success).toBe(false);
+    expect(resHireNoScope.error).toMatch(/cannot hire members without a bound department scope/);
+
+    // Team Lead with dept scope can hire
+    const resHire = await handleOrgToolRequest({
+      tool: 'hire_member',
+      args: { name: 'New Member', role: 'specialist' },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+    });
+    // This will fail because no tool executor is set up, but should pass role check
+    // The error will be from the tool executor, not the role check
+    if (!resHire.success) {
+      // Either executor error or success - role check should pass
+      expect(resHire.error).not.toMatch(/Access denied.*team_lead.*not permitted/);
+    }
+
+    // Team Lead cannot create_department
+    const resDept = await handleOrgToolRequest({
+      tool: 'create_department',
+      args: { name: 'Illegal Dept', folder: path.join(masterRoot, 'dept') },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+    });
+    expect(resDept.success).toBe(false);
+    expect(resDept.error).toMatch(/Only the Root CEO can do this/);
   });
 
   it('forwards custom tool executions to registered tool executor', async () => {

@@ -116,7 +116,10 @@ export async function generateGitDiff(projectFolder: string): Promise<GitDiffSum
 /**
  * Read audit log entries for a project.
  */
-export function readProjectAuditLog(projectFolder: string, since?: number): Array<{
+export function readProjectAuditLog(
+  projectFolder: string,
+  since?: number
+): Array<{
   kind: string;
   summary: string;
   timestamp: number;
@@ -128,10 +131,11 @@ export function readProjectAuditLog(projectFolder: string, since?: number): Arra
   const auditDir = path.join(projectFolder, '.aionui-audit');
   if (!fs.existsSync(auditDir)) return [];
 
-  const files = fs.readdirSync(auditDir)
-    .filter(f => f.endsWith('.json'))
-    .sort()
-    .reverse(); // newest first
+  const files = fs
+    .readdirSync(auditDir)
+    .filter((f) => f.endsWith('.json'))
+    .toSorted()
+    .toReversed(); // newest first
 
   const entries: Array<{
     kind: string;
@@ -184,7 +188,7 @@ export async function buildMemberFinalReport(params: {
   const gitDiff = await generateGitDiff(params.projectFolder);
 
   // Determine final status
-  const failedTools = params.toolExecutions.filter(t => !t.success).length;
+  const failedTools = params.toolExecutions.filter((t) => !t.success).length;
   const totalTools = params.toolExecutions.length;
   let finalStatus: 'success' | 'failed' | 'partial' = 'success';
   if (totalTools > 0 && failedTools === totalTools) finalStatus = 'failed';
@@ -192,7 +196,8 @@ export async function buildMemberFinalReport(params: {
 
   // Build summary
   const successCount = totalTools - failedTools;
-  const summary = `Task "${params.taskDescription}" completed with ${finalStatus} status. ` +
+  const summary =
+    `Task "${params.taskDescription}" completed with ${finalStatus} status. ` +
     `Executed ${totalTools} tool(s) (${successCount} succeeded, ${failedTools} failed). ` +
     `Git: ${gitDiff.filesChanged} files changed, ${gitDiff.additions} additions, ${gitDiff.deletions} deletions.`;
 

@@ -3202,6 +3202,7 @@ export type I18nKey =
   | 'team.organization.sharedPoolSubtitle'
   | 'team.organization.sharedPoolTitle'
   | 'team.organization.simulateWorking'
+  | 'team.organization.startingAgent'
   | 'team.organization.status'
   | 'team.organization.statusActive'
   | 'team.organization.statusCompleted'

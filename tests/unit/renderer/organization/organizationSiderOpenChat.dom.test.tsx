@@ -189,6 +189,14 @@ describe('OrganizationSiderContent openChat wiring', () => {
     expect(storeState.setSelectedProject).toHaveBeenCalledWith('proj-1');
   });
 
+  it('renders team row in the teams tab and selects team on click', () => {
+    renderSider();
+    const teamElements = screen.getAllByText('Core Team');
+    expect(teamElements.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(teamElements[teamElements.length - 1]);
+    expect(storeState.setSelectedTeam).toHaveBeenCalledWith('team-1');
+  });
+
   it('opens a member chat from the team roster', () => {
     renderSider();
     fireEvent.click(screen.getByLabelText('Open chat with Member'));

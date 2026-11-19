@@ -19,11 +19,8 @@ import {
   untrackCommand,
   mapAutoApproveToPolicy,
 } from '../services/org/orgRunningCommands';
-import {
-  buildMemberFinalReport,
-  formatReportAsMarkdown,
-  type MemberFinalReport,
-} from '../services/org/orgReporting';
+import { buildMemberFinalReport, formatReportAsMarkdown, type MemberFinalReport } from '../services/org/orgReporting';
+import { getOrgDirectoryFilePath, readOrgDirectory, writeOrgDirectory } from '../services/org/orgDirectory';
 import {
   setMasterRoot,
   getMasterRoot,
@@ -558,38 +555,65 @@ export function registerOrgBridge(): void {
     return getRunningCommand(params.commandId);
   });
 
-  ipcMain.handle('org:mapAutoApprove', async (_event, params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) => {
-    if (!params || typeof params.level !== 'string') {
-      throw new Error('Invalid arguments for org:mapAutoApprove');
+  ipcMain.handle(
+    'org:mapAutoApprove',
+    async (_event, params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) => {
+      if (!params || typeof params.level !== 'string') {
+        throw new Error('Invalid arguments for org:mapAutoApprove');
+      }
+      return mapAutoApproveToPolicy(params.level);
     }
-    return mapAutoApproveToPolicy(params.level);
+  );
+
+  ipcMain.handle('org:getDirectoryPath', async (): Promise<string> => {
+    return getOrgDirectoryFilePath();
   });
 
-  ipcMain.handle('org:generateFinalReport', async (_event, params: {
-    memberId: string;
-    memberName: string;
-    role: string;
-    projectId: string;
-    projectName: string;
-    projectFolder: string;
-    taskDescription: string;
-    startedAt: number;
-    toolExecutions: Array<{
-      tool: string;
-      args: Record<string, any>;
-      success: boolean;
-      error?: string;
-      durationMs?: number;
-      timestamp: number;
-    }>;
-  }) => {
-    if (!params || typeof params.memberId !== 'string') {
-      throw new Error('Invalid arguments for org:generateFinalReport');
-    }
-    const report = await buildMemberFinalReport(params);
-    return {
-      report,
-      markdown: formatReportAsMarkdown(report),
-    };
+  ipcMain.handle('org:readDirectory', async (): Promise<{ content: string; path: string } | null> => {
+    return readOrgDirectory();
   });
+
+  ipcMain.handle(
+    'org:writeDirectory',
+    async (_event, params: { content: string }): Promise<{ success: boolean; path?: string; error?: string }> => {
+      if (!params || typeof params.content !== 'string') {
+        return { success: false, error: 'org:writeDirectory requires a "content" string.' };
+      }
+      return writeOrgDirectory(params.content);
+    }
+  );
+
+  ipcMain.handle(
+    'org:generateFinalReport',
+    async (
+      _event,
+      params: {
+        memberId: string;
+        memberName: string;
+        role: string;
+        projectId: string;
+        projectName: string;
+        projectFolder: string;
+        taskDescription: string;
+        startedAt: number;
+        toolExecutions: Array<{
+          tool: string;
+          args: Record<string, any>;
+          success: boolean;
+          error?: string;
+          durationMs?: number;
+          timestamp: number;
+        }>;
+      }
+    ) => {
+      if (!params || typeof params.memberId !== 'string') {
+        throw new Error('Invalid arguments for org:generateFinalReport');
+      }
+      const report = await buildMemberFinalReport(params);
+      return {
+        report,
+        markdown: formatReportAsMarkdown(report),
+      };
+    }
+  );
 }

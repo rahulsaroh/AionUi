@@ -25,13 +25,7 @@ const runningCommands = new Map<string, RunningCommand & { proc: ChildProcess }>
 /**
  * Start tracking a running command.
  */
-export function trackCommand(
-  id: string,
-  projectId: string,
-  command: string,
-  cwd: string,
-  proc: ChildProcess
-): void {
+export function trackCommand(id: string, projectId: string, command: string, cwd: string, proc: ChildProcess): void {
   runningCommands.set(id, {
     id,
     projectId,
@@ -87,7 +81,7 @@ export function killCommand(id: string): { success: boolean; error?: string } {
   if (!entry) {
     return { success: false, error: 'Command not found' };
   }
-  
+
   try {
     // On Windows, use taskkill; on Unix, use kill
     const isWindows = process.platform === 'win32';
@@ -97,7 +91,9 @@ export function killCommand(id: string): { success: boolean; error?: string } {
       process.kill(-entry.pid, 'SIGTERM'); // kill process group
       // Force kill after 2s
       setTimeout(() => {
-        try { process.kill(-entry.pid, 'SIGKILL'); } catch {}
+        try {
+          process.kill(-entry.pid, 'SIGKILL');
+        } catch {}
       }, 2000);
     }
     runningCommands.delete(id);

@@ -3039,6 +3039,21 @@ export const org = {
       ? window.electronAPI.orgMapAutoApprove(params)
       : Promise.resolve('auto_edit'),
 
+  getDirectoryPath: (): Promise<string | null> =>
+    typeof window !== 'undefined' && window.electronAPI?.orgGetDirectoryPath
+      ? window.electronAPI.orgGetDirectoryPath()
+      : Promise.resolve(null),
+
+  readDirectory: (): Promise<{ content: string; path: string } | null> =>
+    typeof window !== 'undefined' && window.electronAPI?.orgReadDirectory
+      ? window.electronAPI.orgReadDirectory()
+      : Promise.resolve(null),
+
+  writeDirectory: (params: { content: string }): Promise<{ success: boolean; path?: string; error?: string }> =>
+    typeof window !== 'undefined' && window.electronAPI?.orgWriteDirectory
+      ? window.electronAPI.orgWriteDirectory(params)
+      : Promise.resolve({ success: false, error: 'Organization directory is only supported in desktop mode' }),
+
   generateFinalReport: (params: {
     memberId: string;
     memberName: string;

@@ -26,13 +26,13 @@ describe('orgReporting: git diff + audit log + final report', () => {
     auditDir = path.join(projectDir, '.aionui-audit');
     fs.mkdirSync(projectDir, { recursive: true });
     fs.mkdirSync(auditDir, { recursive: true });
-    
+
     // Initialize git repo
     const { spawnSync } = require('node:child_process');
     spawnSync('git', ['init'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['config', 'user.email', 'test@test.com'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['config', 'user.name', 'Test'], { cwd: projectDir, stdio: 'ignore' });
-    
+
     // Initial commit
     fs.writeFileSync(path.join(projectDir, 'README.md'), '# Project\n');
     spawnSync('git', ['add', '.'], { cwd: projectDir, stdio: 'ignore' });
@@ -51,7 +51,7 @@ describe('orgReporting: git diff + audit log + final report', () => {
     fs.writeFileSync(path.join(projectDir, 'file1.txt'), 'v1');
     spawnSync('git', ['add', 'file1.txt'], { cwd: projectDir, stdio: 'ignore' });
     spawnSync('git', ['commit', '-m', 'add file1'], { cwd: projectDir, stdio: 'ignore' });
-    
+
     // Now modify it
     fs.writeFileSync(path.join(projectDir, 'file1.txt'), 'v2');
     const diff = await generateGitDiff(projectDir);
@@ -88,7 +88,7 @@ describe('orgReporting: git diff + audit log + final report', () => {
     };
     fs.writeFileSync(path.join(auditDir, 'audit-1.json'), JSON.stringify(entry1));
     fs.writeFileSync(path.join(auditDir, 'audit-2.json'), JSON.stringify(entry2));
-    
+
     const entries = readProjectAuditLog(projectDir);
     expect(entries.length).toBe(2);
     expect(entries[0].kind).toBe('approval'); // newest first
@@ -109,7 +109,7 @@ describe('orgReporting: git diff + audit log + final report', () => {
     };
     fs.writeFileSync(path.join(auditDir, 'audit-old.json'), JSON.stringify(oldEntry));
     fs.writeFileSync(path.join(auditDir, 'audit-new.json'), JSON.stringify(newEntry));
-    
+
     const entries = readProjectAuditLog(projectDir, now - 5000);
     expect(entries.length).toBe(1);
     expect(entries[0].summary).toBe('New command');
@@ -132,7 +132,7 @@ describe('orgReporting: git diff + audit log + final report', () => {
         timestamp: Date.now() - 200,
       },
     ];
-    
+
     const report = await buildMemberFinalReport({
       memberId: 'm1',
       memberName: 'TestBot',
@@ -144,7 +144,7 @@ describe('orgReporting: git diff + audit log + final report', () => {
       startedAt: Date.now() - 1000,
       toolExecutions,
     });
-    
+
     expect(report.memberId).toBe('m1');
     expect(report.memberName).toBe('TestBot');
     expect(report.role).toBe('specialist');
@@ -174,7 +174,7 @@ describe('orgReporting: git diff + audit log + final report', () => {
         },
       ],
     });
-    
+
     const markdown = formatReportAsMarkdown(report);
     expect(markdown).toContain('# Final Report: TestBot');
     expect(markdown).toContain('TestBot');

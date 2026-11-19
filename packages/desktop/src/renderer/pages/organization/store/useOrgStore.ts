@@ -1452,6 +1452,18 @@ export function useOrgStore() {
           }
         }
       }
+      if ('workspacePath' in finalPatch) {
+        const department = globalState.hierarchy.departments.find((item) => item.id === departmentId);
+        if (department) {
+          finalPatch = {
+            ...finalPatch,
+            departmentCeoAgent: {
+              ...(finalPatch.departmentCeoAgent ?? department.departmentCeoAgent),
+              workspacePath: finalPatch.workspacePath ?? undefined,
+            },
+          };
+        }
+      }
       const nextHierarchy = syncHierarchyProjectReferences(
         updateDepartmentInHierarchy(globalState.hierarchy, departmentId, finalPatch),
         globalState.projects
@@ -2097,9 +2109,9 @@ export function useOrgStore() {
       nextState.selectedProjectId = result.projectId || target.id;
       nextState.focusedNodeId = `project-${result.projectId || target.id}`;
     } else if (target.type === 'member') {
+      nextState.selectedDepartmentId = result.departmentId || globalState.selectedDepartmentId;
+      nextState.selectedTeamId = result.teamId || null;
       if (result.projectId) {
-        nextState.selectedDepartmentId = result.departmentId || globalState.selectedDepartmentId;
-        nextState.selectedTeamId = result.teamId || null;
         nextState.selectedProjectId = result.projectId;
       }
       nextState.focusedNodeId = target.id;

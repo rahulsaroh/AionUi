@@ -46,7 +46,9 @@ import { createDepartmentShell, createTeamShell } from './utils/orgCoherence';
 import './orgGlow.css';
 import { computeOrgStatusPropagation } from './utils/orgStatusPropagation';
 import { computeLifecycleStatus } from './utils/orgTheme';
+import { buildOrgDirectory, computeOrgDirectorySignature, renderOrgDirectoryMarkdown } from './utils/orgDirectory';
 import { useOrgStore } from './store/useOrgStore';
+import { ipcBridge } from '@/common';
 import type { OrgProject, RootCEO, OrgAgentMember } from '@/types/organization';
 
 const nodeTypes: NodeTypes = {
@@ -84,6 +86,7 @@ const CanvasInner: React.FC = () => {
     updateDepartment,
     updateTeamNode,
     projects,
+    members,
     nodeStatuses,
     activeFilter,
     setOrgViewMode,
@@ -93,9 +96,11 @@ const CanvasInner: React.FC = () => {
   const navigate = useNavigate();
   const { fitView, setCenter, getNode } = useReactFlow();
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
+  const lastDirectorySignatureRef = React.useRef('');
 
   const [direction, setDirection] = useState<'TB' | 'LR'>('TB');
   const [collapsedBranchIds, setCollapsedBranchIds] = useState<Set<string>>(new Set());
+  const [collapsedTeamMemberIds, setCollapsedTeamMemberIds] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeType, setSelectedNodeType] = useState<OrgNodeType | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -159,6 +164,31 @@ const CanvasInner: React.FC = () => {
     [hierarchy, projects, nodeStatuses]
   );
 
+  // Persist the Organization Directory whenever ownership/structure changes.
+  // Transient status updates do not change the signature, so they do not trigger writes.
+  useEffect(() => {
+    const directory = buildOrgDirectory({ hierarchy, projects, members });
+    const signature = computeOrgDirectorySignature(directory);
+    if (signature === lastDirectorySignatureRef.current) return;
+
+    const timer = setTimeout(() => {
+      lastDirectorySignatureRef.current = signature;
+      const markdown = renderOrgDirectoryMarkdown(directory);
+      ipcBridge.org
+        .writeDirectory({ content: markdown })
+        .then((result) => {
+          if (!result?.success) {
+            console.warn('[OrganizationCanvasView] Failed to write org directory:', result?.error);
+          }
+        })
+        .catch((err) => {
+          console.warn('[OrganizationCanvasView] Failed to write org directory:', err);
+        });
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [hierarchy, projects, members]);
+
   const handleToggleCollapse = useCallback((deptId: string) => {
     setCollapsedBranchIds((prev) => {
       const next = new Set(prev);
@@ -168,9 +198,29 @@ const CanvasInner: React.FC = () => {
     });
   }, []);
 
+  const handleToggleTeamMembers = useCallback((teamId: string) => {
+    setCollapsedTeamMemberIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(teamId)) next.delete(teamId);
+      else next.add(teamId);
+      return next;
+    });
+  }, []);
+
   const handleToggleExpandAll = useCallback(() => {
-    if (collapsedBranchIds.size > 0) setCollapsedBranchIds(new Set());
-    else setCollapsedBranchIds(new Set(hierarchy.departments.map((d) => d.id)));
+    if (collapsedBranchIds.size > 0) {
+      setCollapsedBranchIds(new Set());
+      setCollapsedTeamMemberIds(new Set());
+    } else {
+      setCollapsedBranchIds(new Set(hierarchy.departments.map((d) => d.id)));
+      setCollapsedTeamMemberIds(
+        new Set(
+          hierarchy.departments.flatMap((department) =>
+            department.teams.filter((team) => team.specialistMembers.length > 0).map((team) => team.id)
+          )
+        )
+      );
+    }
   }, [collapsedBranchIds.size, hierarchy.departments]);
 
   const handleSelectNode = useCallback(
@@ -280,6 +330,7 @@ const CanvasInner: React.FC = () => {
           department: dept,
           deptIndex: deptIdx,
           isCollapsed: isDeptCollapsed,
+          hasDescendants: dept.teams.length > 0 || projects.some((project) => project.departmentId === dept.id),
           orientation: direction,
           isDescendantWorking: propagation.workingNodeIds.has(dept.id),
           onToggleCollapse: handleToggleCollapse,
@@ -370,6 +421,8 @@ const CanvasInner: React.FC = () => {
                 orientation: direction,
                 sharedCountsMap,
                 isDescendantWorking: propagation.workingNodeIds.has(team.id),
+                isCollapsed: collapsedTeamMemberIds.has(team.id),
+                onToggleCollapse: handleToggleTeamMembers,
                 onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
                 onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
                 onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'team'),
@@ -410,6 +463,8 @@ const CanvasInner: React.FC = () => {
               orientation: direction,
               sharedCountsMap,
               isDescendantWorking: propagation.workingNodeIds.has(team.id),
+              isCollapsed: collapsedTeamMemberIds.has(team.id),
+              onToggleCollapse: handleToggleTeamMembers,
               onSelectNode: (id: string, type: 'team') => handleSelectNode(id, type),
               onSelectMember: (memberId: string) => handleSelectNode(memberId, 'member'),
               onSetFolder: (nodeId: string) => handleSetFolder(nodeId, 'team'),

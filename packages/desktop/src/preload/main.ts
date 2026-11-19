@@ -349,14 +349,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('org:listCheckpoints', params),
   orgClearCheckpoints: (params: { projectId: string; projectFolder: string }) =>
     ipcRenderer.invoke('org:clearCheckpoints', params),
-  orgKillCommand: (params: { commandId: string }) =>
-    ipcRenderer.invoke('org:killCommand', params),
-  orgListRunningCommands: (params?: { projectId?: string }) =>
-    ipcRenderer.invoke('org:listRunningCommands', params),
-  orgGetRunningCommand: (params: { commandId: string }) =>
-    ipcRenderer.invoke('org:getRunningCommand', params),
+  orgKillCommand: (params: { commandId: string }) => ipcRenderer.invoke('org:killCommand', params),
+  orgListRunningCommands: (params?: { projectId?: string }) => ipcRenderer.invoke('org:listRunningCommands', params),
+  orgGetRunningCommand: (params: { commandId: string }) => ipcRenderer.invoke('org:getRunningCommand', params),
   orgMapAutoApprove: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) =>
     ipcRenderer.invoke('org:mapAutoApprove', params),
+  orgGetDirectoryPath: () => ipcRenderer.invoke('org:getDirectoryPath'),
+  orgReadDirectory: () => ipcRenderer.invoke('org:readDirectory'),
+  orgWriteDirectory: (params: { content: string }) => ipcRenderer.invoke('org:writeDirectory', params),
   orgGenerateFinalReport: (params: {
     memberId: string;
     memberName: string;

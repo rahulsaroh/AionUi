@@ -31,8 +31,12 @@ describe('orgStorageService: new fields persist (approvalPolicy, allowlist, exec
     expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', executionEngine: 'codex' })).toBe(true);
     expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', executionEngine: 'aionrs' })).toBe(true);
     expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', executionEngine: 'bogus' })).toBe(false);
-    expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', model: { executionEngine: 'claude' } })).toBe(true);
-    expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', model: { executionEngine: 'bogus' } })).toBe(false);
+    expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', model: { executionEngine: 'claude' } })).toBe(
+      true
+    );
+    expect(validateMemberShape({ id: 'm1', name: 'M', role: 'specialist', model: { executionEngine: 'bogus' } })).toBe(
+      false
+    );
   });
 
   it('round-trips approvalPolicy and allowlist via project save/load', async () => {

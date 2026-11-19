@@ -19,13 +19,17 @@ describe('orgRunningCommands: command tracking + auto-approve mapping', () => {
   beforeEach(() => {
     // Clear tracking map
     for (const key of (globalThis as any).__runningCommandsKeys || []) {
-      try { untrackCommand(key); } catch {}
+      try {
+        untrackCommand(key);
+      } catch {}
     }
   });
 
   afterEach(() => {
     for (const key of (globalThis as any).__runningCommandsKeys || []) {
-      try { untrackCommand(key); } catch {}
+      try {
+        untrackCommand(key);
+      } catch {}
     }
   });
 
@@ -33,7 +37,7 @@ describe('orgRunningCommands: command tracking + auto-approve mapping', () => {
     // Create a dummy child process
     const proc = { pid: 12345, kill: vi.fn() };
     trackCommand('cmd-1', 'p1', 'echo hello', '/tmp/p1', proc as any);
-    
+
     const cmd = getRunningCommand('cmd-1');
     expect(cmd).toBeDefined();
     expect(cmd?.id).toBe('cmd-1');
@@ -49,11 +53,11 @@ describe('orgRunningCommands: command tracking + auto-approve mapping', () => {
     trackCommand('cmd-1', 'p1', 'echo a', '/tmp/p1', proc as any);
     trackCommand('cmd-2', 'p2', 'echo b', '/tmp/p2', proc as any);
     trackCommand('cmd-3', 'p1', 'echo c', '/tmp/p1', proc as any);
-    
+
     const p1Cmds = listRunningCommands('p1');
     expect(p1Cmds.length).toBe(2);
-    expect(p1Cmds.every(c => c.projectId === 'p1')).toBe(true);
-    
+    expect(p1Cmds.every((c) => c.projectId === 'p1')).toBe(true);
+
     const allCmds = listRunningCommands();
     expect(allCmds.length).toBe(3);
   });
@@ -61,14 +65,14 @@ describe('orgRunningCommands: command tracking + auto-approve mapping', () => {
   it('killCommand removes tracking', async () => {
     const proc = { pid: 99999, kill: vi.fn() };
     trackCommand('cmd-kill', 'p1', 'sleep 100', '/tmp/p1', proc as any);
-    
+
     const before = getRunningCommand('cmd-kill');
     expect(before).toBeDefined();
-    
+
     // killCommand tries to kill process - on test it may fail but should remove tracking
     const result = killCommand('cmd-kill');
     expect(result.success).toBe(true); // tracking removed
-    
+
     const after = getRunningCommand('cmd-kill');
     expect(after).toBeUndefined();
   });
@@ -76,7 +80,7 @@ describe('orgRunningCommands: command tracking + auto-approve mapping', () => {
   it('untrackCommand removes tracking', async () => {
     const proc = { pid: 12345, kill: vi.fn() };
     trackCommand('cmd-untrack', 'p1', 'echo test', '/tmp/p1', proc as any);
-    
+
     untrackCommand('cmd-untrack');
     expect(getRunningCommand('cmd-untrack')).toBeUndefined();
   });

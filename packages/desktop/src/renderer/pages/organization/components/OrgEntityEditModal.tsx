@@ -253,6 +253,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     if (entity === 'department' && data) {
       const dept = data as OrgDepartmentNode;
       if (!name.trim()) return;
+      const matchedProvider = providers?.find((provider) => getAvailableModels(provider).includes(modelId));
       updateDepartment(dept.id, {
         name: name.trim(),
         description: description.trim() || undefined,
@@ -260,7 +261,11 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           ...dept.departmentCeoAgent,
           name: headName.trim() || dept.departmentCeoAgent.name,
           title: headPrompt.trim() || dept.departmentCeoAgent.title,
-          model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
+          model: {
+            modelId: modelId.trim() || 'claude-3-7-sonnet',
+            providerId: matchedProvider?.id,
+            modelName: matchedProvider && formatModelLabel ? formatModelLabel(matchedProvider, modelId) : modelId,
+          },
         },
         parentDepartmentId: parentDeptId.trim() || null,
         workspacePath: folderPath.trim() || undefined,
@@ -573,15 +578,18 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
               </div>
               <div className='flex flex-col gap-4px'>
                 <span className='text-12px text-t-secondary'>Assigned AI Bot Model</span>
-                <Select value={modelId} onChange={setModelId} allowCreate placeholder='Select or type AI model'>
-                  <Select.Option value='claude-3-7-sonnet'>Claude 3.7 Sonnet</Select.Option>
-                  <Select.Option value='claude-3-5-sonnet'>Claude 3.5 Sonnet</Select.Option>
-                  <Select.Option value='claude-3-5-haiku'>Claude 3.5 Haiku</Select.Option>
-                  <Select.Option value='gpt-4o'>GPT-4o</Select.Option>
-                  <Select.Option value='gpt-4o-mini'>GPT-4o Mini</Select.Option>
-                  <Select.Option value='gemini-2.0-flash'>Gemini 2.0 Flash</Select.Option>
-                  <Select.Option value='deepseek-chat'>DeepSeek V3</Select.Option>
-                  <Select.Option value='deepseek-reasoner'>DeepSeek R1</Select.Option>
+                <Select
+                  value={modelId}
+                  onChange={setModelId}
+                  allowCreate
+                  showSearch
+                  placeholder='Select or type AI model'
+                >
+                  {configuredModelOptions.map((option) => (
+                    <Select.Option key={option.value} value={option.value}>
+                      {option.label}
+                    </Select.Option>
+                  ))}
                 </Select>
               </div>
               <div className='flex flex-col gap-4px'>

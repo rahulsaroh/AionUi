@@ -64,10 +64,14 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON conversations(user_id, updated_at DESC)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode)');
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)'
-  );
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode)');
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_conversations_user_mode_updated ON conversations(user_id, mode, updated_at DESC)'
+    );
+  } catch {
+    // Column mode will be added by migration v34
+  }
 
   // Messages table (消息表 - 存储TMessage)
   db.exec(`CREATE TABLE IF NOT EXISTS messages (
@@ -109,8 +113,12 @@ export function initSchema(db: ISqliteDriver): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_id ON teams(user_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_parent_id ON teams(parent_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_teams_updated_at ON teams(updated_at)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_teams_mode ON teams(mode)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_mode_updated ON teams(user_id, mode, updated_at DESC)');
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_teams_mode ON teams(mode)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_teams_user_mode_updated ON teams(user_id, mode, updated_at DESC)');
+  } catch {
+    // Column mode will be added by migration v34
+  }
 
   // Mailbox table (团队消息邮箱)
   db.exec(`CREATE TABLE IF NOT EXISTS mailbox (
@@ -379,7 +387,11 @@ export function initSchema(db: ISqliteDriver): void {
     updated_at INTEGER NOT NULL
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_dept ON org_projects(department_id)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_mode ON org_projects(mode)');
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_org_projects_mode ON org_projects(mode)');
+  } catch {
+    // If table already existed without mode column, migration v34 will add the column and index
+  }
 
   // Organization state key-value table
   db.exec(`CREATE TABLE IF NOT EXISTS org_state (
@@ -416,4 +428,4 @@ export function setDatabaseVersion(db: ISqliteDriver, version: number): void {
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 33;
+export const CURRENT_DB_VERSION = 35;

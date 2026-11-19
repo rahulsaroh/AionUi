@@ -30,9 +30,9 @@ describe('orgAuditLog: per-project jsonl audit log', () => {
   });
 
   it('appends and reads back entries in order', () => {
-    expect(appendAuditEntry(root, { projectId: 'p1', kind: 'command', summary: 'run tests', command: 'npm test' })).toBe(
-      true
-    );
+    expect(
+      appendAuditEntry(root, { projectId: 'p1', kind: 'command', summary: 'run tests', command: 'npm test' })
+    ).toBe(true);
     appendAuditEntry(root, {
       projectId: 'p1',
       kind: 'file_change',

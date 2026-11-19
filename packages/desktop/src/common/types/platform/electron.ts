@@ -473,7 +473,12 @@ export interface ElectronBridgeAPI {
         pid: number;
       }
   >;
-  orgMapAutoApprove?: (params: { level: 'none' | 'read_only' | 'auto_edit' | 'full_auto' }) => Promise<'read_only' | 'auto_edit' | 'full_auto'>;
+  orgMapAutoApprove?: (params: {
+    level: 'none' | 'read_only' | 'auto_edit' | 'full_auto';
+  }) => Promise<'read_only' | 'auto_edit' | 'full_auto'>;
+  orgGetDirectoryPath?: () => Promise<string>;
+  orgReadDirectory?: () => Promise<{ content: string; path: string } | null>;
+  orgWriteDirectory?: (params: { content: string }) => Promise<{ success: boolean; path?: string; error?: string }>;
   orgGenerateFinalReport?: (params: {
     memberId: string;
     memberName: string;
