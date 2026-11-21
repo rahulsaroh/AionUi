@@ -58,11 +58,15 @@ export function resolveOrgChatTarget(
 
   if (target.type === 'ceo') {
     const agent = hierarchy.rootCeo.ceoAgent;
-    const existing = findLatestThread(
-      conversations,
-      (c) =>
-        c.type === 'ceo_directive' && !c.projectId && (c.targetAgentId === agent.id || c.targetNodeId === 'root-ceo')
-    );
+    const existing = target.createNew
+      ? undefined
+      : findLatestThread(
+          conversations,
+          (c) =>
+            c.type === 'ceo_directive' &&
+            !c.projectId &&
+            (c.targetAgentId === agent.id || c.targetNodeId === 'root-ceo')
+        );
     const conv: OrgConversation = existing ?? {
       id: `conv-ceo-${now}`,
       title: t('team.organization.newChat', { defaultValue: 'New chat' }),
@@ -86,7 +90,9 @@ export function resolveOrgChatTarget(
     if (!dept) return { error: t('team.organization.agentNotFound', { defaultValue: 'Agent could not be resolved' }) };
     const agent = dept.departmentCeoAgent || dept.pmAgent;
     if (!agent) return { error: t('team.organization.agentNotFound', { defaultValue: 'Agent could not be resolved' }) };
-    const existing = findLatestThread(conversations, (c) => c.targetAgentId === agent.id && !c.projectId);
+    const existing = target.createNew
+      ? undefined
+      : findLatestThread(conversations, (c) => c.targetAgentId === agent.id && !c.projectId);
     const conv: OrgConversation = existing ?? {
       id: `conv-dept-${dept.id}-${now}`,
       title: t('team.organization.newChat', { defaultValue: 'New chat' }),
@@ -129,27 +135,35 @@ export function resolveOrgChatTarget(
         dept.teams[0];
     }
 
-    // If still no team, create one (as a shell) and add it to the department
+    // If still no team, reuse an existing team with the same name or create one (as a shell)
     if (!team && dept) {
-      mutatedHierarchy = {
-        ...hierarchyRef,
-        departments: hierarchyRef.departments.map((d) =>
-          d.id === dept.id ? { ...d, teams: [...d.teams, createTeamShell(dept.id, project.name || 'Core')] } : d
-        ),
-        lastUpdated: Date.now(),
-      };
-      team = mutatedHierarchy.departments.find((d) => d.id === dept.id)!.teams.at(-1)!;
-      hierarchyRef = mutatedHierarchy;
+      const existingTeam =
+        dept.teams.find((tm) => tm.name?.toLowerCase() === (project.name || 'Core').toLowerCase()) || dept.teams[0];
+      if (existingTeam) {
+        team = existingTeam;
+      } else {
+        mutatedHierarchy = {
+          ...hierarchyRef,
+          departments: hierarchyRef.departments.map((d) =>
+            d.id === dept.id ? { ...d, teams: [...d.teams, createTeamShell(dept.id, project.name || 'Core')] } : d
+          ),
+          lastUpdated: Date.now(),
+        };
+        team = mutatedHierarchy.departments.find((d) => d.id === dept.id)!.teams.at(-1)!;
+        hierarchyRef = mutatedHierarchy;
+      }
       updatedProject = { ...project, teamIds: [...(project.teamIds || []), team.id] };
     }
 
     const { agent } = projectHeadAgent(updatedProject || project, hierarchyRef);
     if (!agent) return { error: t('team.organization.agentNotFound', { defaultValue: 'Agent could not be resolved' }) };
 
-    const existing = findLatestThread(
-      conversations,
-      (c) => c.projectId === project.id && (c.targetAgentId === agent.id || c.type === 'team_execution')
-    );
+    const existing = target.createNew
+      ? undefined
+      : findLatestThread(
+          conversations,
+          (c) => c.projectId === project.id && (c.targetAgentId === agent.id || c.type === 'team_execution')
+        );
     const conv: OrgConversation = existing ?? {
       id: `conv-proj-${project.id}-${now}`,
       title: t('team.organization.newChat', { defaultValue: 'New chat' }),
@@ -219,10 +233,12 @@ export function resolveOrgChatTarget(
     if (!found) return { error: t('team.organization.agentNotFound', { defaultValue: 'Agent could not be resolved' }) };
 
     const project = target.projectId ? projects.find((p) => p.id === target.projectId) : undefined;
-    const existing = findLatestThread(
-      conversations,
-      (c) => c.targetAgentId === found!.agent.id && c.projectId === project?.id && c.type === 'agent_direct'
-    );
+    const existing = target.createNew
+      ? undefined
+      : findLatestThread(
+          conversations,
+          (c) => c.targetAgentId === found!.agent.id && c.projectId === project?.id && c.type === 'agent_direct'
+        );
     const conv: OrgConversation = existing ?? {
       id: `conv-direct-${found.agent.id}-${now}`,
       title: t('team.organization.newChat', { defaultValue: 'New chat' }),

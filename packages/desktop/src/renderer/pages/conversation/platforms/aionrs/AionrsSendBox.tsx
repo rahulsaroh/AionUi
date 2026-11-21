@@ -816,7 +816,10 @@ const AionrsSendBoxInner: React.FC<AionrsSendBoxProps & { messageState: UseAionr
         placeholder={
           current_model?.use_model
             ? t('acp.sendbox.placeholder', {
-                backend: agent_name || 'AionCLI',
+                backend:
+                  !agent_name || /^aion\s*cli$/i.test(agent_name) || agent_name === 'AionCLI'
+                    ? 'Shiraj CLI'
+                    : agent_name,
                 defaultValue: `Send message to {{backend}}...`,
               })
             : t('conversation.chat.noModelSelected')

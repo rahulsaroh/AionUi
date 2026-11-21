@@ -174,7 +174,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
       setHeadName(team.teamLeadAgent.name);
       setHeadPrompt(team.teamLeadAgent.title ?? '');
       setModelId(team.teamLeadAgent.model?.modelId ?? 'claude-3-7-sonnet');
-      setHrName(team.hrCoordinatorAgent.name);
+      setHrName(team.hrCoordinatorAgent?.name ?? '');
       setFolderPath(team.workspacePath ?? '');
       setFolderPaths(
         team.workspacePaths?.length ? team.workspacePaths : team.workspacePath ? [team.workspacePath] : ['']
@@ -290,10 +290,14 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           title: headPrompt.trim() || team.teamLeadAgent.title,
           model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
         },
-        hrCoordinatorAgent: {
-          ...team.hrCoordinatorAgent,
-          name: hrName.trim() || team.hrCoordinatorAgent.name,
-        },
+        ...(team.hrCoordinatorAgent
+          ? {
+              hrCoordinatorAgent: {
+                ...team.hrCoordinatorAgent,
+                name: hrName.trim() || team.hrCoordinatorAgent.name,
+              },
+            }
+          : {}),
       });
       onSave?.();
       onClose();

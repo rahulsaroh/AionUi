@@ -5,11 +5,12 @@
  */
 
 import { Button, Tooltip } from '@arco-design/web-react';
-import { Branch, FoldUpOne, FolderPlus, Refresh } from '@icon-park/react';
+import { Branch, FoldUpOne, FolderPlus, Refresh, Right } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useScm } from '../../SourceControl/scmStore';
 import WorkspaceOpenButton from '@/renderer/pages/conversation/components/ChatLayout/WorkspaceOpenButton';
+import { dispatchWorkspaceToggleEvent } from '@/renderer/utils/workspace/workspaceEvents';
 import { useFileTreeMetadata, toggleMetadataMode } from './fileTreeMetadataStore';
 import { useFileTreeActivity, setFollowAgent } from './fileTreeActivityStore';
 
@@ -210,6 +211,18 @@ export const FileTreeHeader: React.FC<FileTreeHeaderProps> = ({
               />
             </Tooltip>
           )}
+
+          {/* Hide Sidebar */}
+          <Tooltip content={t('common.collapse', { defaultValue: 'Hide sidebar' })} mini position='br'>
+            <Button
+              type='text'
+              size='small'
+              className='flex items-center justify-center'
+              icon={<Right theme='outline' size='16' />}
+              aria-label={t('common.collapse', { defaultValue: 'Hide sidebar' })}
+              onClick={() => dispatchWorkspaceToggleEvent()}
+            />
+          </Tooltip>
         </div>
       </div>
     </div>

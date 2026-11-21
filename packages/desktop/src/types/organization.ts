@@ -83,7 +83,7 @@ export interface OrgTeamNode {
   departmentId: string;
   name: string;
   teamLeadAgent: OrgAgentMember;
-  hrCoordinatorAgent: OrgAgentMember;
+  hrCoordinatorAgent?: OrgAgentMember | null;
   specialistMembers: OrgAgentMember[];
   /** Flat team membership (includes leads, HR and specialists). */
   members?: OrgAgentMember[];

@@ -6,9 +6,10 @@
 
 import React from 'react';
 import { Button, Tag, Tooltip } from '@arco-design/web-react';
-import { Workbench, FolderClose, AllApplication, Square, Plus, Robot, Peoples } from '@icon-park/react';
+import { Workbench, FolderClose, AllApplication, Square, Plus, Robot, Peoples, NetworkTree } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
+import { dispatchWorkspaceToggleEvent } from '@/renderer/utils/workspace/workspaceEvents';
 import type { OrgTeamNode, OrgAgentMember } from '@/types/organization';
 import type { OrgTeamChatViewMode } from './types';
 
@@ -23,6 +24,7 @@ export interface OrgTeamChatHeaderProps {
   onOpenFolder?: () => void;
   workspacePath?: string;
   onNewConversation?: () => void;
+  onOpenCanvas?: () => void;
 }
 
 export const OrgTeamChatHeader: React.FC<OrgTeamChatHeaderProps> = ({
@@ -36,6 +38,7 @@ export const OrgTeamChatHeader: React.FC<OrgTeamChatHeaderProps> = ({
   onOpenFolder,
   workspacePath,
   onNewConversation,
+  onOpenCanvas,
 }) => {
   const { t } = useTranslation();
 
@@ -92,6 +95,7 @@ export const OrgTeamChatHeader: React.FC<OrgTeamChatHeaderProps> = ({
           const isLeader = member.id === team.teamLeadAgent.id;
           const isHr = member.id === team.hrCoordinatorAgent?.id;
           const roleLabel = isLeader ? 'LEAD' : isHr ? 'HR' : member.title || member.role || 'SPEC';
+          const displayName = /^aion\s*cli$/i.test(member.name) ? 'Shiraj CLI' : member.name;
 
           return (
             <div
@@ -121,7 +125,7 @@ export const OrgTeamChatHeader: React.FC<OrgTeamChatHeaderProps> = ({
               >
                 {isLeader ? '👑' : isHr ? <Peoples size={11} theme='outline' /> : <Robot size={11} theme='outline' />}
               </span>
-              <span className='truncate max-w-100px'>{member.name}</span>
+              <span className='truncate max-w-100px'>{displayName}</span>
               <span
                 className={classNames(
                   'text-9px font-mono font-semibold px-4px py-0.5px rounded uppercase tracking-wider',
@@ -141,6 +145,20 @@ export const OrgTeamChatHeader: React.FC<OrgTeamChatHeaderProps> = ({
 
       {/* Right: Actions & View mode toggle */}
       <div className='flex items-center gap-8px shrink-0'>
+        {onOpenCanvas && (
+          <Tooltip content={t('team.organization.canvas', { defaultValue: 'Organization Canvas' })} position='bottom'>
+            <Button
+              type='secondary'
+              size='small'
+              icon={<NetworkTree size={14} theme='outline' />}
+              onClick={onOpenCanvas}
+              className='!rounded-8px !text-12px'
+            >
+              <span className='hidden sm:inline'>2D Canvas</span>
+            </Button>
+          </Tooltip>
+        )}
+
         {onNewConversation && (
           <Tooltip content={t('team.organization.newChat', { defaultValue: 'New Chat' })} position='bottom'>
             <Button
@@ -153,40 +171,56 @@ export const OrgTeamChatHeader: React.FC<OrgTeamChatHeaderProps> = ({
           </Tooltip>
         )}
 
-        {/* Parallel / Single segmented toggle */}
-        <div className='flex items-center gap-2px p-2px rounded-8px bg-[var(--color-fill-2)] border border-[var(--color-border-2)]'>
-          <Tooltip content={t('team.view.parallel', { defaultValue: 'Parallel (Side by side)' })} position='bottom'>
-            <Button
-              type={viewMode === 'parallel' ? 'primary' : 'text'}
-              size='mini'
-              onClick={() => onChangeViewMode('parallel')}
-              className={classNames('!rounded-6px !h-26px !px-8px flex items-center gap-4px', {
-                '!bg-[var(--color-primary)] !text-white': viewMode === 'parallel',
-                '!text-t-secondary hover:!text-t-primary': viewMode !== 'parallel',
-              })}
-            >
-              <AllApplication size={14} theme='outline' />
-              <span className='text-11px hidden sm:inline'>
-                {t('team.view.parallel', { defaultValue: 'Parallel' })}
-              </span>
-            </Button>
-          </Tooltip>
+        <Tooltip
+          content={t('conversation.antigravityWorkspace.toggleCard', { defaultValue: 'Toggle Files Sidebar' })}
+          position='bottom'
+        >
+          <Button
+            type='secondary'
+            size='small'
+            icon={<FolderClose size={14} theme='outline' />}
+            onClick={() => dispatchWorkspaceToggleEvent()}
+            className='!rounded-8px'
+            aria-label='Toggle Files Sidebar'
+          />
+        </Tooltip>
 
-          <Tooltip content={t('team.view.single', { defaultValue: 'Single (Full screen)' })} position='bottom'>
-            <Button
-              type={viewMode === 'single' ? 'primary' : 'text'}
-              size='mini'
-              onClick={() => onChangeViewMode('single')}
-              className={classNames('!rounded-6px !h-26px !px-8px flex items-center gap-4px', {
-                '!bg-[var(--color-primary)] !text-white': viewMode === 'single',
-                '!text-t-secondary hover:!text-t-primary': viewMode !== 'single',
-              })}
-            >
-              <Square size={14} theme='outline' />
-              <span className='text-11px hidden sm:inline'>{t('team.view.single', { defaultValue: 'Single' })}</span>
-            </Button>
-          </Tooltip>
-        </div>
+        {/* Parallel / Single segmented toggle (only when multiple members exist) */}
+        {members.length > 1 && (
+          <div className='flex items-center gap-2px p-2px rounded-8px bg-[var(--color-fill-2)] border border-[var(--color-border-2)]'>
+            <Tooltip content={t('team.view.parallel', { defaultValue: 'Parallel (Side by side)' })} position='bottom'>
+              <Button
+                type={viewMode === 'parallel' ? 'primary' : 'text'}
+                size='mini'
+                onClick={() => onChangeViewMode('parallel')}
+                className={classNames('!rounded-6px !h-26px !px-8px flex items-center gap-4px', {
+                  '!bg-[var(--color-primary)] !text-white': viewMode === 'parallel',
+                  '!text-t-secondary hover:!text-t-primary': viewMode !== 'parallel',
+                })}
+              >
+                <AllApplication size={14} theme='outline' />
+                <span className='text-11px hidden sm:inline'>
+                  {t('team.view.parallel', { defaultValue: 'Parallel' })}
+                </span>
+              </Button>
+            </Tooltip>
+
+            <Tooltip content={t('team.view.single', { defaultValue: 'Single (Full screen)' })} position='bottom'>
+              <Button
+                type={viewMode === 'single' ? 'primary' : 'text'}
+                size='mini'
+                onClick={() => onChangeViewMode('single')}
+                className={classNames('!rounded-6px !h-26px !px-8px flex items-center gap-4px', {
+                  '!bg-[var(--color-primary)] !text-white': viewMode === 'single',
+                  '!text-t-secondary hover:!text-t-primary': viewMode !== 'single',
+                })}
+              >
+                <Square size={14} theme='outline' />
+                <span className='text-11px hidden sm:inline'>{t('team.view.single', { defaultValue: 'Single' })}</span>
+              </Button>
+            </Tooltip>
+          </div>
+        )}
       </div>
     </div>
   );

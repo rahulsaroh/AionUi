@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Modal,
   Checkbox,
@@ -17,9 +17,9 @@ import {
   Button,
   Collapse,
 } from '@arco-design/web-react';
-import { Github, Plus } from '@icon-park/react';
+import { Github, Plus, FileText, UploadOne, Delete } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
-import { knowledgeRepo } from '@/common/adapter/ipcBridge';
+import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
 import type { KnowledgeRepo } from '@/common/types/knowledgeRepo';
 import { useMemberKnowledge } from './useMemberKnowledge';
 
@@ -62,6 +62,16 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
   const [githubToken, setGithubToken] = useState<string>('');
   const [cloning, setCloning] = useState<boolean>(false);
 
+  // Document Knowledge state
+  const [isAddingDoc, setIsAddingDoc] = useState<boolean>(false);
+  const [docName, setDocName] = useState<string>('');
+  const [docContent, setDocContent] = useState<string>('');
+  const [existingDoc, setExistingDoc] = useState<{ fileName: string; content: string; estimatedTokens: number } | null>(
+    null
+  );
+  const [savingDoc, setSavingDoc] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (visible) {
       setSelectedRepoIds(assignedRepoIds);
@@ -70,8 +80,32 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
       setGithubUrl('');
       setGithubRef('main');
       setGithubToken('');
+      setIsAddingDoc(false);
+
+      if (memberKey) {
+        void memberHandbook
+          .read(memberKey)
+          .then((detail) => {
+            if (detail && detail.content) {
+              setExistingDoc({
+                fileName: detail.fileName,
+                content: detail.content,
+                estimatedTokens: detail.estimatedTokens || Math.ceil(detail.content.length / 4),
+              });
+              setDocContent(detail.content);
+              setDocName(detail.fileName);
+            } else {
+              setExistingDoc(null);
+              setDocContent('');
+              setDocName('');
+            }
+          })
+          .catch(() => {
+            setExistingDoc(null);
+          });
+      }
     }
-  }, [visible, assignedRepoIds, whenToUseHint]);
+  }, [visible, assignedRepoIds, whenToUseHint, memberKey]);
 
   // Check for rule conflicts whenever selected repos change
   useEffect(() => {
@@ -96,16 +130,92 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
 
   const handlePreview = async () => {
     try {
-      const res = await knowledgeRepo.buildInstructions({
-        memberName: memberName || 'Teammate',
-        rolePrompt: '',
-        repoIds: selectedRepoIds,
-        whenToUseHint: hint,
-        forceFullPlaybook: true,
-      });
-      setPreviewInstructions(res.instructions);
+      const parts: string[] = [];
+      if (existingDoc?.content || docContent.trim()) {
+        parts.push(
+          `### Document Knowledge (${docName || existingDoc?.fileName || 'Custom Document'})\n${docContent.trim() || existingDoc?.content || ''}`
+        );
+      }
+      if (selectedRepoIds.length > 0) {
+        const res = await knowledgeRepo.buildInstructions({
+          memberName: memberName || 'Teammate',
+          rolePrompt: '',
+          repoIds: selectedRepoIds,
+          whenToUseHint: hint,
+          forceFullPlaybook: true,
+        });
+        if (res.instructions) {
+          parts.push(res.instructions);
+        }
+      }
+      setPreviewInstructions(parts.join('\n\n---\n\n') || 'No knowledge or document attached.');
     } catch (err: unknown) {
       Message.error((err as Error).message || 'Failed to preview instructions');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (typeof text === 'string') {
+        setDocContent(text);
+        setDocName(file.name);
+        setIsAddingDoc(true);
+        Message.success(`Loaded document: ${file.name}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleSaveDocKnowledge = async () => {
+    if (!docContent.trim()) {
+      Message.warning('Please enter or upload document content');
+      return;
+    }
+    setSavingDoc(true);
+    try {
+      const readRes = await memberHandbook.read(memberKey);
+      if (readRes) {
+        await memberHandbook.update({
+          memberKey,
+          content: docContent.trim(),
+        });
+      } else {
+        await memberHandbook.create({
+          memberKey,
+          memberName: memberName || 'Teammate',
+          role: 'specialist',
+          customContent: docContent.trim(),
+        });
+      }
+      setExistingDoc({
+        fileName: docName || 'HANDBOOK.md',
+        content: docContent.trim(),
+        estimatedTokens: Math.ceil(docContent.length / 4),
+      });
+      setIsAddingDoc(false);
+      Message.success('Document knowledge saved and attached to teammate!');
+    } catch (err: unknown) {
+      Message.error((err as Error).message || 'Failed to save document knowledge');
+    } finally {
+      setSavingDoc(false);
+    }
+  };
+
+  const handleRemoveDocKnowledge = async () => {
+    try {
+      await memberHandbook.delete({ memberKey });
+      setExistingDoc(null);
+      setDocContent('');
+      setDocName('');
+      setIsAddingDoc(false);
+      Message.success('Document knowledge removed');
+    } catch (err: unknown) {
+      Message.error((err as Error).message || 'Failed to remove document knowledge');
     }
   };
 
@@ -292,8 +402,111 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
             )}
           </div>
 
+          {/* Add Document Knowledge Section */}
+          <div className='mt-10px border border-solid border-[color:var(--border-base)] rounded-6px p-10px bg-[color:var(--bg-2)]'>
+            <div className='flex items-center justify-between'>
+              <span className='text-12px font-semibold text-t-primary flex items-center gap-6px'>
+                <FileText theme='outline' size='14' />
+                {t('team.knowledgeRepos.documentKnowledge', {
+                  defaultValue: 'Document Knowledge (Files, Notes & SOPs)',
+                })}
+              </span>
+              <div className='flex items-center gap-6px'>
+                <input
+                  type='file'
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  accept='.md,.txt,.json,.yaml,.yml,.py,.ts,.js,.doc,.docx,.pdf,.csv'
+                />
+                <Button
+                  size='mini'
+                  type='outline'
+                  icon={<UploadOne theme='outline' size='12' />}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {t('common.upload', { defaultValue: 'Upload File' })}
+                </Button>
+                <Button
+                  size='mini'
+                  type={isAddingDoc ? 'secondary' : 'outline'}
+                  icon={<Plus theme='outline' size='12' />}
+                  onClick={() => setIsAddingDoc(!isAddingDoc)}
+                >
+                  {isAddingDoc ? 'Cancel' : existingDoc ? 'Edit Document' : 'Add Text Document'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Existing document info card */}
+            {existingDoc && !isAddingDoc && (
+              <div className='mt-8px p-8px rounded bg-[var(--color-bg-3)] border border-[var(--color-border-2)] flex items-center justify-between'>
+                <div className='flex flex-col min-w-0'>
+                  <span className='font-medium text-12px text-t-primary truncate'>📄 {existingDoc.fileName}</span>
+                  <span className='text-10px text-t-tertiary'>
+                    Attached (~{existingDoc.estimatedTokens} tokens) · Injected into teammate handbook
+                  </span>
+                </div>
+                <div className='flex items-center gap-4px'>
+                  <Button
+                    size='mini'
+                    type='text'
+                    onClick={() => {
+                      setDocContent(existingDoc.content);
+                      setDocName(existingDoc.fileName);
+                      setIsAddingDoc(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size='mini'
+                    type='text'
+                    status='danger'
+                    icon={<Delete size={12} />}
+                    onClick={handleRemoveDocKnowledge}
+                  />
+                </div>
+              </div>
+            )}
+
+            {isAddingDoc && (
+              <div className='mt-10px flex flex-col gap-8px'>
+                <Input
+                  value={docName}
+                  onChange={setDocName}
+                  placeholder='Document Name (e.g. guidelines.md or coding_standards.txt)'
+                  size='small'
+                />
+                <Input.TextArea
+                  value={docContent}
+                  onChange={setDocContent}
+                  placeholder='Paste or type document text, guidelines, instructions, or rules here...'
+                  rows={6}
+                />
+                <div className='flex items-center justify-between pt-4px'>
+                  <span className='text-11px text-t-tertiary'>
+                    ~{Math.ceil(docContent.length / 4)} estimated tokens
+                  </span>
+                  <div className='flex items-center gap-6px'>
+                    <Button size='small' onClick={() => setIsAddingDoc(false)}>
+                      Cancel
+                    </Button>
+                    <Button size='small' type='primary' loading={savingDoc} onClick={handleSaveDocKnowledge}>
+                      Save Document Knowledge
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className='flex justify-end pt-12px'>
-            <Button size='small' onClick={handlePreview} disabled={selectedRepoIds.length === 0}>
+            <Button
+              size='small'
+              onClick={handlePreview}
+              disabled={selectedRepoIds.length === 0 && !existingDoc && !docContent.trim()}
+            >
               {t('team.knowledgeRepos.effectiveInstructions', { defaultValue: 'Preview Effective Instructions' })}
             </Button>
           </div>

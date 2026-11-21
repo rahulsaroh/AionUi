@@ -222,7 +222,7 @@ export function updateTeamInHierarchy(
 export function reconcileProjectsWithHierarchy(
   hierarchy: OrgHierarchy,
   projects: OrgProject[]
-): { hierarchy: OrgHierarchy; projects: OrgProject[] } {
+): { hierarchy: OrgHierarchy; projects: OrgProject[]; rewrittenTeamIds: Map<string, string> } {
   const nextHierarchyDepartments = [...hierarchy.departments];
   const validDepartmentIds = new Set(nextHierarchyDepartments.map((department) => department.id));
 
@@ -250,21 +250,75 @@ export function reconcileProjectsWithHierarchy(
     }
   }
 
+  // Deduplicate teams per department (e.g. merge multiple "Core" teams)
+  const rewrittenTeamIds = new Map<string, string>();
+  const deduplicatedDepartments = nextHierarchyDepartments.map((dept) => {
+    const uniqueTeams: OrgTeamNode[] = [];
+    const teamNameMap = new Map<string, OrgTeamNode>();
+
+    for (const team of dept.teams) {
+      const lowerName = (team.name || 'core').trim().toLowerCase();
+      const existing = teamNameMap.get(lowerName);
+
+      if (!existing) {
+        // Keep this team, but prune default placeholder hrCoordinatorAgent
+        const cleanedTeam: OrgTeamNode = {
+          ...team,
+          hrCoordinatorAgent:
+            team.hrCoordinatorAgent &&
+            (team.hrCoordinatorAgent.systemPrompt ||
+              (team.hrCoordinatorAgent.skills && team.hrCoordinatorAgent.skills.length > 0))
+              ? team.hrCoordinatorAgent
+              : undefined,
+        };
+        teamNameMap.set(lowerName, cleanedTeam);
+        uniqueTeams.push(cleanedTeam);
+      } else {
+        // Duplicate team found! Map old team ID to surviving team ID
+        rewrittenTeamIds.set(team.id, existing.id);
+
+        if (!existing.workspacePath && team.workspacePath) {
+          existing.workspacePath = team.workspacePath;
+        }
+        if (team.workspacePaths && team.workspacePaths.length > 0) {
+          existing.workspacePaths = Array.from(new Set([...(existing.workspacePaths || []), ...team.workspacePaths]));
+        }
+
+        if (team.specialistMembers && team.specialistMembers.length > 0) {
+          const existingIds = new Set(existing.specialistMembers.map((s) => s.id));
+          for (const s of team.specialistMembers) {
+            if (!existingIds.has(s.id)) {
+              existing.specialistMembers.push(s);
+              existingIds.add(s.id);
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      ...dept,
+      teams: uniqueTeams,
+    };
+  });
+
   const updatedHierarchy: OrgHierarchy = {
     ...hierarchy,
-    departments: nextHierarchyDepartments,
+    departments: deduplicatedDepartments,
   };
 
   const normalized = projects.map(normalizeOrgProject);
   const reconciled = normalized.map((project) => {
+    const updatedTeamIds = project.teamIds.map((tid) => rewrittenTeamIds.get(tid) || tid);
     const department = findDepartment(updatedHierarchy, project.departmentId);
-    const validTeamIds = project.teamIds.filter((teamId) => department?.teams.some((team) => team.id === teamId));
-    return validTeamIds.length > 0 ? { ...project, teamIds: validTeamIds } : project;
+    const validTeamIds = updatedTeamIds.filter((teamId) => department?.teams.some((team) => team.id === teamId));
+    return validTeamIds.length > 0 ? { ...project, teamIds: validTeamIds } : { ...project, teamIds: updatedTeamIds };
   });
 
   return {
     projects: reconciled,
     hierarchy: syncHierarchyProjectReferences(updatedHierarchy, reconciled),
+    rewrittenTeamIds,
   };
 }
 
@@ -320,6 +374,10 @@ export function createTeamShell(departmentId: string, name: string, defaultModel
 
 TOOLS AVAILABLE TO YOU — call them yourself, never ask the user to run them:
 - scan_folder({ path }) — inspect any folder structure to understand project type and contents
+- list_dir({ path }) — list immediate files and subdirectories of a folder
+- read_file({ path }) — read file content in your workspace
+- write_file({ path, content }) — create or modify files in your workspace
+- run_shell({ command }) — run shell commands inside your workspace
 - hire_member({ name, role, skills, systemPrompt }) — recruit a new specialist bot to the shared pool
 - assign_member({ memberId, teamId }) — assign a hired member to a team
 - create_team({ departmentId, name }) — create a named sub-team under your department
@@ -337,18 +395,6 @@ RULES:
 - NEVER ask the user to run scan_folder or any tool on your behalf. You have full access — use it.
 - NEVER hire the same specialist twice. Check list_org() if unsure.
 - Keep teams focused: 2–6 specialists per team is ideal. Justify each hire based on actual folder contents.`,
-    },
-    hrCoordinatorAgent: {
-      id: `hr-${id}`,
-      canonicalAgentId: `canonical-hr-${id}`,
-      name: 'HR Coordinator',
-      title: 'HR & Workload Coordinator',
-      role: 'hr_coordinator',
-      assignedTeamIds: [id],
-      lastActiveAt: Date.now(),
-      status: 'idle',
-      assistant_backend: 'aionrs',
-      model: defaultModel || undefined,
     },
     specialistMembers: [],
   };

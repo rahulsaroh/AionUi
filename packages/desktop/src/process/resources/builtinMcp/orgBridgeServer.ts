@@ -27,7 +27,7 @@ const EXECUTION_TOOLS = new Set(['list_dir', 'read_file', 'write_file', 'run_she
 const TOOL_REQUIRED_ROLE: Record<string, string> = {
   create_department: 'Root CEO',
   propose_structure: 'Root CEO',
-  scan_folder: 'Department Head',
+  scan_folder: 'Department Head or Team Lead',
   hire_member: 'Department Head or Team Lead',
   create_team: 'Root CEO, Department Head, or Team Lead',
 };
@@ -285,22 +285,30 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
     }
   } else if (role === 'team_lead') {
     const allowed = new Set([
-      'list_org',
-      'find_owner',
-      'get_org_directory',
+      'scan_folder',
       'create_project',
       'create_team',
       'hire_member',
       'assign_member',
       'assign_task',
+      'list_org',
+      'find_owner',
+      'get_org_directory',
       'get_status',
+      'get_project_status',
+      'list_project_tasks',
       'ask_user',
+      // File and execution tools (Aion CLI parity)
+      'list_dir',
+      'read_file',
+      'write_file',
+      'run_shell',
     ]);
     if (!allowed.has(tool)) {
       const requiredRole = TOOL_REQUIRED_ROLE[tool];
       return {
         success: false,
-        error: `Access denied: role "team_lead" is not permitted to execute "${tool}". ${requiredRole ? `Only the ${requiredRole} can do this.` : ''}`,
+        error: `Access denied: Team Lead role is not permitted to execute "${tool}". ${requiredRole ? `Only the ${requiredRole} can do this.` : ''}`,
       };
     }
   } else if (role === 'project_head') {
@@ -417,7 +425,10 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
 
   if (tool === 'scan_folder') {
     broadcastOrgLiveStep({ step: `Scanning folder: ${args.path || masterRoot || ''}`, tool, args });
-    const allowedScope = role === 'department_head' && deptWorkspacePath ? deptWorkspacePath : masterRoot || undefined;
+    const allowedScope =
+      (role === 'department_head' || role === 'team_lead') && deptWorkspacePath
+        ? deptWorkspacePath
+        : masterRoot || undefined;
     const scanResult = await scanFolderCompact(args.path, {
       depth: args.depth,
       maxEntries: args.maxEntries,

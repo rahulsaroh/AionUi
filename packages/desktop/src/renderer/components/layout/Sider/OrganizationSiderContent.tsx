@@ -65,6 +65,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const {
     hierarchy,
     projects,
+    members: storeMembers = [],
     conversations,
     cronJobs,
     nodeStatuses,
@@ -98,6 +99,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [deptSubTabs, setDeptSubTabs] = useState<Record<string, 'teams' | 'projects'>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(new Set());
+  const [collapsedMemberIds, setCollapsedMemberIds] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [targetDeptIdForTeam, setTargetDeptIdForTeam] = useState<string | null>(null);
   const [newSubTeamName, setNewSubTeamName] = useState('');
@@ -117,36 +120,57 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     context: { departmentId?: string; teamId?: string };
   } | null>(null);
 
-  const isCanvasActive = location.pathname === '/organization';
+  const isCanvasActive = location.pathname === '/organization' && orgViewMode === 'canvas';
   const isAutomationsActive = location.pathname === '/scheduled';
   const isTodayActive = location.pathname === '/today';
   const isCostsActive = location.pathname === '/costs';
   const isPipelineActive = location.pathname.startsWith('/pipeline');
-  const organizationMembers = useMemo(
-    () =>
-      hierarchy.departments.flatMap((department) =>
-        department.teams.flatMap((team) => {
-          const roster = [
-            team.teamLeadAgent,
-            ...(team.hrCoordinatorAgent ? [team.hrCoordinatorAgent] : []),
-            ...team.specialistMembers,
-          ];
-          return roster.map((member) => ({
-            member,
-            departmentId: department.id,
-            teamId: team.id,
-            teamName: team.name,
-          }));
-        })
-      ),
-    [hierarchy.departments]
-  );
+  const organizationMembers = useMemo(() => {
+    const fromTeams = hierarchy.departments.flatMap((department) =>
+      department.teams.flatMap((team) => {
+        const roster = [
+          team.teamLeadAgent,
+          ...(team.hrCoordinatorAgent ? [team.hrCoordinatorAgent] : []),
+          ...team.specialistMembers,
+        ];
+        return roster.map((member) => ({
+          member,
+          departmentId: department.id,
+          teamId: team.id,
+          teamName: team.name,
+        }));
+      })
+    );
+    const seenIds = new Set(fromTeams.map((entry) => entry.member.id));
+    for (const m of storeMembers || []) {
+      if (!seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        const dept = hierarchy.departments.find((d) => d.id === m.departmentId);
+        fromTeams.push({
+          member: m,
+          departmentId: dept?.id || '',
+          teamId: m.assignedTeamIds?.[0] || '',
+          teamName: dept?.teams[0]?.name || '',
+        });
+      }
+    }
+    return fromTeams;
+  }, [hierarchy.departments, storeMembers]);
 
   const toggleDept = (deptId: string) => {
     setCollapsedDepts((prev) => {
       const next = new Set(prev);
       if (next.has(deptId)) next.delete(deptId);
       else next.add(deptId);
+      return next;
+    });
+  };
+
+  const toggleProject = (projectId: string) => {
+    setCollapsedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
       return next;
     });
   };
@@ -187,49 +211,67 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     setDeptSubTabs((prev) => ({ ...prev, [deptId]: tab }));
   };
 
-  // CEO Conversations (newest first)
+  // CEO Conversations (newest first, filtering empty abandoned chats)
   const ceoConversations = useMemo(() => {
     return conversations
-      .filter((c) => c.type === 'ceo_directive' && !c.projectId)
+      .filter(
+        (c) => c.type === 'ceo_directive' && !c.projectId && (c.messages.length > 0 || c.id === selectedConversationId)
+      )
       .toSorted((a, b) => b.timestamp - a.timestamp);
-  }, [conversations]);
+  }, [conversations, selectedConversationId]);
   const [showAllCeoChats, setShowAllCeoChats] = useState(false);
 
   const allAgentMembers = useMemo(() => {
-    const members: OrgAgentMember[] = [];
-    if (hierarchy.rootCeo.ceoAgent) members.push(hierarchy.rootCeo.ceoAgent);
-    if (hierarchy.rootCeo.chiefOfStaffAgent) members.push(hierarchy.rootCeo.chiefOfStaffAgent);
+    const membersList: OrgAgentMember[] = [];
+    if (hierarchy.rootCeo.ceoAgent) membersList.push(hierarchy.rootCeo.ceoAgent);
+    if (hierarchy.rootCeo.chiefOfStaffAgent) membersList.push(hierarchy.rootCeo.chiefOfStaffAgent);
     for (const department of hierarchy.departments) {
-      if (department.departmentCeoAgent) members.push(department.departmentCeoAgent);
-      if (department.pmAgent) members.push(department.pmAgent);
-      for (const team of department.teams) members.push(...teamRoster(team));
+      if (department.departmentCeoAgent) membersList.push(department.departmentCeoAgent);
+      if (department.pmAgent) membersList.push(department.pmAgent);
+      for (const team of department.teams) membersList.push(...teamRoster(team));
     }
-    return members;
-  }, [hierarchy]);
+    const seenIds = new Set(membersList.map((m) => m.id));
+    for (const m of storeMembers || []) {
+      if (!seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        membersList.push(m);
+      }
+    }
+    return membersList;
+  }, [hierarchy, storeMembers]);
+
+  const handleNewCeoChat = () => {
+    onSessionClick?.();
+    clearOrgSelection();
+    const newConvId = `conv-ceo-${Date.now()}`;
+    addOrgConversation({
+      id: newConvId,
+      title: t('team.organization.newChat', { defaultValue: 'New chat' }),
+      type: 'ceo_directive',
+      sourceNodeId: 'root-ceo',
+      targetNodeId: 'root-ceo',
+      targetAgentId: hierarchy.rootCeo.ceoAgent.id,
+      targetAgentName: hierarchy.rootCeo.ceoAgent.name,
+      targetRole: hierarchy.rootCeo.ceoAgent.role,
+      timestamp: Date.now(),
+      summary: '',
+      messages: [],
+    });
+    setSelectedConversationId(newConvId);
+    setOrgViewMode('chat');
+    void navigate('/organization');
+  };
 
   const handleOpenCeoChat = () => {
     onSessionClick?.();
     clearOrgSelection();
-    // Select latest CEO chat or create one if none exist
-    const latestCeoChat = conversations.find((c) => c.type === 'ceo_directive' && !c.projectId);
-    if (latestCeoChat) {
-      setSelectedConversationId(latestCeoChat.id);
+    if (ceoConversations.length > 0) {
+      setSelectedConversationId(ceoConversations[0].id);
+      setOrgViewMode('chat');
+      void navigate('/organization');
     } else {
-      const newConvId = `conv-ceo-${Date.now()}`;
-      addOrgConversation({
-        id: newConvId,
-        title: t('team.organization.newChat', { defaultValue: 'New chat' }),
-        type: 'ceo_directive',
-        sourceNodeId: 'root-ceo',
-        targetNodeId: 'root-ceo',
-        timestamp: Date.now(),
-        summary: '',
-        messages: [],
-      });
-      setSelectedConversationId(newConvId);
+      handleNewCeoChat();
     }
-    setOrgViewMode('chat');
-    void navigate('/organization');
   };
 
   const handleConfirmAddTeam = () => {
@@ -272,14 +314,37 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     [nodeStatuses]
   );
 
+  const isProjectActivelyWorking = useCallback(
+    (proj: OrgProject): boolean => {
+      if (selectedProjectId === proj.id) return true;
+      const currentConv = conversations.find((c) => c.id === selectedConversationId);
+      if (currentConv?.projectId === proj.id) return true;
+      if (nodeStatuses[proj.id] === 'working') return true;
+      if (proj.teamIds?.some((tId) => nodeStatuses[tId] === 'working' || (selectedTeamId && selectedTeamId === tId))) {
+        return true;
+      }
+      return false;
+    },
+    [selectedProjectId, selectedConversationId, conversations, nodeStatuses, selectedTeamId]
+  );
+
   const query = searchQuery.trim().toLowerCase();
   const filteredDepartments = useMemo(() => {
     let list = hierarchy.departments;
     if (activeFilter === 'active') {
+      const hasAnyWorkingOrSelected =
+        projects.some(isProjectActivelyWorking) ||
+        allTeams.some((t) => nodeStatuses[t.id] === 'working' || (selectedTeamId && selectedTeamId === t.id));
       list = list.filter((dept) => {
         const dStatus = deptStatus(dept);
         const deptTeams = allTeams.filter((t) => t.departmentId === dept.id);
         const deptProjects = projects.filter((p) => p.departmentId === dept.id);
+        if (hasAnyWorkingOrSelected) {
+          return (
+            deptProjects.some(isProjectActivelyWorking) ||
+            deptTeams.some((t) => nodeStatuses[t.id] === 'working' || selectedTeamId === t.id)
+          );
+        }
         return (
           dStatus !== 'dormant' ||
           deptTeams.some((t) => teamStatus(t) !== 'dormant') ||
@@ -398,8 +463,10 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     void navigate('/organization');
   };
 
-  const handleOpenMemberChat = (memberId: string, projectId?: string) => {
-    openChat(projectId ? { type: 'member', id: memberId, projectId } : { type: 'member', id: memberId });
+  const handleOpenMemberChat = (memberId: string, projectId?: string, createNew?: boolean) => {
+    openChat(
+      projectId ? { type: 'member', id: memberId, projectId, createNew } : { type: 'member', id: memberId, createNew }
+    );
     onSessionClick?.();
     void navigate('/organization');
   };
@@ -411,36 +478,64 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     void navigate('/organization');
   };
 
-  const renderMemberThread = (member: OrgAgentMember, memberChats: OrgConversation[], projectId?: string) => (
-    <div key={`${projectId ?? 'dept'}:${member.canonicalAgentId || member.id}`} className='flex flex-col'>
-      <SiderMemberRow
-        member={member}
-        isSelected={memberChats.some((chat) => chat.id === selectedConversationId)}
-        onOpenChat={() => handleOpenMemberChat(member.id, projectId)}
-      />
-      {memberChats.length > 0 ? (
-        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
-          {memberChats.map((conv) => {
-            const projectName = conv.projectId ? projects.find((item) => item.id === conv.projectId)?.name : undefined;
-            return (
-              <SiderChatRow
-                key={conv.id}
-                conversation={conv}
-                isSelected={selectedConversationId === conv.id}
-                badge={projectId ? undefined : projectName}
-                relativeTime={formatChatTime(conv.timestamp)}
-                onSelect={() => handleSelectConversation(conv.id)}
-              />
-            );
-          })}
-        </div>
-      ) : (
-        <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
-          {t('team.organization.noChats', { defaultValue: 'No chats yet.' })}
-        </div>
-      )}
-    </div>
-  );
+  const toggleMemberCollapse = (key: string) => {
+    setCollapsedMemberIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const renderMemberThread = (member: OrgAgentMember, memberChats: OrgConversation[], projectId?: string) => {
+    const memberKey = `${projectId ?? 'dept'}:${member.canonicalAgentId || member.id}`;
+    const isCollapsed =
+      memberChats.length === 0 ? !collapsedMemberIds.has(memberKey) : collapsedMemberIds.has(memberKey);
+    return (
+      <div key={memberKey} className='flex flex-col'>
+        <SiderMemberRow
+          member={member}
+          isSelected={memberChats.some((chat) => chat.id === selectedConversationId)}
+          hasChats={memberChats.length > 0}
+          isCollapsed={isCollapsed}
+          onToggleCollapse={() => toggleMemberCollapse(memberKey)}
+          onEditMember={() =>
+            setEditEntity({
+              type: 'member',
+              data: member,
+              context: { departmentId: selectedDepartmentId || undefined },
+            })
+          }
+          onNewChat={() => handleOpenMemberChat(member.id, projectId, true)}
+        />
+        {!isCollapsed && (
+          <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+            {memberChats.length > 0 ? (
+              memberChats.map((conv) => {
+                const projectName = conv.projectId
+                  ? projects.find((item) => item.id === conv.projectId)?.name
+                  : undefined;
+                return (
+                  <SiderChatRow
+                    key={conv.id}
+                    conversation={conv}
+                    isSelected={selectedConversationId === conv.id}
+                    badge={projectId ? undefined : projectName}
+                    relativeTime={formatChatTime(conv.timestamp)}
+                    onSelect={() => handleSelectConversation(conv.id)}
+                  />
+                );
+              })
+            ) : (
+              <div className='px-6px py-2px text-10px text-t-tertiary italic'>
+                {t('team.organization.noChatsYet', { defaultValue: 'No chats yet' })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const handleSelectTeam = (teamId: string) => {
     setSelectedTeam(teamId);
@@ -450,13 +545,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       const latest = teamChats[0];
       setSelectedConversationId(latest.id);
     } else {
-      for (const dept of hierarchy.departments) {
-        const team = dept.teams.find((t) => t.id === teamId);
-        if (team) {
-          handleNewTeamChat(dept.id, team);
-          return;
-        }
-      }
+      setSelectedConversationId(null);
     }
     setOrgViewMode('chat');
     onSessionClick?.();
@@ -492,11 +581,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
       const latest = projChats[0];
       setSelectedConversationId(latest.id);
     } else {
-      const proj = projects.find((p) => p.id === projectId);
-      if (proj) {
-        handleNewChat(proj.departmentId, proj);
-        return;
-      }
+      setSelectedConversationId(null);
     }
     setOrgViewMode('chat');
     onSessionClick?.();
@@ -548,18 +633,31 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     let dormantCount = 0;
     let sharedCount = 0;
 
+    const workingProjects = projects.filter(isProjectActivelyWorking);
+    const workingTeams = allTeams.filter((t) => nodeStatuses[t.id] === 'working' || selectedTeamId === t.id);
+
     allTeams.forEach((team) => {
       const status = teamStatus(team);
-      if (status !== 'dormant') activeCount++;
       if (status === 'dormant') dormantCount++;
       if (team.specialistMembers.some((m) => m.assignedTeamIds.length > 1)) sharedCount++;
     });
 
     projects.forEach((proj) => {
-      if (proj.status !== 'dormant') activeCount++;
       if (proj.status === 'dormant') dormantCount++;
       if (proj.teamIds.length > 1) sharedCount++;
     });
+
+    if (workingProjects.length > 0 || workingTeams.length > 0) {
+      activeCount = workingProjects.length + workingTeams.length;
+    } else {
+      allTeams.forEach((team) => {
+        const status = teamStatus(team);
+        if (status !== 'dormant') activeCount++;
+      });
+      projects.forEach((proj) => {
+        if (proj.status !== 'dormant') activeCount++;
+      });
+    }
 
     return [
       {
@@ -583,7 +681,16 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
         count: sharedCount,
       },
     ];
-  }, [hierarchy.departments, allTeams, projects, t, teamStatus]);
+  }, [
+    hierarchy.departments,
+    allTeams,
+    projects,
+    t,
+    teamStatus,
+    isProjectActivelyWorking,
+    nodeStatuses,
+    selectedTeamId,
+  ]);
 
   if (collapsed) {
     return (
@@ -593,7 +700,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
           content={t('team.organization.talkToRootCeo', { defaultValue: 'Talk to Root CEO' })}
           position='right'
         >
-          <SiderCommandCard onClick={handleOpenCeoChat} />
+          <SiderCommandCard onNewChat={handleNewCeoChat} onOpenChat={handleOpenCeoChat} />
         </Tooltip>
         <Tooltip
           {...siderTooltipProps}
@@ -605,6 +712,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             label=''
             selected={isCanvasActive}
             onClick={() => {
+              setOrgViewMode('canvas');
+              setSelectedConversationId(null);
+              clearOrgSelection();
               onSessionClick?.();
               void navigate('/organization');
             }}
@@ -685,7 +795,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
           <div className='flex items-center gap-4px'>
             <div className='flex-1 min-w-0'>
               <SiderCommandCard
-                onClick={handleOpenCeoChat}
+                onNewChat={handleNewCeoChat}
+                onOpenChat={handleOpenCeoChat}
                 selected={orgViewMode === 'chat' && !selectedProjectId && !selectedTeamId && !selectedDepartmentId}
               />
             </div>
@@ -722,7 +833,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                         const proj = projects.find((p) => p.id === selectedProjectId);
                         if (proj) handleNewChat(proj.departmentId, proj);
                       } else {
-                        handleOpenCeoChat();
+                        handleNewCeoChat();
                       }
                     }}
                   >
@@ -787,6 +898,9 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             selected={isCanvasActive}
             badge='Live'
             onClick={() => {
+              setOrgViewMode('canvas');
+              setSelectedConversationId(null);
+              clearOrgSelection();
               onSessionClick?.();
               void navigate('/organization');
             }}
@@ -907,10 +1021,15 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                 };
                 const departmentMembers = listDepartmentTeamMembers(dept).filter(memberVisible);
 
+                const hasWorkingProjectsInDept = deptProjects.some(isProjectActivelyWorking);
                 const filteredProjects = deptProjects.filter((proj) => {
                   if (activeFilter === 'all') return true;
                   if (activeFilter === 'shared') return proj.teamIds.length > 1;
-                  return proj.status === activeFilter;
+                  if (activeFilter === 'dormant') return proj.status === 'dormant';
+                  if (hasWorkingProjectsInDept || projects.some(isProjectActivelyWorking)) {
+                    return isProjectActivelyWorking(proj);
+                  }
+                  return proj.status === 'active';
                 });
 
                 const filteredTeams = deptTeams.filter((team) => {
@@ -1015,7 +1134,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                               member,
                                               chatsWithMember(conversations, member, allAgentMembers, {
                                                 departments: hierarchy.departments,
-                                              })
+                                              }).filter((c) => c.messages.length > 0 || c.id === selectedConversationId)
                                             )
                                           )}
                                         </div>
@@ -1035,7 +1154,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                       member,
                                       chatsWithMember(conversations, member, allAgentMembers, {
                                         departments: hierarchy.departments,
-                                      })
+                                      }).filter((c) => c.messages.length > 0 || c.id === selectedConversationId)
                                     )
                                   )}
                                 </div>
@@ -1062,6 +1181,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                               ) : (
                                 filteredProjects.map((proj) => {
                                   const isProjectSelected = selectedProjectId === proj.id;
+                                  const isProjectExpanded = !collapsedProjectIds.has(proj.id);
                                   const projectMembers = listProjectTeamMembers(proj, dept, allAgentMembers);
                                   const visibleProjectMembers = projectMembers.filter(memberVisible);
                                   return (
@@ -1069,6 +1189,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                       <SiderProjectRow
                                         project={proj}
                                         isSelected={isProjectSelected}
+                                        isExpanded={isProjectExpanded}
+                                        onToggleExpand={() => toggleProject(proj.id)}
                                         onOpenChat={() => handleOpenProjectChat(proj.id)}
                                         onEdit={(e) => {
                                           e.stopPropagation();
@@ -1083,28 +1205,31 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                         }}
                                         siderTooltipProps={siderTooltipProps}
                                       />
-                                      {visibleProjectMembers.length === 0 ? (
-                                        <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                          {projectMembers.length === 0
-                                            ? t('team.organization.noProjectMembers', {
-                                                defaultValue: 'No team members on this project.',
-                                              })
-                                            : t('team.noMatchingMembers')}
-                                        </div>
-                                      ) : (
-                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                          {visibleProjectMembers.map((member) =>
-                                            renderMemberThread(
-                                              member,
-                                              chatsWithMember(conversations, member, allAgentMembers, {
-                                                projectId: proj.id,
-                                                departments: hierarchy.departments,
-                                              }),
-                                              proj.id
-                                            )
-                                          )}
-                                        </div>
-                                      )}
+                                      {isProjectExpanded &&
+                                        (visibleProjectMembers.length === 0 ? (
+                                          <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                            {projectMembers.length === 0
+                                              ? t('team.organization.noProjectMembers', {
+                                                  defaultValue: 'No team members on this project.',
+                                                })
+                                              : t('team.noMatchingMembers')}
+                                          </div>
+                                        ) : (
+                                          <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                            {visibleProjectMembers.map((member) =>
+                                              renderMemberThread(
+                                                member,
+                                                chatsWithMember(conversations, member, allAgentMembers, {
+                                                  projectId: proj.id,
+                                                  departments: hierarchy.departments,
+                                                }).filter(
+                                                  (c) => c.messages.length > 0 || c.id === selectedConversationId
+                                                ),
+                                                proj.id
+                                              )
+                                            )}
+                                          </div>
+                                        ))}
                                     </div>
                                   );
                                 })

@@ -20,6 +20,9 @@ import {
   Setting,
   Left,
   Right,
+  Edit,
+  BookOne,
+  Copy,
 } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +36,8 @@ import { OrgProposalCard, type StructureProposalData } from './OrgProposalCard';
 import { OrgTeamChatHeader } from './teamChat/OrgTeamChatHeader';
 import { OrgTeamChatSlot } from './teamChat/OrgTeamChatSlot';
 import type { OrgTeamChatViewMode } from './teamChat/types';
+import OrgEntityEditModal from './OrgEntityEditModal';
+import { MemberKnowledgePanel } from '@/renderer/components/knowledge';
 import {
   setupOrgToolBridgeListener,
   onStructureProposed,
@@ -92,6 +97,7 @@ export const OrgChatView: React.FC = () => {
     conversations,
     selectedConversationId,
     selectedTeamId,
+    selectedProjectId,
     setSelectedConversationId,
     setOrgViewMode,
     setSelectedDepartment,
@@ -102,6 +108,7 @@ export const OrgChatView: React.FC = () => {
     addSubTeam,
     addOrgProject,
     addTeamMember,
+    updateTeamMember,
     updateNodeStatus,
     touchNodeActivity,
     updateAgentModel,
@@ -122,10 +129,34 @@ export const OrgChatView: React.FC = () => {
   const [activeProposal, setActiveProposal] = useState<StructureProposalData | null>(null);
   const [activeAskLineup, setActiveAskLineup] = useState<AskUserPayload | null>(null);
   const [permissionQueue, setPermissionQueue] = useState<OrgPermissionRequest[]>([]);
+  const [editingMember, setEditingMember] = useState<OrgAgentMember | null>(null);
+  const [knowledgeMember, setKnowledgeMember] = useState<OrgAgentMember | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const cancelRef = useRef<(() => Promise<void>) | null>(null);
   const lastAskUserPayloadRef = useRef<AskUserPayload | null>(null);
+
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // ignore copy failure
+    }
+  };
 
   useEffect(() => {
     const unsubBridge = setupOrgToolBridgeListener();
@@ -263,6 +294,10 @@ export const OrgChatView: React.FC = () => {
     return undefined;
   }, [selectedTeamId, activeConversation?.teamId, activeTargetAgent, activeProject, hierarchy.departments]);
 
+  const handleSaveMember = useCallback(() => {
+    setEditingMember(null);
+  }, []);
+
   const activeProjectHead = useMemo(() => {
     if (!activeProject) return undefined;
     if (activeTeam?.teamLeadAgent) return activeTeam.teamLeadAgent;
@@ -385,6 +420,10 @@ export const OrgChatView: React.FC = () => {
 
   useEffect(() => {
     if (!activeTeam) return;
+    if (teamMembers.length <= 1) {
+      setTeamViewModeState('single');
+      return;
+    }
     try {
       const stored = localStorage.getItem(`org-team-view-mode-${activeTeam.id}`);
       if (stored === 'single') setTeamViewModeState('single');
@@ -392,7 +431,7 @@ export const OrgChatView: React.FC = () => {
     } catch {
       setTeamViewModeState('parallel');
     }
-  }, [activeTeam?.id]);
+  }, [activeTeam?.id, teamMembers.length]);
 
   const setTeamViewMode = useCallback(
     (mode: OrgTeamChatViewMode) => {
@@ -431,20 +470,62 @@ export const OrgChatView: React.FC = () => {
     }
   }, [activeMemberIdx, teamMembers]);
 
+  const [canScrollParallelLeft, setCanScrollParallelLeft] = useState(false);
+  const [canScrollParallelRight, setCanScrollParallelRight] = useState(false);
+
+  const checkParallelScroll = useCallback(() => {
+    const el = teamScrollContainerRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollParallelLeft(scrollLeft > 10);
+    setCanScrollParallelRight(scrollLeft + clientWidth < scrollWidth - 10);
+  }, []);
+
+  const scrollParallel = useCallback((direction: 'left' | 'right') => {
+    const el = teamScrollContainerRef.current;
+    if (!el) return;
+    const slotWidth = 380;
+    el.scrollBy({
+      left: direction === 'left' ? -slotWidth : slotWidth,
+      behavior: 'smooth',
+    });
+  }, []);
+
+  useEffect(() => {
+    if (teamViewMode !== 'parallel') return;
+    const el = teamScrollContainerRef.current;
+    if (!el) return;
+    checkParallelScroll();
+    el.addEventListener('scroll', checkParallelScroll, { passive: true });
+    window.addEventListener('resize', checkParallelScroll);
+    return () => {
+      el.removeEventListener('scroll', checkParallelScroll);
+      window.removeEventListener('resize', checkParallelScroll);
+    };
+  }, [teamViewMode, teamMembers.length, checkParallelScroll]);
+
   useEffect(() => {
     if (!activeTeam || teamMembers.length <= 1) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
-        scrollToPrev();
+        if (teamViewMode === 'single') {
+          scrollToPrev();
+        } else {
+          scrollParallel('left');
+        }
       } else if (e.altKey && e.key === 'ArrowRight') {
         e.preventDefault();
-        scrollToNext();
+        if (teamViewMode === 'single') {
+          scrollToNext();
+        } else {
+          scrollParallel('right');
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTeam, teamMembers.length, scrollToPrev, scrollToNext]);
+  }, [activeTeam, teamMembers.length, teamViewMode, scrollToPrev, scrollToNext, scrollParallel]);
 
   const handleSelectMemberTab = useCallback(
     (memberId: string) => {
@@ -460,32 +541,44 @@ export const OrgChatView: React.FC = () => {
     (member: OrgAgentMember): OrgConversation => {
       if (
         activeConversation &&
-        activeConversation.targetAgentId === member.id &&
-        (activeTeam
-          ? activeConversation.teamId === activeTeam.id || activeConversation.sourceNodeId === activeTeam.id
-          : true)
+        activeConversation.type === 'agent_direct' &&
+        activeConversation.targetAgentId === member.id
       ) {
         return activeConversation;
       }
+
+      if (activeConversation && activeConversation.type === 'team_execution') {
+        if (activeTeam && member.id === activeTeam.teamLeadAgent.id) {
+          return activeConversation;
+        }
+        const sessionScopedId = `conv-${activeConversation.id}-${member.id}`;
+        const sessionConv = conversations.find((c) => c.id === sessionScopedId);
+        if (sessionConv) return sessionConv;
+
+        return {
+          id: sessionScopedId,
+          title: `${member.name} - Chat`,
+          type: 'agent_direct',
+          sourceNodeId: activeTeam?.id || 'root-ceo',
+          targetNodeId: member.id,
+          teamId: activeTeam?.id,
+          projectId: activeConversation.projectId,
+          targetAgentId: member.id,
+          targetRole: member.role,
+          targetAgentName: member.name,
+          targetAgentModel: member.model,
+          timestamp: Date.now(),
+          summary: '',
+          messages: [],
+        };
+      }
+
       const match = conversations.find(
         (c) =>
           c.targetAgentId === member.id &&
           (activeTeam ? c.teamId === activeTeam.id || c.sourceNodeId === activeTeam.id : true)
       );
       if (match) return match;
-
-      if (activeTeam && member.id === activeTeam.teamLeadAgent.id) {
-        const teamExec = conversations.find(
-          (c) =>
-            c.teamId === activeTeam.id &&
-            c.type === 'team_execution' &&
-            (!c.targetAgentId || c.targetAgentId === member.id)
-        );
-        if (teamExec) return teamExec;
-      }
-
-      const anyTarget = conversations.find((c) => c.targetAgentId === member.id);
-      if (anyTarget) return anyTarget;
 
       return {
         id: `conv-${activeTeam?.id || 'team'}-${member.id}`,
@@ -573,6 +666,7 @@ export const OrgChatView: React.FC = () => {
 
       let accumulatedText = '';
       let finalSynthesis = '';
+      let lastMemberBackendConvId: string | undefined = conv.backendConversationId;
       const memberTarget: OrgChatTarget = { type: 'member', id: member.id };
       const memberAbortController = new AbortController();
 
@@ -632,6 +726,9 @@ export const OrgChatView: React.FC = () => {
               throw new Error(event.data.error || 'Unknown error');
             case 'done':
               finalSynthesis = event.data.finalSynthesis || accumulatedText;
+              if (event.data.backendConversationId) {
+                lastMemberBackendConvId = event.data.backendConversationId;
+              }
               break;
           }
         }
@@ -648,6 +745,7 @@ export const OrgChatView: React.FC = () => {
           ...interimConversation,
           summary: (finalSynthesis || accumulatedText).slice(0, 80),
           messages: [...updatedMessages, agentMessage],
+          backendConversationId: lastMemberBackendConvId,
           timestamp: Date.now(),
         };
         addOrgConversation(finalConversation);
@@ -1215,6 +1313,33 @@ export const OrgChatView: React.FC = () => {
   };
 
   const handleNewConversation = () => {
+    if (activeConversation?.type === 'agent_direct' && activeTargetAgent) {
+      const newConvId = `conv-direct-${activeTargetAgent.id}-${Date.now()}`;
+      addOrgConversation({
+        id: newConvId,
+        title: `Chat with ${activeTargetAgent.name}`,
+        type: 'agent_direct',
+        sourceNodeId: activeTeam?.id || activeDept?.id || 'root-ceo',
+        targetNodeId: activeTargetAgent.id,
+        projectId: activeProject?.id,
+        teamId: activeTeam?.id || activeProject?.teamIds?.[0],
+        targetAgentId: activeTargetAgent.id,
+        targetRole: activeTargetAgent.role,
+        targetAgentName: activeTargetAgent.name,
+        targetAgentModel: activeTargetAgent.model,
+        timestamp: Date.now(),
+        summary: '',
+        messages: [],
+      });
+      setSelectedConversationId(newConvId);
+      setInputPrompt('');
+      setDraftsByThreadId((prev) => {
+        const next = { ...prev };
+        delete next[newConvId];
+        return next;
+      });
+      return;
+    }
     if (activeProject) {
       const newConvId = `conv-proj-${activeProject.id}-${Date.now()}`;
       addOrgConversation({
@@ -1284,11 +1409,11 @@ export const OrgChatView: React.FC = () => {
   const placeholderText = isCeoChat
     ? t('team.organization.tellRootCeoPlaceholder', { defaultValue: 'Tell your Root CEO what you want done...' })
     : activeProject
-      ? `Message ${activeProjectHead?.name || 'Project Lead'} about ${activeProject.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+      ? `Message ${activeProjectHead?.name ? (/^aion(\s*|-)?cli$/i.test(activeProjectHead.name.trim()) ? 'Shiraj CLI' : activeProjectHead.name) : 'Project Lead'} about ${activeProject.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
       : activeTeam
-        ? `Message ${activeTeam.teamLeadAgent.name} for ${activeTeam.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+        ? `Message ${/^aion(\s*|-)?cli$/i.test(activeTeam.teamLeadAgent.name.trim()) ? 'Shiraj CLI' : activeTeam.teamLeadAgent.name} for ${activeTeam.name} (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
         : activeTargetAgent
-          ? `Message ${activeTargetAgent.name} directly (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
+          ? `Message ${/^aion(\s*|-)?cli$/i.test(activeTargetAgent.name.trim()) ? 'Shiraj CLI' : activeTargetAgent.name} directly (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'})...`
           : `Direct Root CEO (${currentAgentModel?.modelName || currentAgentModel?.modelId || 'Default Model'}) - issue strategic directives or manage structure...`;
 
   const runStatus: 'idle' | 'running' | 'error' = isExecuting ? 'running' : errorState ? 'error' : 'idle';
@@ -1301,9 +1426,9 @@ export const OrgChatView: React.FC = () => {
 
   const isTeamChat =
     !isCeoChat &&
-    !activeProject &&
     Boolean(activeTeam) &&
     teamMembers.length > 1 &&
+    (!selectedProjectId || Boolean(selectedTeamId) || Boolean(activeTargetAgent)) &&
     (Boolean(selectedTeamId) ||
       Boolean(activeConversation?.teamId) ||
       Boolean(
@@ -1330,10 +1455,11 @@ export const OrgChatView: React.FC = () => {
           onOpenFolder={() => void handleOpenWorkspaceFolder()}
           workspacePath={activeWorkspacePath}
           onNewConversation={handleNewConversation}
+          onOpenCanvas={() => setOrgViewMode('canvas')}
         />
 
         <div className='relative flex flex-1 h-full w-full overflow-hidden min-h-0'>
-          {teamViewMode === 'single' ? (
+          {teamViewMode === 'single' || teamMembers.length <= 1 ? (
             <div className='relative flex-1 h-full w-full min-w-0'>
               {hasPrev && (
                 <Tooltip
@@ -1379,6 +1505,8 @@ export const OrgChatView: React.FC = () => {
                       onSendMessage={(text) => handleSendMemberMessage(member, text)}
                       onSelectModel={(model) => updateAgentModel(member.id, model)}
                       onSelectCreatedEntity={handleSelectCreatedEntity}
+                      onEditTeammate={(m) => setEditingMember(m)}
+                      onOpenKnowledge={(m) => setKnowledgeMember(m)}
                     />
                   </div>
                 );
@@ -1399,60 +1527,115 @@ export const OrgChatView: React.FC = () => {
               )}
             </div>
           ) : (
-            <div
-              ref={teamScrollContainerRef}
-              className='flex h-full w-full overflow-x-auto overflow-y-hidden [scrollbar-width:thin]'
-              style={{ scrollSnapType: 'x proximity' }}
-            >
-              {teamMembers.map((member, index) => {
-                const isLeader = member.id === activeTeam.teamLeadAgent.id;
-                const isHr = member.id === activeTeam.hrCoordinatorAgent?.id;
-                const isLast = index === teamMembers.length - 1;
-                const conv = getMemberConversation(member);
-
-                return (
+            <div className='relative flex-1 h-full w-full min-w-0 overflow-hidden'>
+              {canScrollParallelLeft && (
+                <Tooltip content={`${t('team.scrollLeft', { defaultValue: 'Scroll left' })} (Alt+←)`} position='right'>
                   <div
-                    key={member.id}
-                    ref={(el) => {
-                      memberSlotRefs.current[member.id] = el;
-                    }}
-                    data-slot-id={member.id}
-                    className={classNames('relative h-full flex flex-col', {
-                      'border-r border-[var(--color-border-2)]': !isLast,
-                    })}
-                    style={{
-                      flex: '1 1 380px',
-                      minWidth: teamMembers.length <= 2 ? '300px' : '380px',
-                      scrollSnapAlign: 'start',
-                    }}
+                    className='absolute start-0 top-0 bottom-0 w-44px z-20 flex items-center justify-center cursor-pointer group select-none pointer-events-auto'
+                    style={{ background: 'linear-gradient(90deg, var(--color-bg-1) 35%, transparent)' }}
+                    onClick={() => scrollParallel('left')}
                   >
-                    <OrgTeamChatSlot
-                      member={member}
-                      team={activeTeam}
-                      departmentName={activeDept?.name}
-                      conversation={conv}
-                      isLeader={isLeader}
-                      isHr={isHr}
-                      isFullscreen={false}
-                      isExecuting={Boolean(executingMemberIds[member.id])}
-                      liveStepText={memberLiveSteps[member.id]}
-                      streamingContent={memberStreaming[member.id]}
-                      onToggleFullscreen={() => {
-                        setActiveMemberId(member.id);
-                        setTeamViewMode('single');
-                      }}
-                      onSendMessage={(text) => handleSendMemberMessage(member, text)}
-                      onSelectModel={(model) => updateAgentModel(member.id, model)}
-                      onSelectCreatedEntity={handleSelectCreatedEntity}
-                    />
+                    <div className='w-32px h-32px rounded-full flex items-center justify-center transition-transform duration-150 group-hover:scale-110 bg-[var(--color-bg-3)] border border-[var(--color-border-2)] text-t-primary shadow-md'>
+                      <Left size={18} theme='outline' fill='currentColor' />
+                    </div>
                   </div>
-                );
-              })}
+                </Tooltip>
+              )}
+
+              <div
+                ref={teamScrollContainerRef}
+                className='flex h-full w-full overflow-x-auto overflow-y-hidden [scrollbar-width:thin]'
+                style={{ scrollSnapType: 'x proximity' }}
+              >
+                {teamMembers.map((member, index) => {
+                  const isLeader = member.id === activeTeam.teamLeadAgent.id;
+                  const isHr = member.id === activeTeam.hrCoordinatorAgent?.id;
+                  const isLast = index === teamMembers.length - 1;
+                  const conv = getMemberConversation(member);
+
+                  return (
+                    <div
+                      key={member.id}
+                      ref={(el) => {
+                        memberSlotRefs.current[member.id] = el;
+                      }}
+                      data-slot-id={member.id}
+                      className={classNames('relative h-full flex flex-col', {
+                        'border-r border-[var(--color-border-2)]': !isLast,
+                      })}
+                      style={{
+                        flex: '1 1 380px',
+                        minWidth: teamMembers.length <= 2 ? '300px' : '380px',
+                        scrollSnapAlign: 'start',
+                      }}
+                    >
+                      <OrgTeamChatSlot
+                        member={member}
+                        team={activeTeam}
+                        departmentName={activeDept?.name}
+                        conversation={conv}
+                        isLeader={isLeader}
+                        isHr={isHr}
+                        isFullscreen={false}
+                        isExecuting={Boolean(executingMemberIds[member.id])}
+                        liveStepText={memberLiveSteps[member.id]}
+                        streamingContent={memberStreaming[member.id]}
+                        onToggleFullscreen={() => {
+                          setActiveMemberId(member.id);
+                          setTeamViewMode('single');
+                        }}
+                        onSendMessage={(text) => handleSendMemberMessage(member, text)}
+                        onSelectModel={(model) => updateAgentModel(member.id, model)}
+                        onSelectCreatedEntity={handleSelectCreatedEntity}
+                        onEditTeammate={(m) => setEditingMember(m)}
+                        onOpenKnowledge={(m) => setKnowledgeMember(m)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {canScrollParallelRight && (
+                <Tooltip content={`${t('team.scrollRight', { defaultValue: 'Scroll right' })} (Alt+→)`} position='left'>
+                  <div
+                    className='absolute end-0 top-0 bottom-0 w-44px z-20 flex items-center justify-center cursor-pointer group select-none pointer-events-auto'
+                    style={{ background: 'linear-gradient(270deg, var(--color-bg-1) 35%, transparent)' }}
+                    onClick={() => scrollParallel('right')}
+                  >
+                    <div className='w-32px h-32px rounded-full flex items-center justify-center transition-transform duration-150 group-hover:scale-110 bg-[var(--color-bg-3)] border border-[var(--color-border-2)] text-t-primary shadow-md'>
+                      <Right size={18} theme='outline' fill='currentColor' />
+                    </div>
+                  </div>
+                </Tooltip>
+              )}
             </div>
           )}
         </div>
 
         <OrgMasterFolderModal visible={isMasterModalOpen} onClose={() => setIsMasterModalOpen(false)} />
+
+        {editingMember && (
+          <OrgEntityEditModal
+            visible={Boolean(editingMember)}
+            entity='member'
+            data={editingMember}
+            context={{
+              departmentId: activeDept?.id,
+              teamId: activeTeam?.id,
+            }}
+            onClose={() => setEditingMember(null)}
+            onSave={handleSaveMember}
+          />
+        )}
+
+        {knowledgeMember && (
+          <MemberKnowledgePanel
+            memberKey={`org:${knowledgeMember.id}`}
+            memberName={knowledgeMember.name}
+            visible={Boolean(knowledgeMember)}
+            onClose={() => setKnowledgeMember(null)}
+          />
+        )}
       </div>
     );
   }
@@ -1478,6 +1661,30 @@ export const OrgChatView: React.FC = () => {
                 onSelectModel={handleSelectAgentModel}
                 disabled={isExecuting}
               />
+              {!isCeoChat && (
+                <>
+                  <Tooltip content={t('team.knowledgeRepos.chipLabel', { defaultValue: 'Knowledge & Documents' })}>
+                    <Button
+                      type='text'
+                      size='mini'
+                      icon={<BookOne size={13} theme='outline' />}
+                      onClick={() => setKnowledgeMember(currentTargetAgent)}
+                      aria-label='Knowledge & Documents'
+                      className='!px-4px !h-24px text-t-secondary hover:text-primary'
+                    />
+                  </Tooltip>
+                  <Tooltip content={t('team.organization.editTeammate', { defaultValue: 'Edit teammate & knowledge' })}>
+                    <Button
+                      type='text'
+                      size='mini'
+                      icon={<Edit size={13} theme='outline' />}
+                      onClick={() => setEditingMember(currentTargetAgent)}
+                      aria-label='Edit teammate'
+                      className='!px-4px !h-24px text-t-secondary hover:text-primary'
+                    />
+                  </Tooltip>
+                </>
+              )}
               <span
                 className='flex items-center gap-4px text-12px font-mono shrink-0'
                 aria-label={`${t('team.organization.status', { defaultValue: 'Status' })}: ${runStatusLabel}`}
@@ -1952,6 +2159,15 @@ export const OrgChatView: React.FC = () => {
                       <span>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
+                      <Button
+                        type='text'
+                        size='mini'
+                        icon={<Copy size={11} theme='outline' />}
+                        onClick={() => void copyToClipboard(msg.content, msg.id)}
+                        aria-label='Copy message'
+                        className='!px-2px !h-16px text-t-tertiary hover:text-primary ml-auto'
+                      />
+                      {copiedId === msg.id && <span className='text-9px text-emerald-400 ml-2px'>Copied</span>}
                     </div>
 
                     <div
@@ -2185,13 +2401,23 @@ export const OrgChatView: React.FC = () => {
                       : t('team.organization.responding', { defaultValue: 'Responding...' })}
                     )
                   </span>
-                  <div className='p-12px rounded-14px bg-[var(--color-bg-2)] border border-primary/30 text-t-primary rounded-tl-2px flex items-center gap-10px shadow-sm text-12px font-mono'>
+                  <div className='p-12px rounded-14px bg-[var(--color-bg-2)] border border-primary/30 text-t-primary rounded-tl-2px flex items-center gap-10px shadow-sm text-12px font-mono relative group'>
                     <Spin dot size={12} />
                     <span className='text-primary truncate'>
                       {streamingContent ||
                         liveStepText ||
                         t('team.organization.processingDirective', { defaultValue: 'Processing directive...' })}
                     </span>
+                    {streamingContent && (
+                      <Button
+                        size='mini'
+                        type='text'
+                        icon={<Copy size={11} theme='outline' />}
+                        onClick={() => void copyToClipboard(streamingContent, 'streaming')}
+                        aria-label='Copy streaming content'
+                        className='!px-2px !h-16px text-t-tertiary hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity'
+                      />
+                    )}
                     <Button
                       size='small'
                       type='text'
@@ -2273,25 +2499,59 @@ export const OrgChatView: React.FC = () => {
                 </span>
               </div>
 
-              <Button
-                type='primary'
-                size='small'
-                icon={isExecuting ? <Close size={13} theme='outline' /> : <Send size={13} theme='outline' />}
-                loading={false}
-                disabled={!inputPrompt.trim() || isExecuting || !currentAgentModel}
-                onClick={() => void (isExecuting ? stopExecution() : handleSendMessage())}
-                className='!rounded-8px !px-14px !h-28px !font-medium shrink-0'
-              >
-                {isExecuting
-                  ? t('team.organization.stop', { defaultValue: 'Stop' })
-                  : t('team.organization.send', { defaultValue: 'Send' })}
-              </Button>
+              <div className='flex items-center gap-4px shrink-0'>
+                <Button
+                  size='mini'
+                  type='text'
+                  icon={<Copy size={13} theme='outline' />}
+                  disabled={!inputPrompt.trim()}
+                  onClick={() => void copyToClipboard(inputPrompt, 'input')}
+                  aria-label='Copy input'
+                  className='!rounded-8px !h-26px !px-8px text-t-secondary hover:text-primary disabled:opacity-50'
+                />
+                <Button
+                  type='primary'
+                  size='small'
+                  icon={isExecuting ? <Close size={13} theme='outline' /> : <Send size={13} theme='outline' />}
+                  loading={false}
+                  disabled={!inputPrompt.trim() || isExecuting || !currentAgentModel}
+                  onClick={() => void (isExecuting ? stopExecution() : handleSendMessage())}
+                  className='!rounded-8px !px-14px !h-28px !font-medium shrink-0'
+                >
+                  {isExecuting
+                    ? t('team.organization.stop', { defaultValue: 'Stop' })
+                    : t('team.organization.send', { defaultValue: 'Send' })}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <OrgMasterFolderModal visible={isMasterModalOpen} onClose={() => setIsMasterModalOpen(false)} />
+
+      {editingMember && (
+        <OrgEntityEditModal
+          visible={Boolean(editingMember)}
+          entity='member'
+          data={editingMember}
+          context={{
+            departmentId: activeDept?.id,
+            teamId: activeTeam?.id,
+          }}
+          onClose={() => setEditingMember(null)}
+          onSave={handleSaveMember}
+        />
+      )}
+
+      {knowledgeMember && (
+        <MemberKnowledgePanel
+          memberKey={`org:${knowledgeMember.id}`}
+          memberName={knowledgeMember.name}
+          visible={Boolean(knowledgeMember)}
+          onClose={() => setKnowledgeMember(null)}
+        />
+      )}
     </div>
   );
 };

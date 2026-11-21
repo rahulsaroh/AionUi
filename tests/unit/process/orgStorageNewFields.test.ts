@@ -24,7 +24,7 @@ describe('orgStorageService: new fields persist (approvalPolicy, allowlist, exec
     expect(validateProjectShape({ approvalPolicy: 'bogus' })).toBe(false);
     expect(validateProjectShape({ allowlist: ['/a', '/b'] })).toBe(true);
     expect(validateProjectShape({ allowlist: 'not-array' })).toBe(false);
-    expect(validateProjectShape({ allowlist: new Array(21).fill('/x') })).toBe(false);
+    expect(validateProjectShape({ allowlist: Array.from({ length: 21 }, () => '/x') })).toBe(false);
   });
 
   it('validates executionEngine enum on member and nested in model', () => {

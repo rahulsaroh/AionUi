@@ -244,11 +244,15 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           linkedProjects.push({ id: teamNode.linkedProjectId || teamNode.id, name: teamNode.linkedProjectName });
         }
         specialists = [
-          {
-            id: teamNode.hrCoordinatorAgent.id,
-            name: teamNode.hrCoordinatorAgent.name,
-            title: 'HR & Workload Coordinator',
-          },
+          ...(teamNode.hrCoordinatorAgent
+            ? [
+                {
+                  id: teamNode.hrCoordinatorAgent.id,
+                  name: teamNode.hrCoordinatorAgent.name,
+                  title: 'HR & Workload Coordinator',
+                },
+              ]
+            : []),
           ...teamNode.specialistMembers.map((s) => ({ id: s.id, name: s.name, title: s.title || s.role })),
         ];
         break;

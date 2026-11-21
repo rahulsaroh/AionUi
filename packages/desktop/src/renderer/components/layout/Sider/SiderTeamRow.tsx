@@ -64,11 +64,11 @@ export const SiderTeamRow: React.FC<SiderTeamRowProps> = ({
             <Button
               type='text'
               size='mini'
-              className='!size-16px !p-0 rounded flex items-center justify-center text-t-tertiary hover:text-t-primary hover:bg-fill-3 opacity-0 group-hover:opacity-100 transition-opacity border-none'
+              className='!size-18px !p-0 rounded flex items-center justify-center text-t-tertiary hover:text-primary hover:bg-fill-3 opacity-80 group-hover:opacity-100 transition-opacity border-none'
               onClick={(e) => onNewChat(e)}
               aria-label={t('team.organization.newChat', { defaultValue: 'New Chat' })}
             >
-              <Plus size={10} theme='outline' />
+              <Plus size={12} theme='outline' />
             </Button>
           </Tooltip>
         )}

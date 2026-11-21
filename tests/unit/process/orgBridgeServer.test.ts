@@ -165,6 +165,31 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
     });
     expect(resDept.success).toBe(false);
     expect(resDept.error).toMatch(/Only the Root CEO can do this/);
+
+    // Team Lead CAN scan_folder within its department scope (same as Department Head)
+    const scanDir = path.join(deptFolder, 'subapp');
+    fs.mkdirSync(scanDir, { recursive: true });
+    const resScan = await handleOrgToolRequest({
+      tool: 'scan_folder',
+      args: { path: scanDir },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+    });
+    expect(resScan.success).toBe(true);
+
+    // Team Lead scan_folder outside scope is denied
+    const outsideFolder = path.join(tempBase, 'outside');
+    fs.mkdirSync(outsideFolder, { recursive: true });
+    const resScanOutside = await handleOrgToolRequest({
+      tool: 'scan_folder',
+      args: { path: outsideFolder },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+    });
+    expect(resScanOutside.success).toBe(false);
+    expect(resScanOutside.error).toMatch(/outside authorized boundary/i);
   });
 
   it('forwards custom tool executions to registered tool executor', async () => {
@@ -254,5 +279,45 @@ describe('orgBridgeServer & Tool Protocol (Step 1 & Step 2)', () => {
       approvalPolicy: 'full_auto',
     });
     expect(res.success).toBe(false);
+  });
+
+  it('Team Lead has file execution tools (Aion CLI parity) jailed to workspace', async () => {
+    const deptFolder = path.join(masterRoot, 'engineering');
+    fs.mkdirSync(deptFolder, { recursive: true });
+    const targetFile = path.join(deptFolder, 'config.json');
+
+    // Write file as team_lead
+    const writeRes = await handleOrgToolRequest({
+      tool: 'write_file',
+      args: { path: targetFile, content: '{"status":"ok"}' },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+      approvalPolicy: 'full_auto',
+    });
+    expect(writeRes.success).toBe(true);
+
+    // Read file as team_lead
+    const readRes = await handleOrgToolRequest({
+      tool: 'read_file',
+      args: { path: targetFile },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+      approvalPolicy: 'full_auto',
+    });
+    expect(readRes.success).toBe(true);
+    expect(readRes.result.content).toBe('{"status":"ok"}');
+
+    // List dir as team_lead
+    const listRes = await handleOrgToolRequest({
+      tool: 'list_dir',
+      args: { path: deptFolder },
+      role: 'team_lead',
+      deptId: 'd1',
+      deptWorkspacePath: deptFolder,
+      approvalPolicy: 'full_auto',
+    });
+    expect(listRes.success).toBe(true);
   });
 });

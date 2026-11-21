@@ -258,11 +258,11 @@ async function main() {
     );
   }
 
-  // Execution tools (shell + file ops) available to Project Heads and specialist members.
-  // These run strictly inside the agent's assigned project folder in the main process,
+  // Execution tools (shell + file ops) available to Project Heads, Team Leads, and specialist members.
+  // These run strictly inside the agent's assigned project/workspace folder in the main process,
   // gated by the per-project approval policy (read_only | auto_edit | full_auto) and the
   // folder jail. The Root CEO (role === 'ceo') intentionally does NOT get these tools.
-  if (role === 'project_head') {
+  if (role === 'project_head' || role === 'team_lead') {
     server.tool(
       'list_dir',
       'Lists the immediate files and subdirectories of a folder inside the project workspace. Free (read-only).',

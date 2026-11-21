@@ -27,6 +27,8 @@ export interface TeamNodeData {
   onSelectMember?: (memberId: string) => void;
 }
 
+const formatAgentName = (name: string): string => (/^aion\s*cli$/i.test(name) ? 'Shiraj CLI' : name);
+
 export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({ data, selected = false }) => {
   const { t } = useTranslation();
   const {
@@ -56,8 +58,6 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
   const sourceHandlePos = orientation === 'LR' ? Position.Right : Position.Bottom;
 
   const allMembers = team.specialistMembers || [];
-  const visibleMembers = allMembers.slice(0, 3);
-  const overflowMembers = allMembers.slice(3);
 
   return (
     <div
@@ -114,7 +114,7 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
             }}
           >
             <span className='text-emerald-400 font-mono text-9px'>LEAD:</span>
-            <span className='font-medium text-slate-200 truncate'>{team.teamLeadAgent.name}</span>
+            <span className='font-medium text-slate-200 truncate'>{formatAgentName(team.teamLeadAgent.name)}</span>
           </div>
           {team.hrCoordinatorAgent && (
             <span
@@ -147,48 +147,37 @@ export const TeamNode: React.FC<{ data: TeamNodeData; selected?: boolean }> = ({
           </div>
         )}
 
-        {/* Members Avatar Row (Up to 3 avatars + +N badge) */}
+        {/* Members Roster List */}
         {!isCollapsed && (
-          <div className='flex items-center gap-5px flex-wrap pt-2px'>
+          <div className='flex flex-col gap-4px pt-2px'>
             {allMembers.length === 0 ? (
-              <span className='text-9px text-slate-500 italic'>No specialists assigned</span>
+              <span className='text-9px text-slate-500 italic px-2px'>No specialists assigned</span>
             ) : (
-              <>
-                {visibleMembers.map((spec) => (
-                  <AgentMemberPill
-                    key={spec.id}
-                    member={spec}
-                    currentDepartmentName={departmentName}
-                    sharedCount={sharedCountsMap[spec.canonicalAgentId] || 1}
-                    variant='chip'
-                    onHover={(id) => setHoveredCanonicalAgentId(id)}
-                    onClick={(id) => {
-                      setSelectedCanonicalAgentId(id);
-                      onSelectMember?.(spec.id);
-                    }}
-                  />
-                ))}
-
-                {overflowMembers.length > 0 && (
-                  <Tooltip
-                    content={
-                      <div className='flex flex-col gap-2px text-10px'>
-                        <span className='font-semibold text-slate-200'>Additional Specialists:</span>
-                        {overflowMembers.map((m) => (
-                          <span key={m.id} className='text-slate-400'>
-                            • {m.name} ({m.title || m.role})
-                          </span>
-                        ))}
-                      </div>
-                    }
-                    position='top'
-                  >
-                    <span className='px-6px py-2px rounded-full bg-slate-800 border border-slate-700 text-emerald-300 font-mono text-9px cursor-pointer hover:border-emerald-500/50 transition-colors select-none'>
-                      +{overflowMembers.length}
+              allMembers.map((spec) => (
+                <div
+                  key={spec.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedCanonicalAgentId(spec.canonicalAgentId);
+                    onSelectMember?.(spec.id);
+                  }}
+                  className='flex items-center justify-between px-6px py-3px rounded bg-slate-800/40 border border-slate-700/40 text-10px hover:border-emerald-500/50 hover:bg-slate-800/80 transition-colors cursor-pointer group/spec'
+                  title={`${spec.name} (${spec.title || spec.role})`}
+                >
+                  <div className='flex items-center gap-5px truncate min-w-0 mr-4px'>
+                    <span className='size-6px rounded-full bg-emerald-400 shrink-0 shadow-[0_0_6px_#10B981]' />
+                    <span className='font-medium text-slate-200 truncate group-hover/spec:text-emerald-300'>
+                      {formatAgentName(spec.name)}
                     </span>
-                  </Tooltip>
-                )}
-              </>
+                  </div>
+                  <Tag
+                    size='small'
+                    className='text-8px font-mono shrink-0 px-4px py-0 rounded bg-slate-900/80 text-emerald-300 border border-emerald-500/30'
+                  >
+                    {spec.title || spec.role}
+                  </Tag>
+                </div>
+              ))
             )}
           </div>
         )}

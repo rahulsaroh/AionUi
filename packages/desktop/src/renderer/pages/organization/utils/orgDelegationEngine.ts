@@ -1001,7 +1001,8 @@ export class OrgDelegationEngine {
           const deptId = this.resolveDepartmentForAgent(opts.agent, opts.projectId);
           const teamId = this.resolveTeamForAgent(opts.agent);
           const dept = deptId ? this.hierarchy.departments.find((d) => d.id === deptId) : undefined;
-          const deptWorkspacePath = dept?.workspacePath;
+          const team = teamId ? dept?.teams.find((t) => t.id === teamId) : undefined;
+          const deptWorkspacePath = dept?.workspacePath || team?.workspacePath || opts.workspacePath;
 
           orgRole =
             opts.agent.role === 'ceo'
@@ -1012,9 +1013,8 @@ export class OrgDelegationEngine {
                   ? 'team_lead'
                   : 'project_head';
 
-          // Resolve approval policy for the bound project (default auto_edit). Only project
-          // heads/members get execution tools, so policy is irrelevant for ceo/department_head/team_lead.
-          if (orgRole === 'project_head') {
+          // Resolve approval policy for the bound project (default auto_edit).
+          if (orgRole === 'project_head' || orgRole === 'team_lead') {
             const proj =
               (boundProjectId ? this.projects.find((p) => p.id === boundProjectId) : undefined) ||
               this.projects.find((p) => p.workspacePath && p.workspacePath === opts.workspacePath);
@@ -1029,7 +1029,7 @@ export class OrgDelegationEngine {
             deptId,
             teamId,
             deptWorkspacePath,
-            projectId: orgRole === 'project_head' ? boundProjectId : undefined,
+            projectId: boundProjectId,
             approvalPolicy,
           });
           if (orgMcp) {
@@ -1907,11 +1907,14 @@ export class OrgDelegationEngine {
         });
 
         // Ensure department has at least one active team to lead these projects
-        if (targetDept.teams.length === 0) {
-          const defaultTeam = createTeamShell(targetDept.id, 'Core');
+        let defaultTeam = targetDept.teams.find((t) => t.name.toLowerCase() === 'core') || targetDept.teams[0];
+        if (!defaultTeam) {
+          defaultTeam = createTeamShell(targetDept.id, 'Core');
           defaultTeam.workspacePath = targetFolder;
           targetDept.teams.push(defaultTeam);
           createdTeams.push({ departmentId: targetDept.id, team: defaultTeam });
+        } else if (targetFolder && !defaultTeam.workspacePath) {
+          defaultTeam.workspacePath = targetFolder;
         }
 
         let discovered: Array<{ name: string; path: string; description?: string }> = [];
@@ -2052,11 +2055,14 @@ export class OrgDelegationEngine {
           };
         }
       } else if (batchOrDiscovery.type === 'batch_create' && batchOrDiscovery.projectNames) {
-        if (targetDept.teams.length === 0 && targetFolder) {
-          const defaultTeam = createTeamShell(targetDept.id, 'Core');
+        let defaultTeam = targetDept.teams.find((t) => t.name.toLowerCase() === 'core') || targetDept.teams[0];
+        if (!defaultTeam && targetFolder) {
+          defaultTeam = createTeamShell(targetDept.id, 'Core');
           defaultTeam.workspacePath = targetFolder;
           targetDept.teams.push(defaultTeam);
           createdTeams.push({ departmentId: targetDept.id, team: defaultTeam });
+        } else if (defaultTeam && targetFolder && !defaultTeam.workspacePath) {
+          defaultTeam.workspacePath = targetFolder;
         }
         createdProjects = batchOrDiscovery.projectNames.map((name, idx) => {
           const projPath = targetFolder ? getDefaultProjectPath(targetFolder, name) : undefined;
@@ -2129,12 +2135,15 @@ export class OrgDelegationEngine {
         newDept.workspacePath = getDefaultDeptPath(rootCeo.workspacePath, deptName);
       }
 
-      // Auto-provision default Core team so department is immediately operational
-      const defaultTeam = createTeamShell(newDept.id, 'Core');
-      if (newDept.workspacePath) {
-        defaultTeam.workspacePath = newDept.workspacePath;
+      // Auto-provision default Core team if none exists so department is immediately operational
+      let defaultTeam = newDept.teams.find((t) => t.name.toLowerCase() === 'core');
+      if (!defaultTeam) {
+        defaultTeam = createTeamShell(newDept.id, 'Core');
+        if (newDept.workspacePath) {
+          defaultTeam.workspacePath = newDept.workspacePath;
+        }
+        newDept.teams.push(defaultTeam);
       }
-      newDept.teams.push(defaultTeam);
       const createdTeams = [{ departmentId: newDept.id, team: defaultTeam }];
 
       addLog({
@@ -2183,9 +2192,14 @@ export class OrgDelegationEngine {
     if (teamIntent && teamIntent.name && teamIntent.department) {
       const explicitTeamName = teamIntent.name;
       const explicitDeptTarget = teamIntent.department;
-      const newTeam = createTeamShell(explicitDeptTarget.id, explicitTeamName);
-      if (rootCeo.workspacePath) {
-        newTeam.workspacePath = getDefaultTeamPath(rootCeo.workspacePath, explicitDeptTarget.name, explicitTeamName);
+      let newTeam = explicitDeptTarget.teams.find((t) => t.name.toLowerCase() === explicitTeamName.toLowerCase());
+      const isNew = !newTeam;
+      if (!newTeam) {
+        newTeam = createTeamShell(explicitDeptTarget.id, explicitTeamName);
+        if (rootCeo.workspacePath) {
+          newTeam.workspacePath = getDefaultTeamPath(rootCeo.workspacePath, explicitDeptTarget.name, explicitTeamName);
+        }
+        explicitDeptTarget.teams.push(newTeam);
       }
 
       addLog({
@@ -2204,7 +2218,7 @@ export class OrgDelegationEngine {
         fromRole: 'Department CEO',
         toName: 'User / Executive Board',
         toRole: 'User',
-        message: `Sub-Team "${explicitTeamName}" created with dedicated Team Lead and HR Coordinator.`,
+        message: `Sub-Team "${explicitTeamName}" ready with dedicated Team Lead.`,
         status: 'completed',
       });
 
@@ -2215,10 +2229,10 @@ export class OrgDelegationEngine {
         directiveId,
         userPrompt,
         logs,
-        finalSynthesis: `Global Organization CEO: Created sub-team "${explicitTeamName}" under the "${explicitDeptTarget.name}" department. Equipped with a Team Lead and HR Coordinator.`,
+        finalSynthesis: `Global Organization CEO: ${isNew ? 'Created' : 'Found existing'} sub-team "${explicitTeamName}" under the "${explicitDeptTarget.name}" department. Equipped with Team Lead.`,
         involvedDepartmentIds: [explicitDeptTarget.id],
         involvedTeamIds: [newTeam.id],
-        createdTeams: [{ departmentId: explicitDeptTarget.id, team: newTeam }],
+        createdTeams: isNew ? [{ departmentId: explicitDeptTarget.id, team: newTeam }] : undefined,
       };
     }
 
@@ -2301,20 +2315,23 @@ export class OrgDelegationEngine {
         chosenModelId
       );
 
+      const coordName = explicitTeamTarget.hrCoordinatorAgent?.name || explicitTeamTarget.teamLeadAgent.name;
+      const coordRole = explicitTeamTarget.hrCoordinatorAgent ? 'HR & Workload Coordinator' : 'Team Lead';
+
       addLog({
         depth: 1,
         fromName: rootCeo.ceoAgent.name,
         fromRole: 'Root CEO',
-        toName: explicitTeamTarget.hrCoordinatorAgent.name,
-        toRole: 'HR & Workload Coordinator',
+        toName: coordName,
+        toRole: coordRole,
         message: `Provisioning AI bot specialist "${explicitMemberName}" [Model: ${chosenModelId}] to team "${explicitTeamTarget.name}".`,
         status: 'working',
       });
 
       addLog({
         depth: 2,
-        fromName: explicitTeamTarget.hrCoordinatorAgent.name,
-        fromRole: 'HR & Workload Coordinator',
+        fromName: coordName,
+        fromRole: coordRole,
         toName: 'User / Executive Board',
         toRole: 'User',
         message: `Specialist "${explicitMemberName}" successfully on-boarded and assigned to ${explicitTeamTarget.name}.`,
@@ -2842,18 +2859,22 @@ export class OrgDelegationEngine {
         throw err;
       }
     } else {
-      // Team Lead & HR -> Specialists (legacy plain-conversation path)
+      // Team Lead -> Specialists (legacy plain-conversation path)
+      const coordName = targetTeam.hrCoordinatorAgent?.name || targetTeam.teamLeadAgent.name;
+      const coordRole = targetTeam.hrCoordinatorAgent ? 'HR & Workload Coordinator' : 'Team Lead';
       addLog({
         depth: 3,
-        fromName: targetTeam.hrCoordinatorAgent.name,
-        fromRole: 'HR & Workload Coordinator',
+        fromName: coordName,
+        fromRole: coordRole,
         toName: targetTeam.specialistMembers.map((s) => s.name).join(', ') || 'Specialists',
         toRole: 'Specialist Roster',
         message: `Assigning execution across ${targetTeam.specialistMembers.length} specialists inside ${projectFolder || 'workspace'}...`,
         status: 'working',
       });
 
-      this.updateNodeStatus?.(targetTeam.hrCoordinatorAgent.id, 'department_standby');
+      if (targetTeam.hrCoordinatorAgent) {
+        this.updateNodeStatus?.(targetTeam.hrCoordinatorAgent.id, 'department_standby');
+      }
       this.updateNodeStatus?.(targetTeam.id, 'department_standby');
 
       // Specialist or Team Lead execution
@@ -2879,6 +2900,10 @@ Project workspace: "${projectFolder}".
 
 TOOLS AVAILABLE TO YOU — call them yourself, never ask the user to run them:
 - scan_folder({ path }) — inspect any folder structure to understand project type and contents
+- list_dir({ path }) — list immediate files and subdirectories of a folder
+- read_file({ path }) — read file content in your workspace
+- write_file({ path, content }) — create or modify files in your workspace
+- run_shell({ command }) — run shell commands inside your workspace
 - hire_member({ name, role, skills, systemPrompt }) — recruit a new specialist bot to the shared pool
 - assign_member({ memberId, teamId }) — assign a hired member to a team
 - create_team({ departmentId, name }) — create a named sub-team

@@ -197,10 +197,13 @@ describe('OrganizationSiderContent openChat wiring', () => {
     expect(storeState.setSelectedTeam).toHaveBeenCalledWith('team-1');
   });
 
-  it('opens a member chat from the team roster', () => {
+  it('opens a member chat via the plus icon in the team roster and does not open on clicking member name', () => {
     renderSider();
-    fireEvent.click(screen.getByLabelText('Open chat with Member'));
-    expect(openChatMock).toHaveBeenCalledWith({ type: 'member', id: 'agent-member' });
+    fireEvent.click(screen.getByText('Member'));
+    expect(openChatMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('New chat with Member'));
+    expect(openChatMock).toHaveBeenCalledWith({ type: 'member', id: 'agent-member', createNew: true });
   });
 
   it('does not open a chat when the expand chevron is clicked', () => {
@@ -214,6 +217,15 @@ describe('OrganizationSiderContent openChat wiring', () => {
     fireEvent.click(screen.getByLabelText('More actions'));
     fireEvent.click(screen.getByText('Edit Department'));
     expect(openChatMock).not.toHaveBeenCalled();
+  });
+
+  it('switches org view mode to canvas when clicking Organization Canvas in the sidebar', () => {
+    const setOrgViewMode = vi.fn();
+    storeState.setOrgViewMode = setOrgViewMode;
+    renderSider();
+    const canvasBtn = screen.getByText('Organization Canvas');
+    fireEvent.click(canvasBtn);
+    expect(setOrgViewMode).toHaveBeenCalledWith('canvas');
   });
 });
 

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Button, Tooltip } from '@arco-design/web-react';
-import { FolderClose, Edit, Plus } from '@icon-park/react';
+import { FolderClose, Edit, Plus, Right } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
@@ -15,6 +15,8 @@ import type { OrgProject } from '@/types/organization';
 interface SiderProjectRowProps {
   project: OrgProject;
   isSelected: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   onOpenChat: () => void;
   onEdit: (e?: React.MouseEvent | Event) => void;
   onNewChat: (e?: React.MouseEvent | Event) => void;
@@ -36,6 +38,8 @@ const statusTooltipMap: Record<string, string> = {
 export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
   project,
   isSelected,
+  isExpanded = true,
+  onToggleExpand,
   onOpenChat,
   onEdit,
   onNewChat,
@@ -57,6 +61,35 @@ export const SiderProjectRow: React.FC<SiderProjectRowProps> = ({
       )}
     >
       <div className='flex items-center gap-6px truncate min-w-0'>
+        {onToggleExpand && (
+          <span
+            role='button'
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleExpand();
+              }
+            }}
+            className='size-14px flex items-center justify-center text-t-tertiary hover:text-t-primary rounded hover:bg-fill-3 shrink-0 cursor-pointer'
+            title={
+              isExpanded
+                ? t('common.collapse', { defaultValue: 'Collapse project' })
+                : t('common.expand', { defaultValue: 'Expand project' })
+            }
+          >
+            <Right
+              size={11}
+              theme='outline'
+              className={classNames('transition-transform duration-150', isExpanded && 'rotate-90')}
+            />
+          </span>
+        )}
         <FolderClose size={13} theme='outline' className='text-amber-500 shrink-0' />
         <div className='flex min-w-0 flex-col'>
           <span

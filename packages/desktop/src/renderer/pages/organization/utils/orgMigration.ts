@@ -31,7 +31,7 @@ import type {
 } from '@/types/organization';
 import { normalizeOrgProject } from './orgCoherence';
 
-export const ORG_STORAGE_VERSION = 6;
+export const ORG_STORAGE_VERSION = 7;
 export const ORG_STORAGE_VERSION_KEY = 'aionui:org-storage-version';
 
 export interface OrgMigrationReport {
@@ -134,6 +134,40 @@ export function migrateOrgStorageV2(
   };
   let nextProjects = projects.map(normalizeProjectV2);
   let nextConversations = conversations.map((conversation) => ({ ...conversation }));
+
+  if (storedVersion < 7) {
+    const duplicateTeamIds = new Map<string, string>();
+    nextHierarchy = {
+      ...nextHierarchy,
+      departments: nextHierarchy.departments.map((department) => {
+        const seen = new Map<string, OrgTeamNode>();
+        const teams = department.teams.filter((team) => {
+          const key = `${team.name.trim().toLocaleLowerCase()}:${team.teamLeadAgent.canonicalAgentId || team.teamLeadAgent.id}`;
+          const original = seen.get(key);
+          if (!original) {
+            seen.set(key, team);
+            return true;
+          }
+          duplicateTeamIds.set(team.id, original.id);
+          report.push({ step: 'normalize', detail: `Removed duplicate team "${team.name}"` });
+          return false;
+        });
+        return { ...department, teams };
+      }),
+    };
+    if (duplicateTeamIds.size > 0) {
+      nextProjects = nextProjects.map((project) => ({
+        ...project,
+        teamIds: Array.from(new Set(project.teamIds.map((id) => duplicateTeamIds.get(id) ?? id))),
+      }));
+      nextConversations = nextConversations.map((conversation) => ({
+        ...conversation,
+        teamId: conversation.teamId ? (duplicateTeamIds.get(conversation.teamId) ?? conversation.teamId) : undefined,
+        sourceNodeId: duplicateTeamIds.get(conversation.sourceNodeId) ?? conversation.sourceNodeId,
+        targetNodeId: duplicateTeamIds.get(conversation.targetNodeId) ?? conversation.targetNodeId,
+      }));
+    }
+  }
 
   // Index teams by id with their parent department.
   const teamById = new Map<string, { department: OrgDepartmentNode; team: OrgTeamNode }>();

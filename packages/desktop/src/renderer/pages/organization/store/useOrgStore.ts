@@ -311,11 +311,104 @@ function sanitizeHierarchyTransientStatuses(h: OrgHierarchy): OrgHierarchy {
   };
 }
 
+function reconcileMembersWithHierarchy(
+  hierarchy: OrgHierarchy,
+  projects: OrgProject[],
+  members: OrgAgentMember[]
+): { hierarchy: OrgHierarchy; members: OrgAgentMember[]; modified: boolean } {
+  let modified = false;
+  const normalizeName = (name: string): string => (/^aion(\s*|-)?cli$/i.test(name.trim()) ? 'Shiraj CLI' : name);
+
+  const updatedMembers = members.map((m) => {
+    const renamed = normalizeName(m.name);
+    if (renamed !== m.name) {
+      modified = true;
+      return { ...m, name: renamed };
+    }
+    return { ...m };
+  });
+  const nextDepartments = hierarchy.departments.map((dept) => {
+    let deptModified = false;
+    const nextTeams = dept.teams.map((team) => {
+      let teamModified = false;
+      let teamLeadAgent = team.teamLeadAgent;
+      if (teamLeadAgent) {
+        const renamed = normalizeName(teamLeadAgent.name);
+        if (renamed !== teamLeadAgent.name) {
+          teamLeadAgent = { ...teamLeadAgent, name: renamed };
+          teamModified = true;
+          modified = true;
+        }
+      }
+      const currentSpecs = (team.specialistMembers || []).map((s) => {
+        const renamed = normalizeName(s.name);
+        if (renamed !== s.name) {
+          teamModified = true;
+          modified = true;
+          return { ...s, name: renamed };
+        }
+        return s;
+      });
+
+      for (const m of updatedMembers) {
+        const isAssignedToThisTeam = m.assignedTeamIds?.includes(team.id);
+        const isAssignedViaProject = projects.some(
+          (p) =>
+            (p.teamIds?.includes(team.id) || (!p.teamIds?.length && p.departmentId === dept.id)) &&
+            p.memberIds?.includes(m.id)
+        );
+        const isAssignedViaDept =
+          !m.assignedTeamIds?.length && m.departmentId === dept.id && dept.teams[0]?.id === team.id;
+
+        if (isAssignedToThisTeam || isAssignedViaProject || isAssignedViaDept) {
+          const already = currentSpecs.some((s) => s.id === m.id || s.canonicalAgentId === m.canonicalAgentId);
+          if (!already) {
+            currentSpecs.push({
+              ...m,
+              assignedTeamIds: Array.from(new Set([...(m.assignedTeamIds || []), team.id])),
+            });
+            teamModified = true;
+          }
+          if (!m.assignedTeamIds?.includes(team.id)) {
+            m.assignedTeamIds = Array.from(new Set([...(m.assignedTeamIds || []), team.id]));
+            modified = true;
+          }
+        }
+      }
+
+      if (teamModified) {
+        deptModified = true;
+        return {
+          ...team,
+          teamLeadAgent,
+          specialistMembers: currentSpecs,
+          ...(team.members ? { members: currentSpecs } : {}),
+        };
+      }
+      return team;
+    });
+
+    if (deptModified) {
+      modified = true;
+      return {
+        ...dept,
+        teams: nextTeams,
+      };
+    }
+    return dept;
+  });
+
+  return {
+    hierarchy: modified ? { ...hierarchy, departments: nextDepartments, lastUpdated: Date.now() } : hierarchy,
+    members: updatedMembers,
+    modified,
+  };
+}
+
 function createInitialState(): OrgStoreState {
   const storedVersion = loadStored(STORAGE_KEYS.VERSION, () => 0);
-  // Force blank canvas on version bump: discard persisted org data
-  const useDefaults = storedVersion < ORG_STORAGE_VERSION;
-  if (useDefaults && storedVersion > 0) {
+  const useDefaults = storedVersion === 0;
+  if (storedVersion > 0 && storedVersion < ORG_STORAGE_VERSION) {
     try {
       const backup = {
         version: storedVersion,
@@ -346,6 +439,8 @@ function createInitialState(): OrgStoreState {
   if (!rawConversations) {
     rawConversations = createDefaultOrgConversations();
   }
+  // Prune dead empty conversations on initialization
+  rawConversations = rawConversations.filter((c) => Array.isArray(c.messages) && c.messages.length > 0);
   const migration = migrateOrgStorageV2(rawHierarchy, rawProjects, rawConversations, storedVersion);
   if (useDefaults || migration.migrated) {
     try {
@@ -357,10 +452,18 @@ function createInitialState(): OrgStoreState {
     } catch {}
   }
   const reconciled = reconcileProjectsWithHierarchy(migration.hierarchy, migration.projects);
+  let migratedConversations = migration.conversations;
+  if (reconciled.rewrittenTeamIds.size > 0) {
+    migratedConversations = migratedConversations.map((c) =>
+      c.teamId && reconciled.rewrittenTeamIds.has(c.teamId)
+        ? { ...c, teamId: reconciled.rewrittenTeamIds.get(c.teamId)! }
+        : c
+    );
+  }
   const conversationReconciled = reconcileConversationsWithProjects(
     reconciled.hierarchy,
     reconciled.projects,
-    migration.conversations
+    migratedConversations
   );
 
   const initialScope =
@@ -391,11 +494,20 @@ function createInitialState(): OrgStoreState {
     ? storedSelected
     : (currentScopeConversations[0]?.id ?? null);
 
+  const rawMembers = loadStored<OrgAgentMember[]>(STORAGE_KEYS.MEMBERS, (): OrgAgentMember[] => []);
+  const memberReconciled = reconcileMembersWithHierarchy(reconciled.hierarchy, allProjects, rawMembers);
+  if (memberReconciled.modified) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.HIERARCHY, JSON.stringify(memberReconciled.hierarchy));
+      localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(memberReconciled.members));
+    } catch {}
+  }
+
   return {
     activeScope: initialScope,
-    hierarchy: sanitizeHierarchyTransientStatuses(reconciled.hierarchy),
+    hierarchy: sanitizeHierarchyTransientStatuses(memberReconciled.hierarchy),
     projects: currentScopeProjects,
-    members: loadStored<OrgAgentMember[]>(STORAGE_KEYS.MEMBERS, (): OrgAgentMember[] => []),
+    members: memberReconciled.members,
     conversations: currentScopeConversations,
     cronJobs: loadStored(STORAGE_KEYS.CRON_JOBS, createDefaultOrgCronJobs),
     approvedLineups: loadStored<ApprovedLineupRecord[]>(STORAGE_KEYS.APPROVED_LINEUPS, () => []),
@@ -1475,6 +1587,11 @@ export function useOrgStore() {
   }, []);
 
   const addSubTeam = useCallback((departmentId: string, team: OrgTeamNode) => {
+    const targetDept = globalState.hierarchy.departments.find((d) => d.id === departmentId);
+    if (targetDept?.teams.some((t) => t.name.trim().toLowerCase() === team.name.trim().toLowerCase())) {
+      console.warn(`[useOrgStore] Team "${team.name}" already exists in department "${departmentId}".`);
+      return;
+    }
     const nextHierarchy = syncHierarchyProjectReferences(
       {
         ...globalState.hierarchy,
@@ -1569,13 +1686,14 @@ export function useOrgStore() {
           pmAgent: isPm && dept.pmAgent ? { ...dept.pmAgent, model } : dept.pmAgent,
           teams: dept.teams.map((team) => {
             const isTeamLead = team.teamLeadAgent.id === agentId;
-            const isHr = team.hrCoordinatorAgent.id === agentId;
+            const isHr = team.hrCoordinatorAgent?.id === agentId;
             return {
               ...team,
               teamLeadAgent: isTeamLead ? { ...team.teamLeadAgent, model } : team.teamLeadAgent,
-              hrCoordinatorAgent: isHr ? { ...team.hrCoordinatorAgent, model } : team.hrCoordinatorAgent,
+              hrCoordinatorAgent:
+                isHr && team.hrCoordinatorAgent ? { ...team.hrCoordinatorAgent, model } : team.hrCoordinatorAgent,
               specialistMembers: team.specialistMembers.map((member) =>
-                member.id === agentId ? { ...member, model } : member
+                member.id === agentId || member.canonicalAgentId === agentId ? { ...member, model } : member
               ),
             };
           }),
@@ -1583,8 +1701,23 @@ export function useOrgStore() {
       }),
     };
 
-    globalState = { ...globalState, hierarchy: nextHierarchy };
+    const nextMembers = (globalState.members || []).map((m) =>
+      m.id === agentId || m.canonicalAgentId === agentId ? { ...m, model } : m
+    );
+
+    const nextConversations = globalState.conversations.map((c) =>
+      c.targetAgentId === agentId ? { ...c, targetAgentModel: model } : c
+    );
+
+    globalState = {
+      ...globalState,
+      hierarchy: nextHierarchy,
+      members: nextMembers,
+      conversations: nextConversations,
+    };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    saveScopedConversations(nextConversations);
     notify();
   }, []);
 
@@ -1594,20 +1727,34 @@ export function useOrgStore() {
       lastUpdated: Date.now(),
       departments: globalState.hierarchy.departments.map((department) => ({
         ...department,
-        teams: department.teams.map((team) =>
-          team.id === teamId
-            ? {
-                ...team,
-                specialistMembers: team.specialistMembers.map((member) =>
-                  member.id === memberId ? { ...member, ...patch, id: member.id } : member
-                ),
-              }
-            : team
-        ),
+        teams: department.teams.map((team) => {
+          if (team.id !== teamId) return team;
+          const isLead = team.teamLeadAgent.id === memberId || team.teamLeadAgent.canonicalAgentId === memberId;
+          const isHr =
+            team.hrCoordinatorAgent &&
+            (team.hrCoordinatorAgent.id === memberId || team.hrCoordinatorAgent.canonicalAgentId === memberId);
+          return {
+            ...team,
+            teamLeadAgent: isLead ? { ...team.teamLeadAgent, ...patch, id: team.teamLeadAgent.id } : team.teamLeadAgent,
+            hrCoordinatorAgent:
+              isHr && team.hrCoordinatorAgent
+                ? { ...team.hrCoordinatorAgent, ...patch, id: team.hrCoordinatorAgent.id }
+                : team.hrCoordinatorAgent,
+            specialistMembers: team.specialistMembers.map((member) =>
+              member.id === memberId || member.canonicalAgentId === memberId
+                ? { ...member, ...patch, id: member.id }
+                : member
+            ),
+          };
+        }),
       })),
     };
-    globalState = { ...globalState, hierarchy: nextHierarchy };
+    const nextMembers = globalState.members.map((m) =>
+      m.id === memberId || m.canonicalAgentId === memberId ? { ...m, ...patch, id: m.id } : m
+    );
+    globalState = { ...globalState, hierarchy: nextHierarchy, members: nextMembers };
     saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
     if (patch.name) {
       void memberHandbook
         .rename({
@@ -1629,7 +1776,12 @@ export function useOrgStore() {
       ...(conv.createdAt !== undefined ? { createdAt: conv.createdAt } : {}),
       ...(conv.updatedAt !== undefined ? { updatedAt: conv.updatedAt } : {}),
     };
-    const nextConversations = [conversation, ...globalState.conversations.filter((c) => c.id !== conversation.id)];
+    const nextConversations = [
+      conversation,
+      ...globalState.conversations.filter(
+        (c) => c.id !== conversation.id && (c.messages.length > 0 || c.id === globalState.selectedConversationId)
+      ),
+    ];
     conversationsByScope[activeScope] = nextConversations;
     globalState = { ...globalState, conversations: nextConversations };
     saveScopedConversations(nextConversations);

@@ -112,7 +112,7 @@ const SidebarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size =
 
 const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const { t } = useTranslation();
-  const appTitle = useMemo(() => 'AionUi', []);
+  const appTitle = useMemo(() => 'Shiraj Agent', []);
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(true);
   const [mobileCenterTitle, setMobileCenterTitle] = useState(appTitle);
   const [mobileCenterOffset, setMobileCenterOffset] = useState(0);
@@ -380,7 +380,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         <div
           className='flex items-center gap-8px cursor-pointer select-none mr-10px'
           onClick={() => void navigate('/guid')}
-          title='AionUi'
+          title='Shiraj Agent'
         >
           <div className='shrink-0 size-22px rounded-6px bg-[#00e676]/15 border border-[#00e676]/40 flex items-center justify-center shadow-[0_0_8px_rgba(0,230,118,0.25)]'>
             <svg className='w-3.5 h-3.5' viewBox='0 0 80 80' fill='none'>
@@ -392,7 +392,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
               <path d='M18 50 Q40 70 62 50' stroke='#00e676' strokeWidth='3.5' fill='none' strokeLinecap='round' />
             </svg>
           </div>
-          <span className='font-semibold text-14px text-white tracking-wide select-none'>AionUi</span>
+          <span className='font-semibold text-14px text-white tracking-wide select-none'>Shiraj Agent</span>
         </div>
 
         {/* Workplace & Organization segmented capsule toggle */}

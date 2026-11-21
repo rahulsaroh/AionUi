@@ -9,6 +9,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { OrgTeamChatHeader } from '@/renderer/pages/organization/components/teamChat/OrgTeamChatHeader';
 import { OrgTeamChatSlot } from '@/renderer/pages/organization/components/teamChat/OrgTeamChatSlot';
+import { SiderMemberRow } from '@/renderer/components/layout/Sider/SiderMemberRow';
 import type { OrgTeamNode, OrgAgentMember, OrgConversation } from '@/types/organization';
 
 const mockTranslate = (key: string, opts?: Record<string, unknown>): string => {
@@ -329,5 +330,53 @@ describe('OrgChatView with Team Chat Mode', () => {
 
     // In single mode, the single full-screen member is active
     expect(screen.getAllByText('Alice Lead').length).toBeGreaterThanOrEqual(1);
+  });
+
+  describe('SiderMemberRow', () => {
+    it('does not display "No chats yet." and handles selection & new chat separately', () => {
+      const onSelectMember = vi.fn();
+      const onNewChat = vi.fn();
+      const onToggleCollapse = vi.fn();
+
+      const { rerender } = render(
+        <SiderMemberRow
+          member={mockSpecialist}
+          isSelected={false}
+          hasChats={false}
+          onSelectMember={onSelectMember}
+          onNewChat={onNewChat}
+        />
+      );
+
+      // Verify no "No chats yet." text exists
+      expect(screen.queryByText(/no chats/i)).not.toBeInTheDocument();
+
+      // Click member row -> onSelectMember
+      fireEvent.click(screen.getByText('Charlie Dev'));
+      expect(onSelectMember).toHaveBeenCalledTimes(1);
+
+      // Click '+' icon -> onNewChat
+      const newChatBtn = screen.getByRole('button', { name: /new chat with charlie dev/i });
+      fireEvent.click(newChatBtn);
+      expect(onNewChat).toHaveBeenCalledTimes(1);
+
+      // When hasChats is true and onToggleCollapse provided, collapse button is shown
+      rerender(
+        <SiderMemberRow
+          member={mockSpecialist}
+          isSelected={false}
+          hasChats={true}
+          isCollapsed={false}
+          onToggleCollapse={onToggleCollapse}
+          onSelectMember={onSelectMember}
+          onNewChat={onNewChat}
+        />
+      );
+
+      const collapseBtn = screen.getByTitle('Collapse chats');
+      expect(collapseBtn).toBeInTheDocument();
+      fireEvent.click(collapseBtn);
+      expect(onToggleCollapse).toHaveBeenCalledTimes(1);
+    });
   });
 });

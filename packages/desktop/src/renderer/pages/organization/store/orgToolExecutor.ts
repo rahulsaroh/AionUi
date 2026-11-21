@@ -375,6 +375,17 @@ export async function executeOrgToolInStore(
         }
       }
 
+      // If a team with this name already exists in this department, reuse it instead of creating duplicates
+      const existingTeam = dept.teams.find((t) => t.name.trim().toLowerCase() === name.trim().toLowerCase());
+      if (existingTeam) {
+        return {
+          id: existingTeam.id,
+          name: existingTeam.name,
+          departmentId: existingTeam.departmentId,
+          alreadyExisted: true,
+        };
+      }
+
       const newTeam = createTeamShell(departmentId, name);
       const nextHierarchy = {
         ...store.hierarchy,
@@ -411,8 +422,8 @@ export async function executeOrgToolInStore(
       const role = String(args.role || '').trim();
       const skills = Array.isArray(args.skills) ? args.skills : [];
       const systemPrompt = args.systemPrompt ? String(args.systemPrompt) : undefined;
-      const projectId = args.projectId ? String(args.projectId).trim() : undefined;
-      const teamId = args.teamId ? String(args.teamId).trim() : undefined;
+      let projectId = args.projectId ? String(args.projectId).trim() : undefined;
+      let teamId = args.teamId ? String(args.teamId).trim() : undefined;
       const departmentId = args.departmentId ? String(args.departmentId).trim() : undefined;
 
       if (!name || !role) {
@@ -422,6 +433,32 @@ export async function executeOrgToolInStore(
       // Scope check: department_head/team_lead must have deptId bound
       const metaDeptId = meta?.deptId ? String(meta.deptId).trim() : undefined;
       const effectiveDeptId = departmentId || metaDeptId;
+
+      // Auto-resolve teamId if not explicitly provided
+      if (!teamId) {
+        if ((meta as any)?.teamId) {
+          teamId = String((meta as any).teamId).trim();
+        } else if (projectId) {
+          const proj = store.projects.find((p) => p.id === projectId);
+          if (proj && Array.isArray(proj.teamIds) && proj.teamIds.length > 0) {
+            teamId = proj.teamIds[0];
+          } else if (proj && proj.departmentId) {
+            const dept = store.hierarchy.departments.find((d) => d.id === proj.departmentId);
+            if (dept && dept.teams.length > 0) {
+              teamId = dept.teams[0].id;
+              if (proj.teamIds && !proj.teamIds.includes(teamId)) {
+                proj.teamIds.push(teamId);
+              }
+            }
+          }
+        }
+        if (!teamId && effectiveDeptId) {
+          const dept = store.hierarchy.departments.find((d) => d.id === effectiveDeptId);
+          if (dept && dept.teams.length > 0) {
+            teamId = dept.teams[0].id;
+          }
+        }
+      }
 
       // Dedupe: check for existing member with same name + role (case-insensitive)
       const existingMembers = store.members || [];
@@ -436,6 +473,17 @@ export async function executeOrgToolInStore(
         // Reuse existing member
         memberToUse = existing;
         created = false;
+        if (teamId && !memberToUse.assignedTeamIds?.includes(teamId)) {
+          memberToUse.assignedTeamIds = [...(memberToUse.assignedTeamIds || []), teamId];
+          const nextMembers = existingMembers.map((m) => (m.id === memberToUse.id ? memberToUse : m));
+          store.members = nextMembers;
+          try {
+            localStorage.setItem('aionui:org-members', JSON.stringify(nextMembers));
+            void ipcBridge.org.saveData('aionui:org-members', JSON.stringify(nextMembers)).catch(() => {});
+            void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
+          } catch {}
+          setOrgStoreSnapshot({ members: nextMembers });
+        }
       } else {
         // Create new member
         const memberId = `m-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -540,8 +588,8 @@ export async function executeOrgToolInStore(
     }
 
     case 'assign_member': {
-      const projectId = String(args.projectId || '').trim();
-      const teamId = String(args.teamId || '').trim();
+      let projectId = String(args.projectId || '').trim();
+      let teamId = String(args.teamId || '').trim();
       const memberId = String(args.memberId || '').trim();
 
       if (!memberId || (!projectId && !teamId)) {
@@ -551,6 +599,18 @@ export async function executeOrgToolInStore(
       const member = (store.members || []).find((m) => m.id === memberId);
       if (!member) {
         throw new Error(`Member "${memberId}" not found in shared pool.`);
+      }
+
+      if (!teamId && projectId) {
+        const proj = store.projects.find((p) => p.id === projectId);
+        if (proj && Array.isArray(proj.teamIds) && proj.teamIds.length > 0) {
+          teamId = proj.teamIds[0];
+        } else if (proj && proj.departmentId) {
+          const dept = store.hierarchy.departments.find((d) => d.id === proj.departmentId);
+          if (dept && dept.teams.length > 0) {
+            teamId = dept.teams[0].id;
+          }
+        }
       }
 
       // Scope check: department_head/team_lead can only assign to projects in their department

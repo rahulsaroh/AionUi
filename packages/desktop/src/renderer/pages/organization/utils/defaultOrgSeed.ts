@@ -47,7 +47,6 @@ export function createDefaultOrgHierarchy(): OrgHierarchy {
       assignedTeamIds: [],
       lastActiveAt: now,
       status: 'idle',
-      model: undefined,
     },
     lastActiveAt: now,
     status: 'idle',

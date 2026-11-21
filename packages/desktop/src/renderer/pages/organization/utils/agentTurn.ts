@@ -16,6 +16,7 @@ export type OrgChatTarget = {
   type: OrgChatTargetType;
   id: string;
   projectId?: string;
+  createNew?: boolean;
 };
 
 export type AgentTurnEventType = 'text-delta' | 'step' | 'created-entities' | 'error' | 'done';
@@ -194,7 +195,7 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
           `You are ${agent.name}, Team Lead. Coordinate and address the user's directive directly.`;
         // Inject workspace path into the prompt if it isn't already there
         if (!basePrompt.includes(resolvedWorkspace)) {
-          resolvedSystemPrompt = `${basePrompt}\n\nCurrent workspace folder: "${resolvedWorkspace}"\nWhen calling scan_folder, use this path: scan_folder({ path: "${resolvedWorkspace}" })\nNEVER ask the user to run scan_folder for you — call it yourself.`;
+          resolvedSystemPrompt = `${basePrompt}\n\nCurrent workspace folder: "${resolvedWorkspace}"\nWhen calling scan_folder or inspecting files, use this path: scan_folder({ path: "${resolvedWorkspace}" })\nYou have full access to inspect, read, create, and modify files (scan_folder, list_dir, read_file, write_file, run_shell) and manage teams (hire_member, assign_member, create_team, list_org).\nNEVER ask the user to run tools for you — call them yourself.`;
         } else {
           resolvedSystemPrompt = basePrompt;
         }
@@ -260,10 +261,13 @@ export function buildAgentSystemContext(opts: {
   if (opts.agent.role === 'team_lead' && opts.workspacePath) {
     parts.push('');
     parts.push(
-      `TOOL REMINDER: You have full access to scan_folder, hire_member, assign_member, create_team, and list_org.`
+      `TOOL REMINDER: You have full access to scan_folder, hire_member, assign_member, create_team, list_org, as well as file execution tools: list_dir, read_file, write_file, and run_shell.`
     );
-    parts.push(`To inspect your workspace, call: scan_folder({ path: "${opts.workspacePath}" })`);
-    parts.push(`NEVER ask the user to run scan_folder for you — call it yourself.`);
+    parts.push(
+      `To inspect your workspace, call: scan_folder({ path: "${opts.workspacePath}" }) or list_dir({ path: "${opts.workspacePath}" })`
+    );
+    parts.push(`To create or edit files, call write_file. To run terminal commands, call run_shell.`);
+    parts.push(`NEVER ask the user to run tools for you — call them yourself.`);
   }
   return parts.join('\n');
 }

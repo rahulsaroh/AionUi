@@ -6,7 +6,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Tag, Tooltip, Spin } from '@arco-design/web-react';
-import { Send, Square, AllApplication, Robot, Peoples, User, Loading } from '@icon-park/react';
+import { Send, Square, AllApplication, Robot, Peoples, User, Loading, Edit, BookOne, Copy } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { OrgModelSelector } from '../OrgModelSelector';
@@ -33,6 +33,8 @@ export interface OrgTeamChatSlotProps {
   onSendMessage: (text: string) => Promise<void>;
   onSelectModel: (model: OrgAgentModelConfig) => void;
   onSelectCreatedEntity?: (ref: OrgCreatedEntityRef) => void;
+  onEditTeammate?: (member: OrgAgentMember) => void;
+  onOpenKnowledge?: (member: OrgAgentMember) => void;
 }
 
 export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
@@ -49,12 +51,36 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
   onSendMessage,
   onSelectModel,
   onSelectCreatedEntity,
+  onEditTeammate,
+  onOpenKnowledge,
 }) => {
   const { t } = useTranslation();
   const [inputText, setInputText] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const messages = conversation?.messages || [];
+
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      // ignore copy failure
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -77,6 +103,7 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
   };
 
   const roleLabel = isLeader ? 'LEAD' : isHr ? 'HR' : member.title || member.role || 'SPEC';
+  const memberDisplayName = /^aion\s*cli$/i.test(member.name) ? 'Shiraj CLI' : member.name;
 
   const memberColorClass = isLeader
     ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
@@ -104,8 +131,8 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
             {isLeader ? '👑' : isHr ? <Peoples size={13} theme='outline' /> : <Robot size={13} theme='outline' />}
           </span>
           <div className='flex items-center gap-6px min-w-0'>
-            <span className='font-semibold text-12px text-t-primary truncate' title={member.name}>
-              {member.name}
+            <span className='font-semibold text-12px text-t-primary truncate' title={memberDisplayName}>
+              {memberDisplayName}
             </span>
             <Tag
               size='small'
@@ -121,6 +148,32 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
 
         <div className='flex items-center gap-6px shrink-0'>
           <OrgModelSelector currentModel={member.model} onSelectModel={onSelectModel} disabled={isExecuting} />
+
+          {onOpenKnowledge && (
+            <Tooltip content={t('team.knowledgeRepos.chipLabel', { defaultValue: 'Knowledge & Documents' })}>
+              <Button
+                type='text'
+                size='mini'
+                icon={<BookOne size={13} theme='outline' />}
+                onClick={() => onOpenKnowledge(member)}
+                aria-label='Knowledge & Documents'
+                className='!px-4px !h-24px text-t-secondary hover:text-primary'
+              />
+            </Tooltip>
+          )}
+
+          {onEditTeammate && (
+            <Tooltip content={t('team.organization.editTeammate', { defaultValue: 'Edit teammate & knowledge' })}>
+              <Button
+                type='text'
+                size='mini'
+                icon={<Edit size={13} theme='outline' />}
+                onClick={() => onEditTeammate(member)}
+                aria-label='Edit teammate'
+                className='!px-4px !h-24px text-t-secondary hover:text-primary'
+              />
+            </Tooltip>
+          )}
 
           {/* Running / Idle dot */}
           <span
@@ -165,20 +218,45 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
             >
               {isLeader ? '👑' : isHr ? <Peoples size={20} theme='outline' /> : <Robot size={20} theme='outline' />}
             </div>
-            <h4 className='text-13px font-bold text-t-primary mb-4px'>{member.name}</h4>
-            <p className='text-11px max-w-260px leading-normal mb-14px'>
-              {isLeader
-                ? t('team.organization.leadPromptDesc', {
-                    defaultValue: 'Direct team lead to coordinate work, assign tasks, or report progress.',
-                  })
-                : isHr
-                  ? t('team.organization.hrPromptDesc', {
-                      defaultValue: 'Ask HR to recruit specialists, manage staff, or allocate personnel.',
+            <h4 className='text-13px font-bold text-t-primary mb-4px'>{memberDisplayName}</h4>
+            <div className='relative group max-w-260px'>
+              <p className='text-11px leading-normal mb-14px'>
+                {isLeader
+                  ? t('team.organization.leadPromptDesc', {
+                      defaultValue: 'Direct team lead to coordinate work, assign tasks, or report progress.',
                     })
-                  : t('team.organization.specPromptDesc', {
-                      defaultValue: 'Ask this specialist to execute domain tasks for the team.',
-                    })}
-            </p>
+                  : isHr
+                    ? t('team.organization.hrPromptDesc', {
+                        defaultValue: 'Ask HR to recruit specialists, manage staff, or allocate personnel.',
+                      })
+                    : t('team.organization.specPromptDesc', {
+                        defaultValue: 'Ask this specialist to execute domain tasks for the team.',
+                      })}
+              </p>
+              <Button
+                type='text'
+                size='mini'
+                icon={<Copy size={11} theme='outline' />}
+                onClick={() =>
+                  void copyToClipboard(
+                    isLeader
+                      ? t('team.organization.leadPromptDesc', {
+                          defaultValue: 'Direct team lead to coordinate work, assign tasks, or report progress.',
+                        })
+                      : isHr
+                        ? t('team.organization.hrPromptDesc', {
+                            defaultValue: 'Ask HR to recruit specialists, manage staff, or allocate personnel.',
+                          })
+                        : t('team.organization.specPromptDesc', {
+                            defaultValue: 'Ask this specialist to execute domain tasks for the team.',
+                          }),
+                    'empty-prompt'
+                  )
+                }
+                aria-label='Copy prompt suggestion'
+                className='!px-2px !h-16px text-t-tertiary hover:text-primary absolute -top-2px -right-2px opacity-0 group-hover:opacity-100 transition-opacity'
+              />
+            </div>
           </div>
         ) : (
           messages.map((msg) => {
@@ -217,6 +295,15 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
                     <span>
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
+                    <Button
+                      type='text'
+                      size='mini'
+                      icon={<Copy size={11} theme='outline' />}
+                      onClick={() => void copyToClipboard(msg.content, msg.id)}
+                      aria-label='Copy message'
+                      className='!px-2px !h-16px text-t-tertiary hover:text-primary ml-auto'
+                    />
+                    {copiedId === msg.id && <span className='text-9px text-emerald-400 ml-2px'>Copied</span>}
                   </div>
 
                   <div
@@ -271,13 +358,29 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
                 <div className='inline-flex items-center gap-6px px-8px py-3px rounded-full bg-emerald-500/10 border border-emerald-500/20 text-11px text-emerald-400 font-mono self-start'>
                   <Spin loading size={10} icon={<Loading theme='outline' className='animate-spin' />} />
                   <span className='truncate'>{liveStepText}</span>
+                  <Button
+                    type='text'
+                    size='mini'
+                    icon={<Copy size={10} theme='outline' />}
+                    onClick={() => void copyToClipboard(liveStepText || '', 'live-step')}
+                    aria-label='Copy step'
+                    className='!px-2px !h-16px text-emerald-400/70 hover:text-emerald-300 ml-2px'
+                  />
                 </div>
               )}
 
               {streamingContent && (
-                <div className='p-10px rounded-12px text-12px leading-relaxed border shadow-xs select-text whitespace-pre-wrap break-words bg-[var(--color-bg-2)] border-[var(--color-border-2)] text-t-primary rounded-tl-2px'>
+                <div className='p-10px rounded-12px text-12px leading-relaxed border shadow-xs select-text whitespace-pre-wrap break-words bg-[var(--color-bg-2)] border-[var(--color-border-2)] text-t-primary rounded-tl-2px relative group'>
                   {streamingContent}
                   <span className='inline-block w-6px h-12px bg-emerald-400 ml-2px animate-pulse' />
+                  <Button
+                    type='text'
+                    size='mini'
+                    icon={<Copy size={11} theme='outline' />}
+                    onClick={() => void copyToClipboard(streamingContent, 'streaming')}
+                    aria-label='Copy streaming content'
+                    className='!px-2px !h-16px text-t-tertiary hover:text-primary absolute top-6px right-6px opacity-0 group-hover:opacity-100 transition-opacity'
+                  />
                 </div>
               )}
             </div>
@@ -294,21 +397,32 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
             onKeyDown={handleKeyDown}
             placeholder={t('team.organization.slotInputPlaceholder', {
               defaultValue: 'Message {{name}}...',
-              name: member.name,
+              name: memberDisplayName,
             })}
             autoSize={{ minRows: 1, maxRows: 4 }}
             className='!bg-[var(--color-bg-1)] !border-[var(--color-border-2)] focus:!border-primary !rounded-8px text-12px'
             disabled={isExecuting}
           />
-          <Button
-            type='primary'
-            size='small'
-            icon={<Send size={14} theme='outline' />}
-            disabled={!inputText.trim() || isExecuting}
-            onClick={() => void handleSend()}
-            className='!rounded-8px !h-32px !w-32px flex items-center justify-center shrink-0'
-            aria-label={t('team.organization.send', { defaultValue: 'Send' })}
-          />
+          <div className='flex flex-col gap-4px shrink-0'>
+            <Button
+              type='primary'
+              size='small'
+              icon={<Send size={14} theme='outline' />}
+              disabled={!inputText.trim() || isExecuting}
+              onClick={() => void handleSend()}
+              className='!rounded-8px !h-32px !w-32px flex items-center justify-center shrink-0'
+              aria-label={t('team.organization.send', { defaultValue: 'Send' })}
+            />
+            <Button
+              type='text'
+              size='mini'
+              icon={<Copy size={13} theme='outline' />}
+              disabled={!inputText.trim()}
+              onClick={() => void copyToClipboard(inputText, 'input')}
+              aria-label='Copy input'
+              className='!rounded-8px !h-26px !w-32px flex items-center justify-center shrink-0 text-t-secondary hover:text-primary disabled:opacity-50'
+            />
+          </div>
         </div>
       </div>
     </div>
