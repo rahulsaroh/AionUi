@@ -22,7 +22,7 @@ import {
 } from '@/renderer/utils/file/previewPayload';
 import { notifyManualRestartRequired } from '@/renderer/utils/appRestart';
 import { isElectronDesktop } from '@/renderer/utils/platform';
-import { Alert, Button, Collapse, Form, InputNumber, Message, Modal, Switch } from '@arco-design/web-react';
+import { Alert, Button, Collapse, Form, InputNumber, Message, Modal, Select, Switch } from '@arco-design/web-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
@@ -78,7 +78,13 @@ const SystemModalContent: React.FC = () => {
   const previewLimitDraftRef = useRef<string>(String(DEFAULT_TEXT_PREVIEW_LIMIT_MB));
   const [saveUploadToWorkspace, setSaveUploadToWorkspace] = useState(false);
   const [backupDir, setBackupDir] = useState<string>(configService.get('system.backupDir') ?? '');
+  const [autoBackup, setAutoBackup] = useState<boolean>(configService.get('system.autoBackup') ?? false);
+  const [autoBackupInterval, setAutoBackupInterval] = useState<number>(
+    configService.get('system.autoBackupInterval') ?? 24
+  );
+  const [lastBackupTime, setLastBackupTime] = useState<number | undefined>(configService.get('system.lastBackupTime'));
   const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [handbookDir, setHandbookDir] = useState<string>('');
   const [backfillingHandbooks, setBackfillingHandbooks] = useState(false);
 
@@ -122,7 +128,24 @@ const SystemModalContent: React.FC = () => {
     setSaveUploadToWorkspace(configService.get('upload.saveToWorkspace') ?? false);
     const savedBackupDir = configService.get('system.backupDir') ?? '';
     setBackupDir(savedBackupDir);
+    setAutoBackup(configService.get('system.autoBackup') ?? false);
+    setAutoBackupInterval(configService.get('system.autoBackupInterval') ?? 24);
+    setLastBackupTime(configService.get('system.lastBackupTime'));
     if (isDesktop) {
+      ipcBridge.application.getBackupStatus
+        .invoke()
+        .then((status) => {
+          if (status) {
+            if (status.backupDir) {
+              setBackupDir(status.backupDir);
+              form.setFieldValue('backupDir', status.backupDir);
+            }
+            setAutoBackup(status.autoBackup);
+            setAutoBackupInterval(status.autoBackupInterval);
+            setLastBackupTime(status.lastBackupTime);
+          }
+        })
+        .catch(() => {});
       memberHandbook
         .getHandbookDir()
         .then((dir) => {
@@ -475,6 +498,34 @@ const SystemModalContent: React.FC = () => {
       description: t('settings.crossSessionMessageDesc'),
       component: <Switch checked={crossSessionMessageEnabled} onChange={handleCrossSessionMessageChange} />,
     },
+    ...(isDesktop
+      ? [
+          {
+            key: 'autoBackup',
+            label: t('settings.autoBackup'),
+            description: t('settings.autoBackupDesc'),
+            component: <Switch checked={autoBackup} onChange={(checked) => handleAutoBackupChange(checked)} />,
+          },
+          {
+            key: 'autoBackupInterval',
+            label: t('settings.autoBackupInterval'),
+            component: (
+              <Select
+                value={autoBackupInterval}
+                disabled={!autoBackup}
+                onChange={(val) => handleAutoBackupIntervalChange(val)}
+                style={{ width: 180 }}
+                options={[
+                  { value: 1, label: t('settings.autoBackupEveryHour') },
+                  { value: 6, label: t('settings.autoBackupEvery6Hours') },
+                  { value: 12, label: t('settings.autoBackupEvery12Hours') },
+                  { value: 24, label: t('settings.autoBackupDaily') },
+                ]}
+              />
+            ),
+          },
+        ]
+      : []),
   ];
 
   const saveDirConfigValidate = (_values: {
@@ -494,6 +545,32 @@ const SystemModalContent: React.FC = () => {
 
   const savingRef = useRef(false);
 
+  const handleAutoBackupChange = useCallback(
+    (checked: boolean) => {
+      setAutoBackup(checked);
+      void configService.set('system.autoBackup', checked);
+      configService.setLocal('system.autoBackup', checked);
+      if (isDesktop) {
+        void ipcBridge.application.setAutoBackup
+          .invoke({ enabled: checked, interval: autoBackupInterval })
+          .catch(() => {});
+      }
+    },
+    [autoBackupInterval, isDesktop]
+  );
+
+  const handleAutoBackupIntervalChange = useCallback(
+    (val: number) => {
+      setAutoBackupInterval(val);
+      void configService.set('system.autoBackupInterval', val);
+      configService.setLocal('system.autoBackupInterval', val);
+      if (isDesktop) {
+        void ipcBridge.application.setAutoBackup.invoke({ enabled: autoBackup, interval: val }).catch(() => {});
+      }
+    },
+    [autoBackup, isDesktop]
+  );
+
   const handleBackupDirChange = useCallback((newDir: string) => {
     setBackupDir(newDir);
     void configService.set('system.backupDir', newDir);
@@ -501,39 +578,32 @@ const SystemModalContent: React.FC = () => {
   }, []);
 
   const handleBackupData = useCallback(async () => {
-    const currentTarget = form.getFieldValue('dataDir') || systemInfo?.dataDir || systemInfo?.workDir;
-    if (!currentTarget) {
+    let target = form.getFieldValue('backupDir') || backupDir || configService.get('system.backupDir');
+    if (!target) {
       try {
         const data = await ipcBridge.dialog.showOpen.invoke({
           properties: ['openDirectory', 'createDirectory'],
         });
         if (!data?.[0]) return;
-        const chosen = data[0];
-        form.setFieldValue('dataDir', chosen);
-
-        setBackingUp(true);
-        const res = await ipcBridge.application.backupData.invoke({ targetDir: chosen });
-        if (res.success) {
-          Message.success(t('settings.backupSuccess', { path: res.backupPath || chosen }));
-        } else {
-          Message.error(t('settings.backupFailed'));
-        }
+        target = data[0];
+        form.setFieldValue('backupDir', target);
+        handleBackupDirChange(target);
       } catch (err) {
-        console.error('Backup error:', err);
-        Message.error(t('settings.backupFailed'));
-      } finally {
-        setBackingUp(false);
+        console.error('Backup folder picker error:', err);
+        return;
       }
-      return;
     }
 
     setBackingUp(true);
     try {
-      const res = await ipcBridge.application.backupData.invoke({ targetDir: currentTarget });
+      const res = await ipcBridge.application.backupData.invoke({ targetDir: target });
       if (res.success) {
-        Message.success(t('settings.backupSuccess', { path: res.backupPath || currentTarget }));
+        const now = Date.now();
+        setLastBackupTime(now);
+        void configService.set('system.lastBackupTime', now);
+        Message.success(t('settings.backupSuccess', { path: res.backupPath || target }));
       } else {
-        Message.error(t('settings.backupFailed'));
+        Message.error(res.msg ? `${t('settings.backupFailed')}: ${res.msg}` : t('settings.backupFailed'));
       }
     } catch (err) {
       console.error('Backup error:', err);
@@ -541,7 +611,43 @@ const SystemModalContent: React.FC = () => {
     } finally {
       setBackingUp(false);
     }
-  }, [form, systemInfo, t]);
+  }, [backupDir, form, handleBackupDirChange, t]);
+
+  const handleRestoreData = useCallback(async () => {
+    try {
+      const defaultDir = form.getFieldValue('backupDir') || backupDir;
+      const data = await ipcBridge.dialog.showOpen.invoke({
+        defaultPath: defaultDir || undefined,
+        properties: ['openDirectory'],
+      });
+      if (!data?.[0]) return;
+      const chosenBackup = data[0];
+
+      modal.confirm({
+        title: t('settings.restoreConfirm'),
+        content: t('settings.restoreConfirmDesc'),
+        onOk: async () => {
+          setRestoring(true);
+          try {
+            const res = await ipcBridge.application.restoreData.invoke({ backupPath: chosenBackup });
+            if (res.success) {
+              Message.success(t('settings.restoreSuccess', { path: res.restoredPath || chosenBackup }));
+              const restartResult = await ipcBridge.application.restart.invoke();
+              notifyManualRestartRequired(restartResult, t);
+            } else {
+              Message.error(t('settings.restoreFailed', { error: res.msg || 'Unknown error' }));
+            }
+          } catch (err) {
+            Message.error(t('settings.restoreFailed', { error: String(err) }));
+          } finally {
+            setRestoring(false);
+          }
+        },
+      });
+    } catch (err) {
+      console.error('Restore dialog error:', err);
+    }
+  }, [backupDir, form, modal, t]);
 
   const handleValuesChange = useCallback(
     async (_changedValue: unknown, allValues: Record<string, string>) => {
@@ -721,9 +827,48 @@ const SystemModalContent: React.FC = () => {
                               if (dir) void ipcBridge.shell.showItemInFolder.invoke(dir);
                             }}
                           >
-                            {t('settings.openBackupDir')}
+                            {t('settings.openFolder', { defaultValue: 'Open folder' })}
                           </Button>
                         )}
+                    </div>
+                  </div>
+                }
+              />
+              <DirInputItem
+                label={t('settings.backupDir')}
+                field='backupDir'
+                onCustomChange={handleBackupDirChange}
+                extra={
+                  <div className='flex items-center justify-between mt-6px text-12px text-t-secondary'>
+                    <span>
+                      {t('settings.backupDirDesc')}
+                      {lastBackupTime
+                        ? ` · ${t('settings.lastBackupAt', { time: new Date(lastBackupTime).toLocaleString() })}`
+                        : ` · ${t('settings.neverBackedUp')}`}
+                    </span>
+                    <div className='flex items-center gap-8px'>
+                      {isDesktop && Boolean(form.getFieldValue('backupDir') || backupDir) && (
+                        <Button
+                          size='mini'
+                          type='secondary'
+                          onClick={() => {
+                            const dir = form.getFieldValue('backupDir') || backupDir;
+                            if (dir) void ipcBridge.shell.showItemInFolder.invoke(dir);
+                          }}
+                        >
+                          {t('settings.openBackupDir')}
+                        </Button>
+                      )}
+                      {isDesktop && (
+                        <Button
+                          size='mini'
+                          type='secondary'
+                          loading={restoring}
+                          onClick={() => void handleRestoreData()}
+                        >
+                          {restoring ? t('settings.restoring') : t('settings.restoreFromBackup')}
+                        </Button>
+                      )}
                       {isDesktop && (
                         <Button size='mini' type='primary' loading={backingUp} onClick={() => void handleBackupData()}>
                           {backingUp ? t('settings.backingUp') : t('settings.backupNow')}

@@ -76,6 +76,7 @@ import {
   setIsQuitting,
 } from './process/utils/tray';
 import { readCloseToTraySetting } from './process/utils/closeToTraySetting';
+import { initAutoBackupService, stopAutoBackupService } from './process/services/backup/autoBackupService';
 // @ts-expect-error - electron-squirrel-startup doesn't have types
 import electronSquirrelStartup from 'electron-squirrel-startup';
 
@@ -1078,6 +1079,8 @@ const handleAppReady = async (): Promise<void> => {
       restoreDesktopWebUIFromPreferences().catch((error) => {
         console.error('[WebUI] Failed to auto-restore:', error);
       });
+      // 启动后台自动备份服务 / Initialize background auto-backup daemon
+      initAutoBackupService();
     }
 
     // Flush pending deep-link URL (received before window was ready)
@@ -1188,6 +1191,7 @@ installQuitCleanup({
 });
 
 app.on('will-quit', () => {
+  stopAutoBackupService();
   console.log('[AionUi] will-quit — all cleanup should be complete');
 });
 

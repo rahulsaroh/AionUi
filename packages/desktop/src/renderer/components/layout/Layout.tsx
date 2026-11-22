@@ -24,7 +24,7 @@ import { useProjectExplorerColumnWidth } from '@renderer/hooks/ui/useProjectExpl
 import { useResizableSplit } from '@renderer/hooks/ui/useResizableSplit';
 import { useProjectPreviewRegionWidth } from '@renderer/hooks/ui/useProjectPreviewRegionWidth';
 import { useProjectPanelCollapse } from '@renderer/hooks/ui/useProjectPanelCollapse';
-import { dispatchWorkspaceToggleEvent } from '@renderer/utils/workspace/workspaceEvents';
+import { dispatchWorkspaceToggleEvent, WORKSPACE_STATE_EVENT } from '@renderer/utils/workspace/workspaceEvents';
 import { MIN_PREVIEW_PANEL_PX } from '@renderer/pages/conversation/utils/layoutCalc';
 import { PreviewPanel } from '@renderer/pages/conversation/Preview';
 import { LayoutContext } from '@renderer/hooks/context/LayoutContext';
@@ -199,11 +199,33 @@ const Layout: React.FC<{
   );
   // P3: host-level collapse (project-scoped on desktop; overlay on mobile). The
   // explorer stays mounted (width 0) on collapse, so it is not remounted.
-  const { collapsed: explorerCollapsed } = useProjectPanelCollapse({
+  const { collapsed: explorerCollapsed, setCollapsed: setExplorerCollapsed } = useProjectPanelCollapse({
     projectId: currentProject,
     isMobile,
     active: Boolean(currentProject),
   });
+  const [nonProjectRightSiderCollapsed, setNonProjectRightSiderCollapsed] = useState(true);
+  useEffect(() => {
+    const handleWorkspaceState = (event: Event) => {
+      const detail = (event as CustomEvent<{ collapsed?: boolean }>).detail;
+      if (typeof detail?.collapsed === 'boolean') {
+        setNonProjectRightSiderCollapsed(detail.collapsed);
+      }
+    };
+    window.addEventListener(WORKSPACE_STATE_EVENT, handleWorkspaceState);
+    return () => window.removeEventListener(WORKSPACE_STATE_EVENT, handleWorkspaceState);
+  }, []);
+  const rightSiderCollapsed = Boolean(currentProject) ? explorerCollapsed : nonProjectRightSiderCollapsed;
+  const setRightSiderCollapsed = useCallback(
+    (nextCollapsed: boolean) => {
+      if (Boolean(currentProject)) {
+        setExplorerCollapsed(nextCollapsed);
+      } else {
+        setNonProjectRightSiderCollapsed(nextCollapsed);
+      }
+    },
+    [currentProject, setExplorerCollapsed]
+  );
   const toggleExplorer = useCallback(() => {
     dispatchWorkspaceToggleEvent();
   }, []);
@@ -357,9 +379,9 @@ const Layout: React.FC<{
 
   const siderWidth = isMobile
     ? Math.max(
-        MOBILE_SIDER_MIN_WIDTH,
-        Math.min(MOBILE_SIDER_MAX_WIDTH, Math.round(viewportWidth * MOBILE_SIDER_WIDTH_RATIO))
-      )
+      MOBILE_SIDER_MIN_WIDTH,
+      Math.min(MOBILE_SIDER_MAX_WIDTH, Math.round(viewportWidth * MOBILE_SIDER_WIDTH_RATIO))
+    )
     : desktopSiderWidth;
   useEffect(() => {
     collapsedRef.current = collapsed;
@@ -367,20 +389,28 @@ const Layout: React.FC<{
 
   const siderStyle = isMobile
     ? {
-        position: 'fixed' as const,
-        left: 0,
-        zIndex: 100,
-        transform: collapsed ? 'translateX(-100%)' : 'translateX(0)',
-        transition: 'none',
-        pointerEvents: collapsed ? ('none' as const) : ('auto' as const),
-      }
+      position: 'fixed' as const,
+      left: 0,
+      zIndex: 100,
+      transform: collapsed ? 'translateX(-100%)' : 'translateX(0)',
+      transition: 'none',
+      pointerEvents: collapsed ? ('none' as const) : ('auto' as const),
+    }
     : {
-        position: 'relative' as const,
-        overflow: 'visible' as const,
-      };
+      position: 'relative' as const,
+      overflow: 'visible' as const,
+    };
 
   return (
-    <LayoutContext.Provider value={{ isMobile, siderCollapsed: collapsed, setSiderCollapsed: setCollapsed }}>
+    <LayoutContext.Provider
+      value={{
+        isMobile,
+        siderCollapsed: collapsed,
+        setSiderCollapsed: setCollapsed,
+        rightSiderCollapsed,
+        setRightSiderCollapsed,
+      }}
+    >
       <NavigationHistoryProvider>
         <div className='app-shell flex flex-col size-full min-h-0'>
           <Titlebar workspaceAvailable={workspaceAvailable} />
@@ -424,12 +454,12 @@ const Layout: React.FC<{
               <ArcoLayout.Content className='pt-0 px-8px pb-0 layout-sider-content'>
                 {React.isValidElement(sider)
                   ? React.cloneElement(sider, {
-                      onSessionClick: () => {
-                        cleanupSiderTooltips();
-                        if (isMobile) setCollapsed(true);
-                      },
-                      collapsed,
-                    } as any)
+                    onSessionClick: () => {
+                      cleanupSiderTooltips();
+                      if (isMobile) setCollapsed(true);
+                    },
+                    collapsed,
+                  } as any)
                   : sider}
               </ArcoLayout.Content>
               {!isMobile &&
@@ -454,12 +484,12 @@ const Layout: React.FC<{
                 style={
                   isMobile
                     ? {
-                        width: '100%',
-                      }
+                      width: '100%',
+                    }
                     : previewMaximized
                       ? // 最大化时聊天区隐藏（保持挂载不卸载，还原后即刻恢复）
-                        // Hidden while maximized (kept mounted so restoring is instant)
-                        { display: 'none' }
+                      // Hidden while maximized (kept mounted so restoring is instant)
+                      { display: 'none' }
                       : undefined
                 }
               >

@@ -52,7 +52,8 @@ export function resolveOrgChatTarget(
   projects: OrgProject[],
   conversations: OrgConversation[],
   activeScope: 'workplace' | 'organization',
-  t: (key: string, opts?: Record<string, unknown>) => string
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  allMembers?: OrgAgentMember[]
 ): ResolvedChatTarget | { error: string } {
   const now = Date.now();
 
@@ -172,10 +173,10 @@ export function resolveOrgChatTarget(
       targetNodeId: team?.id || dept?.id || 'root-ceo',
       projectId: project.id,
       teamId: team?.id || (updatedProject || project).teamIds?.[0],
-      targetAgentId: agent.id,
+      targetAgentId: project.leadAssistantId || agent.id,
       targetRole: 'project_head',
       targetAgentName: agent.name,
-      targetAgentModel: agent.model,
+      targetAgentModel: project.model || agent.model,
       timestamp: now,
       summary: '',
       messages: [],
@@ -229,6 +230,21 @@ export function resolveOrgChatTarget(
     }
     if (!found && hierarchy.rootCeo.chiefOfStaffAgent?.id === target.id) {
       found = { agent: hierarchy.rootCeo.chiefOfStaffAgent };
+    }
+    if (!found && allMembers) {
+      const poolMember = allMembers.find((m) => m.id === target.id || m.canonicalAgentId === target.id);
+      if (poolMember) {
+        const project = target.projectId ? projects.find((p) => p.id === target.projectId) : undefined;
+        const dept =
+          (project && hierarchy.departments.find((d) => d.id === project.departmentId)) ||
+          (poolMember.departmentId ? hierarchy.departments.find((d) => d.id === poolMember.departmentId) : undefined) ||
+          hierarchy.departments[0];
+        const team =
+          dept?.teams.find((tm) => project?.teamIds?.includes(tm.id)) ||
+          dept?.teams.find((tm) => poolMember.assignedTeamIds?.includes(tm.id)) ||
+          dept?.teams[0];
+        found = { agent: poolMember, dept, team };
+      }
     }
     if (!found) return { error: t('team.organization.agentNotFound', { defaultValue: 'Agent could not be resolved' }) };
 

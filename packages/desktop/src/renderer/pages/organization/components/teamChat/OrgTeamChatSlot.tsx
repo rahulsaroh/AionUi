@@ -10,6 +10,7 @@ import { Send, Square, AllApplication, Robot, Peoples, User, Loading, Edit, Book
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { OrgModelSelector } from '../OrgModelSelector';
+import { isRoleDuplicate } from './OrgTeamChatHeader';
 import type {
   OrgTeamNode,
   OrgAgentMember,
@@ -104,6 +105,7 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
 
   const roleLabel = isLeader ? 'LEAD' : isHr ? 'HR' : member.title || member.role || 'SPEC';
   const memberDisplayName = /^aion\s*cli$/i.test(member.name) ? 'Shiraj CLI' : member.name;
+  const isDuplicateRole = !isLeader && !isHr && isRoleDuplicate(memberDisplayName, roleLabel);
 
   const memberColorClass = isLeader
     ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
@@ -134,15 +136,29 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
             <span className='font-semibold text-12px text-t-primary truncate' title={memberDisplayName}>
               {memberDisplayName}
             </span>
-            <Tag
-              size='small'
-              className={classNames(
-                'text-9px font-mono font-semibold px-4px py-0 rounded border shrink-0',
-                roleTagClass
-              )}
-            >
-              {roleLabel}
-            </Tag>
+            {!isDuplicateRole && (
+              <Tag
+                size='small'
+                className={classNames(
+                  'text-9px font-mono font-semibold px-4px py-0 rounded border shrink-0',
+                  roleTagClass
+                )}
+              >
+                {roleLabel}
+              </Tag>
+            )}
+            {onEditTeammate && (
+              <Tooltip content={t('team.organization.editTeammate', { defaultValue: 'Edit teammate' })}>
+                <Button
+                  type='text'
+                  size='mini'
+                  icon={<Edit size={12} theme='outline' />}
+                  onClick={() => onEditTeammate(member)}
+                  aria-label='Edit teammate'
+                  className='!px-2px !h-20px text-t-tertiary hover:text-primary shrink-0'
+                />
+              </Tooltip>
+            )}
           </div>
         </div>
 

@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import classNames from 'classnames';
 import { Tooltip, Modal, Input, Message, Dropdown, Menu, Button } from '@arco-design/web-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -89,6 +90,8 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
     selectedConversationId,
     setSelectedConversationId,
     openChat,
+    reorderDepartments,
+    reorderProjects,
     activeFilter: storeActiveFilter,
     setActiveFilter: storeSetActiveFilter,
   } = useOrgStore();
@@ -117,8 +120,15 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   const [editEntity, setEditEntity] = useState<{
     type: 'department' | 'team' | 'member' | 'project';
     data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject | null;
-    context: { departmentId?: string; teamId?: string };
+    context: { departmentId?: string; teamId?: string; projectId?: string };
   } | null>(null);
+
+  const [draggedDeptId, setDraggedDeptId] = useState<string | null>(null);
+  const [deptDropIndicator, setDeptDropIndicator] = useState<{ id: string; position: 'top' | 'bottom' } | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [projectDropIndicator, setProjectDropIndicator] = useState<{ id: string; position: 'top' | 'bottom' } | null>(
+    null
+  );
 
   const isCanvasActive = location.pathname === '/organization' && orgViewMode === 'canvas';
   const isAutomationsActive = location.pathname === '/scheduled';
@@ -503,7 +513,7 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
             setEditEntity({
               type: 'member',
               data: member,
-              context: { departmentId: selectedDepartmentId || undefined },
+              context: { departmentId: selectedDepartmentId || undefined, projectId },
             })
           }
           onNewChat={() => handleOpenMemberChat(member.id, projectId, true)}
@@ -597,25 +607,110 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
   };
 
   const handleNewChat = (deptId: string, proj: OrgProject) => {
-    const teamId = proj.teamIds?.[0] ?? '';
-    const newConvId = `conv-proj-${proj.id}-${Date.now()}`;
-    addOrgConversation({
-      id: newConvId,
-      title: t('team.organization.newChat', { defaultValue: 'New chat' }),
-      type: 'team_execution',
-      sourceNodeId: teamId || deptId,
-      targetNodeId: teamId || deptId,
-      projectId: proj.id,
-      teamId: teamId || undefined,
-      timestamp: Date.now(),
-      summary: '',
-      messages: [],
-    });
+    setSelectedDepartment(deptId);
     setSelectedProject(proj.id);
-    setSelectedConversationId(newConvId);
-    setOrgViewMode('chat');
-    onSessionClick?.();
-    void navigate('/organization');
+    const result = openChat({ type: 'project_head', id: proj.id, createNew: true });
+    if (result.ok) {
+      setOrgViewMode('chat');
+      onSessionClick?.();
+      void navigate('/organization');
+    }
+  };
+
+  const handleDeptDragStart = (e: React.DragEvent, deptId: string) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('[role="button"]')) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedDeptId(deptId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `dept:${deptId}`);
+  };
+
+  const handleDeptDragOver = (e: React.DragEvent, deptId: string) => {
+    if (!draggedDeptId || draggedDeptId === deptId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const position = e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom';
+    setDeptDropIndicator({ id: deptId, position });
+  };
+
+  const handleDeptDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDeptDropIndicator(null);
+    }
+  };
+
+  const handleDeptDrop = (e: React.DragEvent, targetDeptId: string) => {
+    e.preventDefault();
+    if (!draggedDeptId || draggedDeptId === targetDeptId) {
+      setDraggedDeptId(null);
+      setDeptDropIndicator(null);
+      return;
+    }
+    const fromIndex = hierarchy.departments.findIndex((d) => d.id === draggedDeptId);
+    let toIndex = hierarchy.departments.findIndex((d) => d.id === targetDeptId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const position = deptDropIndicator?.position ?? 'bottom';
+    if (position === 'bottom') {
+      toIndex += 1;
+    }
+    if (fromIndex < toIndex) {
+      toIndex -= 1;
+    }
+    reorderDepartments(fromIndex, toIndex);
+    setDraggedDeptId(null);
+    setDeptDropIndicator(null);
+  };
+
+  const handleDeptDragEnd = () => {
+    setDraggedDeptId(null);
+    setDeptDropIndicator(null);
+  };
+
+  const handleProjectDragStart = (e: React.DragEvent, projId: string) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('[role="button"]')) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedProjectId(projId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `proj:${projId}`);
+  };
+
+  const handleProjectDragOver = (e: React.DragEvent, projId: string) => {
+    if (!draggedProjectId || draggedProjectId === projId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const position = e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom';
+    setProjectDropIndicator({ id: projId, position });
+  };
+
+  const handleProjectDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setProjectDropIndicator(null);
+    }
+  };
+
+  const handleProjectDrop = (e: React.DragEvent, targetProjId: string) => {
+    e.preventDefault();
+    if (!draggedProjectId || draggedProjectId === targetProjId) {
+      setDraggedProjectId(null);
+      setProjectDropIndicator(null);
+      return;
+    }
+    reorderProjects(draggedProjectId, targetProjId);
+    setDraggedProjectId(null);
+    setProjectDropIndicator(null);
+  };
+
+  const handleProjectDragEnd = () => {
+    setDraggedProjectId(null);
+    setProjectDropIndicator(null);
   };
 
   const handleEditSave = () => {
@@ -1053,7 +1148,25 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                 );
 
                 return (
-                  <div key={dept.id} className='flex flex-col'>
+                  <div
+                    key={dept.id}
+                    draggable={true}
+                    onDragStart={(e) => handleDeptDragStart(e, dept.id)}
+                    onDragOver={(e) => handleDeptDragOver(e, dept.id)}
+                    onDragLeave={handleDeptDragLeave}
+                    onDrop={(e) => handleDeptDrop(e, dept.id)}
+                    onDragEnd={handleDeptDragEnd}
+                    className={classNames(
+                      'flex flex-col transition-all cursor-grab active:cursor-grabbing',
+                      draggedDeptId === dept.id && 'opacity-40',
+                      deptDropIndicator?.id === dept.id &&
+                        deptDropIndicator.position === 'top' &&
+                        'border-t-2 border-[var(--color-primary-light-4)]',
+                      deptDropIndicator?.id === dept.id &&
+                        deptDropIndicator.position === 'bottom' &&
+                        'border-b-2 border-[var(--color-primary-light-4)]'
+                    )}
+                  >
                     <SiderDepartmentHeader
                       department={dept}
                       status={status}
@@ -1184,8 +1297,30 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                   const isProjectExpanded = !collapsedProjectIds.has(proj.id);
                                   const projectMembers = listProjectTeamMembers(proj, dept, allAgentMembers);
                                   const visibleProjectMembers = projectMembers.filter(memberVisible);
+                                  const projectConversations = conversations
+                                    .filter((c) => c.projectId === proj.id)
+                                    .filter((c) => c.messages.length > 0 || c.id === selectedConversationId)
+                                    .toSorted((a, b) => b.timestamp - a.timestamp);
                                   return (
-                                    <div key={proj.id} className='flex flex-col'>
+                                    <div
+                                      key={proj.id}
+                                      draggable={true}
+                                      onDragStart={(e) => handleProjectDragStart(e, proj.id)}
+                                      onDragOver={(e) => handleProjectDragOver(e, proj.id)}
+                                      onDragLeave={handleProjectDragLeave}
+                                      onDrop={(e) => handleProjectDrop(e, proj.id)}
+                                      onDragEnd={handleProjectDragEnd}
+                                      className={classNames(
+                                        'flex flex-col transition-all cursor-grab active:cursor-grabbing',
+                                        draggedProjectId === proj.id && 'opacity-40',
+                                        projectDropIndicator?.id === proj.id &&
+                                          projectDropIndicator.position === 'top' &&
+                                          'border-t-2 border-[var(--color-primary-light-4)]',
+                                        projectDropIndicator?.id === proj.id &&
+                                          projectDropIndicator.position === 'bottom' &&
+                                          'border-b-2 border-[var(--color-primary-light-4)]'
+                                      )}
+                                    >
                                       <SiderProjectRow
                                         project={proj}
                                         isSelected={isProjectSelected}
@@ -1193,30 +1328,39 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                         onToggleExpand={() => toggleProject(proj.id)}
                                         onOpenChat={() => handleOpenProjectChat(proj.id)}
                                         onEdit={(e) => {
-                                          e.stopPropagation();
+                                          e?.stopPropagation();
                                           handleOpenEntityEdit('project', proj, {
                                             departmentId: proj.departmentId,
                                             teamId: proj.teamIds?.[0],
                                           });
                                         }}
                                         onNewChat={(e) => {
-                                          e.stopPropagation();
+                                          e?.stopPropagation();
                                           handleNewChat(dept.id, proj);
                                         }}
                                         siderTooltipProps={siderTooltipProps}
                                       />
-                                      {isProjectExpanded &&
-                                        (visibleProjectMembers.length === 0 ? (
-                                          <div className='h-24px px-6px flex items-center text-11px text-t-tertiary pl-16px pr-4px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                            {projectMembers.length === 0
-                                              ? t('team.organization.noProjectMembers', {
-                                                  defaultValue: 'No team members on this project.',
-                                                })
-                                              : t('team.noMatchingMembers')}
-                                          </div>
-                                        ) : (
-                                          <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
-                                            {visibleProjectMembers.map((member) =>
+                                      {isProjectExpanded && (
+                                        <div className='flex flex-col gap-0.5px pl-16px pr-4px py-1px border-l border-[var(--color-border-2)]/20 ml-10px'>
+                                          {projectConversations.length > 0 &&
+                                            projectConversations.map((conv) => {
+                                              const isChatSelected = selectedConversationId === conv.id;
+                                              return (
+                                                <SiderChatRow
+                                                  key={conv.id}
+                                                  conversation={conv}
+                                                  isSelected={isChatSelected}
+                                                  relativeTime={formatChatTime(conv.timestamp)}
+                                                  onSelect={() => {
+                                                    setSelectedDepartment(dept.id);
+                                                    setSelectedProject(proj.id);
+                                                    handleSelectConversation(conv.id);
+                                                  }}
+                                                />
+                                              );
+                                            })}
+                                          {visibleProjectMembers.length > 0 ? (
+                                            visibleProjectMembers.map((member) =>
                                               renderMemberThread(
                                                 member,
                                                 chatsWithMember(conversations, member, allAgentMembers, {
@@ -1227,9 +1371,18 @@ export const OrganizationSiderContent: React.FC<OrganizationSiderContentProps> =
                                                 ),
                                                 proj.id
                                               )
-                                            )}
-                                          </div>
-                                        ))}
+                                            )
+                                          ) : projectConversations.length === 0 ? (
+                                            <div className='h-24px px-6px flex items-center text-11px text-t-tertiary'>
+                                              {projectMembers.length === 0
+                                                ? t('team.organization.noProjectMembers', {
+                                                    defaultValue: 'No team members on this project.',
+                                                  })
+                                                : t('team.noMatchingMembers')}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })

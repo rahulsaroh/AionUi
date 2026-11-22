@@ -8,6 +8,14 @@ export type KnowledgeRepoSyncStatus = 'idle' | 'syncing' | 'error' | 'needs_atte
 
 export type KnowledgeRepoTrustStatus = 'untrusted' | 'trusted' | 'reapproval_required';
 
+export type KnowledgeRepoProgress = {
+  repoId: string;
+  phase: 'cloning' | 'scanning' | 'completed' | 'error';
+  percent: number; // 0 - 100
+  message: string;
+  error?: string;
+};
+
 export type KnowledgeRepoUpdatePolicy = 'auto' | 'pinned';
 
 export type KnowledgeRuleItem = {
@@ -77,6 +85,7 @@ export type KnowledgeRepo = {
   manifest: KnowledgeRepoManifest;
   whatChangedSummary?: KnowledgeRepoWhatChanged;
   hasAuthToken?: boolean;
+  progress?: KnowledgeRepoProgress;
   envVars?: Record<string, string>; // Securely managed
   createdAt: number;
   updatedAt: number;

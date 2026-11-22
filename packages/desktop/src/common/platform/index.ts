@@ -78,9 +78,7 @@ export function getPlatformServices(): IPlatformServices {
         };
       }
     } else {
-      throw new Error(
-        '[Platform] Services not registered. Call registerPlatformServices() before using platform APIs.'
-      );
+      _services = new NodePlatformServices();
     }
   }
   return _services;

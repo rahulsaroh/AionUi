@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_GIT_TIMEOUT_MS = 120_000;
+const DEFAULT_CLONE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes default for large repos / slow disks
 
 export class GitExecutionError extends Error {
   code?: number | string;
@@ -58,11 +60,79 @@ export function sanitizeGitRef(ref: string): string {
   return trimmed;
 }
 
+/**
+ * Parse git progress lines emitted to stderr during clone / checkout.
+ */
+export function parseGitProgress(line: string): { percent: number; message: string } | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  // Checkout files: "Updating files:  31% (3356/10705)"
+  const updatingMatch = trimmed.match(/Updating files:\s+(\d+)%(?: \(([^)]+)\))?/i);
+  if (updatingMatch) {
+    const raw = parseInt(updatingMatch[1], 10);
+    // Maps to 70% - 98%
+    const percent = Math.min(98, Math.max(70, Math.round(70 + raw * 0.28)));
+    const details = updatingMatch[2] ? ` (${updatingMatch[2]})` : '';
+    return { percent, message: `Checking out files: ${raw}%${details}` };
+  }
+
+  // Downloading objects: "Receiving objects:  45% (4817/10705), 12.34 MiB | 2.50 MiB/s"
+  const receivingMatch = trimmed.match(/Receiving objects:\s+(\d+)%(?: \(([^)]+)\))?/i);
+  if (receivingMatch) {
+    const raw = parseInt(receivingMatch[1], 10);
+    // Maps to 15% - 65%
+    const percent = Math.min(65, Math.max(15, Math.round(15 + raw * 0.5)));
+    const details = receivingMatch[2] ? ` (${receivingMatch[2]})` : '';
+    return { percent, message: `Downloading repository: ${raw}%${details}` };
+  }
+
+  // Resolving deltas: "Resolving deltas:  90% (900/1000)"
+  const deltasMatch = trimmed.match(/Resolving deltas:\s+(\d+)%/i);
+  if (deltasMatch) {
+    const raw = parseInt(deltasMatch[1], 10);
+    const percent = Math.min(70, Math.max(65, Math.round(65 + raw * 0.05)));
+    return { percent, message: `Resolving deltas: ${raw}%` };
+  }
+
+  // Compressing objects: "Compressing objects:  50%"
+  const compressingMatch = trimmed.match(/Compressing objects:\s+(\d+)%/i);
+  if (compressingMatch) {
+    const raw = parseInt(compressingMatch[1], 10);
+    const percent = Math.min(15, Math.max(5, Math.round(5 + raw * 0.1)));
+    return { percent, message: `Compressing objects: ${raw}%` };
+  }
+
+  // Counting objects: "remote: Counting objects: 100%"
+  const countingMatch = trimmed.match(/Counting objects:\s+(\d+)%/i);
+  if (countingMatch) {
+    return { percent: 5, message: 'Counting objects...' };
+  }
+
+  // Generic percentage match
+  const genericMatch = trimmed.match(/(\d+)%/);
+  if (genericMatch) {
+    const raw = parseInt(genericMatch[1], 10);
+    return { percent: raw, message: trimmed };
+  }
+
+  if (trimmed.startsWith('Cloning into')) {
+    return { percent: 2, message: 'Connecting to repository...' };
+  }
+
+  return null;
+}
+
 export class KnowledgeRepoGitService {
   /**
    * Safe git command invocation without shell interpolation.
    */
-  async runGit(args: string[], cwd?: string, authToken?: string): Promise<GitExecResult> {
+  async runGit(
+    args: string[],
+    cwd?: string,
+    authToken?: string,
+    timeoutMs: number = DEFAULT_GIT_TIMEOUT_MS
+  ): Promise<GitExecResult> {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       GIT_TERMINAL_PROMPT: '0',
@@ -87,13 +157,17 @@ export class KnowledgeRepoGitService {
       const { stdout, stderr } = await execFileAsync('git', finalArgs, {
         cwd,
         env,
-        timeout: 120_000,
+        timeout: timeoutMs,
         maxBuffer: 20 * 1024 * 1024,
       });
       return { stdout: stdout.trim(), stderr: stderr.trim() };
     } catch (err: unknown) {
-      const error = err as { code?: number | string; message?: string; stderr?: string };
-      const errMsg = error.stderr?.trim() || error.message || 'Git execution error';
+      const error = err as { code?: number | string; message?: string; stderr?: string; killed?: boolean };
+      let errMsg = error.stderr?.trim() || error.message || 'Git execution error';
+      if (error.killed || (typeof error.message === 'string' && error.message.includes('timed out'))) {
+        const minutes = Math.round(timeoutMs / 60000);
+        errMsg = `Git command timed out after ${minutes} minutes. If your data directory is located on a cloud-synced drive (such as Google Drive or OneDrive), disk writes are significantly slower. Consider moving your data directory to a local SSD.`;
+      }
       // Redact any potential auth tokens from output
       const sanitized = authToken ? errMsg.replaceAll(authToken, '[REDACTED]') : errMsg;
       throw new GitExecutionError(sanitized, error.code);
@@ -101,9 +175,16 @@ export class KnowledgeRepoGitService {
   }
 
   /**
-   * Clone a repo shallowly to the target directory.
+   * Clone a repo shallowly to the target directory with real-time progress.
    */
-  async shallowClone(gitUrl: string, ref: string, targetDir: string, authToken?: string): Promise<string> {
+  async shallowClone(
+    gitUrl: string,
+    ref: string,
+    targetDir: string,
+    authToken?: string,
+    onProgress?: (percent: number, message: string) => void,
+    timeoutMs: number = DEFAULT_CLONE_TIMEOUT_MS
+  ): Promise<string> {
     if (!isValidGitHttpsUrl(gitUrl)) {
       throw new Error(`Invalid HTTPS git URL: ${gitUrl}`);
     }
@@ -113,11 +194,76 @@ export class KnowledgeRepoGitService {
     // Ensure targetDir does not exist or is empty
     await fs.rm(targetDir, { recursive: true, force: true });
 
-    await this.runGit(
-      ['clone', '--depth', '1', '--branch', safeRef, '--no-tags', gitUrl, targetDir],
-      undefined,
-      authToken
-    );
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    };
+
+    if (authToken) {
+      env.GIT_CONFIG_COUNT = '2';
+      env.GIT_CONFIG_KEY_1 = 'http.extraHeader';
+      env.GIT_CONFIG_VALUE_1 = `Authorization: Bearer ${authToken}`;
+    }
+
+    const cloneArgs = ['clone', '--progress', '--depth', '1', '--branch', safeRef, '--no-tags', gitUrl, targetDir];
+
+    onProgress?.(2, 'Connecting to remote repository...');
+
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('git', cloneArgs, { env });
+      let stderrAccum = '';
+      let isTimedOut = false;
+
+      const timer = setTimeout(() => {
+        isTimedOut = true;
+        child.kill('SIGTERM');
+      }, timeoutMs);
+
+      child.stderr.on('data', (chunk: Buffer | string) => {
+        const text = chunk.toString();
+        stderrAccum += text;
+        const lines = text.split(/[\r\n]+/);
+        for (const line of lines) {
+          const parsed = parseGitProgress(line);
+          if (parsed && onProgress) {
+            onProgress(parsed.percent, parsed.message);
+          }
+        }
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        const errMsg = err.message || 'Failed to spawn git process';
+        const sanitized = authToken ? errMsg.replaceAll(authToken, '[REDACTED]') : errMsg;
+        reject(new GitExecutionError(sanitized));
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (isTimedOut) {
+          const minutes = Math.round(timeoutMs / 60000);
+          reject(
+            new GitExecutionError(
+              `Git clone timed out after ${minutes} minutes. If your data directory is located on a cloud-synced drive (such as Google Drive or OneDrive), disk writes are significantly slower. Consider moving your data directory to a local SSD.`
+            )
+          );
+          return;
+        }
+
+        if (code === 0) {
+          onProgress?.(98, 'Checking out working files completed');
+          resolve();
+        } else {
+          const errMsg = stderrAccum.trim() || `Git clone exited with code ${code}`;
+          const sanitized = authToken ? errMsg.replaceAll(authToken, '[REDACTED]') : errMsg;
+          reject(new GitExecutionError(sanitized, code ?? undefined));
+        }
+      });
+    });
 
     return this.getHeadSha(targetDir);
   }

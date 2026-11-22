@@ -15,7 +15,7 @@ import {
 import { updateNodeStatus, updateActivityTicker } from './useOrgTelemetryStore';
 import { validateOrgFolder } from '../utils/orgPathUtils';
 import { buildOrgDirectory, findOrgOwners } from '../utils/orgDirectory';
-import { createTeamShell } from '../utils/orgCoherence';
+import { addProjectMemberSource, createTeamShell, removeProjectMemberSource } from '../utils/orgCoherence';
 import { createProjectBackendTeam } from './orgBackendTeam';
 import type {
   ITeamRunStateResponse,
@@ -136,11 +136,36 @@ export async function executeOrgToolInStore(
     }
 
     case 'list_org': {
+      const memberMap = new Map<string, { id: string; name: string; role: string; skills?: string[] }>();
+      for (const m of store.members || []) {
+        if (m && m.id) {
+          memberMap.set(m.id, { id: m.id, name: m.name, role: m.role, skills: m.skills });
+        }
+      }
+      for (const d of store.hierarchy.departments) {
+        for (const t of d.teams) {
+          for (const sm of t.specialistMembers || []) {
+            if (sm && sm.id && !memberMap.has(sm.id)) {
+              memberMap.set(sm.id, { id: sm.id, name: sm.name, role: sm.role, skills: sm.skills });
+            }
+          }
+        }
+      }
+
       const depts = store.hierarchy.departments.map((d) => ({
         id: d.id,
         name: d.name,
         workspacePath: d.workspacePath,
         description: d.description,
+        teams: d.teams.map((t) => ({
+          id: t.id,
+          name: t.name,
+          specialistMembers: (t.specialistMembers || []).map((sm) => ({
+            id: sm.id,
+            name: sm.name,
+            role: sm.role,
+          })),
+        })),
         projects: store.projects
           .filter((p) => p.departmentId === d.id)
           .map((p) => ({
@@ -161,12 +186,7 @@ export async function executeOrgToolInStore(
         memberIds: p.memberIds || [],
       }));
 
-      const members = (store.members || []).map((m) => ({
-        id: m.id,
-        name: m.name,
-        role: m.role,
-        skills: m.skills,
-      }));
+      const members = Array.from(memberMap.values());
 
       return {
         masterRoot: store.hierarchy.rootCeo.workspacePath || null,
@@ -560,11 +580,9 @@ export async function executeOrgToolInStore(
             );
           }
 
-          const currentIds = proj.memberIds || [];
-          if (!currentIds.includes(memberToUse.id)) {
-            const nextProjects = store.projects.map((p) =>
-              p.id === projectId ? { ...p, memberIds: [...currentIds, memberToUse.id] } : p
-            );
+          const nextProject = addProjectMemberSource(proj, memberToUse.id, 'direct');
+          if (nextProject !== proj) {
+            const nextProjects = store.projects.map((p) => (p.id === projectId ? nextProject : p));
             store.projects = nextProjects;
             try {
               localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
@@ -672,11 +690,9 @@ export async function executeOrgToolInStore(
           }
         }
 
-        const currentIds = proj.memberIds || [];
-        if (!currentIds.includes(memberId)) {
-          const nextProjects = store.projects.map((p) =>
-            p.id === projectId ? { ...p, memberIds: [...currentIds, memberId] } : p
-          );
+        const nextProject = addProjectMemberSource(proj, memberId, teamId || 'direct');
+        if (nextProject !== proj) {
+          const nextProjects = store.projects.map((p) => (p.id === projectId ? nextProject : p));
           store.projects = nextProjects;
           try {
             localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
@@ -693,6 +709,233 @@ export async function executeOrgToolInStore(
         teamId: teamId || null,
         memberId,
         assigned: true,
+      };
+    }
+
+    case 'remove_member': {
+      const memberId = String(args.memberId || '').trim();
+      const projectId = args.projectId ? String(args.projectId).trim() : undefined;
+      const teamId = args.teamId ? String(args.teamId).trim() : undefined;
+      const departmentId = args.departmentId ? String(args.departmentId).trim() : undefined;
+
+      if (!memberId) {
+        throw new Error('remove_member requires "memberId".');
+      }
+
+      let projectsChanged = false;
+      let nextProjects = store.projects;
+      if (projectId) {
+        nextProjects = store.projects.map((p) => {
+          if (p.id === projectId) {
+            projectsChanged = true;
+            return removeProjectMemberSource(p, memberId, 'direct');
+          }
+          return p;
+        });
+      } else if (departmentId) {
+        nextProjects = store.projects.map((p) => {
+          if (p.departmentId === departmentId && p.memberIds?.includes(memberId)) {
+            projectsChanged = true;
+            return removeProjectMemberSource(p, memberId, 'direct');
+          }
+          return p;
+        });
+      }
+
+      if (projectsChanged) {
+        store.projects = nextProjects;
+        try {
+          localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
+          void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
+        } catch {}
+        setOrgStoreSnapshot({ projects: nextProjects });
+      }
+
+      let hierarchyChanged = false;
+      const nextDepartments = store.hierarchy.departments.map((d) => {
+        if (departmentId && d.id !== departmentId) return d;
+        return {
+          ...d,
+          teams: d.teams.map((t) => {
+            if (teamId && t.id !== teamId) return t;
+            const hasMember = t.specialistMembers?.some((m) => m.id === memberId || m.canonicalAgentId === memberId);
+            if (hasMember) {
+              hierarchyChanged = true;
+              return {
+                ...t,
+                specialistMembers: (t.specialistMembers || []).filter(
+                  (m) => m.id !== memberId && m.canonicalAgentId !== memberId
+                ),
+                lastActiveAt: Date.now(),
+              };
+            }
+            return t;
+          }),
+        };
+      });
+
+      if (hierarchyChanged) {
+        store.hierarchy = {
+          ...store.hierarchy,
+          departments: nextDepartments,
+          lastUpdated: Date.now(),
+        };
+        try {
+          localStorage.setItem('aionui:org-hierarchy', JSON.stringify(store.hierarchy));
+          void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(store.hierarchy)).catch(() => {});
+        } catch {}
+        setOrgStoreSnapshot({ hierarchy: store.hierarchy });
+      }
+
+      return {
+        success: true,
+        removed: true,
+        memberId,
+        projectId: projectId || null,
+        teamId: teamId || null,
+        departmentId: departmentId || null,
+      };
+    }
+
+    case 'delete_member': {
+      const memberId = String(args.memberId || '').trim();
+      if (!memberId) {
+        throw new Error('delete_member requires "memberId".');
+      }
+
+      const currentMembers = store.members || [];
+      const nextMembers = currentMembers.filter((m) => m.id !== memberId && m.canonicalAgentId !== memberId);
+      store.members = nextMembers;
+      try {
+        localStorage.setItem('aionui:org-members', JSON.stringify(nextMembers));
+        void ipcBridge.org.saveData('aionui:org-members', JSON.stringify(nextMembers)).catch(() => {});
+      } catch {}
+
+      let projectsChanged = false;
+      const nextProjects = store.projects.map((p) => {
+        if (p.memberIds?.includes(memberId)) {
+          projectsChanged = true;
+          return { ...p, memberIds: p.memberIds.filter((id) => id !== memberId), memberSources: undefined };
+        }
+        return p;
+      });
+      if (projectsChanged) {
+        store.projects = nextProjects;
+        try {
+          localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
+          void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
+        } catch {}
+      }
+
+      let hierarchyChanged = false;
+      const nextDepartments = store.hierarchy.departments.map((d) => ({
+        ...d,
+        teams: d.teams.map((t) => {
+          const hasMember = t.specialistMembers?.some((m) => m.id === memberId || m.canonicalAgentId === memberId);
+          if (hasMember) {
+            hierarchyChanged = true;
+            return {
+              ...t,
+              specialistMembers: (t.specialistMembers || []).filter(
+                (m) => m.id !== memberId && m.canonicalAgentId !== memberId
+              ),
+              lastActiveAt: Date.now(),
+            };
+          }
+          return t;
+        }),
+      }));
+      if (hierarchyChanged) {
+        store.hierarchy = {
+          ...store.hierarchy,
+          departments: nextDepartments,
+          lastUpdated: Date.now(),
+        };
+        try {
+          localStorage.setItem('aionui:org-hierarchy', JSON.stringify(store.hierarchy));
+          void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(store.hierarchy)).catch(() => {});
+        } catch {}
+      }
+
+      setOrgStoreSnapshot({
+        members: nextMembers,
+        projects: store.projects,
+        hierarchy: store.hierarchy,
+      });
+
+      return {
+        success: true,
+        deleted: true,
+        memberId,
+      };
+    }
+
+    case 'remove_members_from_department_projects': {
+      const deptId = String(args.departmentId || '').trim();
+      const memberIds = Array.isArray(args.memberIds) ? args.memberIds.map(String) : [];
+      if (!deptId || memberIds.length === 0) {
+        throw new Error('remove_members_from_department_projects requires "departmentId" and "memberIds".');
+      }
+      const memberSet = new Set(memberIds);
+
+      let projectsChanged = false;
+      const nextProjects = store.projects.map((p) => {
+        if (p.departmentId === deptId && p.memberIds?.some((id) => memberSet.has(id))) {
+          projectsChanged = true;
+          return { ...p, memberIds: p.memberIds.filter((id) => !memberSet.has(id)) };
+        }
+        return p;
+      });
+      if (projectsChanged) {
+        store.projects = nextProjects;
+        try {
+          localStorage.setItem('aionui:org-projects', JSON.stringify(nextProjects));
+          void ipcBridge.org.saveData('aionui:org-projects', JSON.stringify(nextProjects)).catch(() => {});
+        } catch {}
+      }
+
+      let hierarchyChanged = false;
+      const nextDepartments = store.hierarchy.departments.map((d) => {
+        if (d.id !== deptId) return d;
+        return {
+          ...d,
+          teams: d.teams.map((t) => {
+            const hasAny = t.specialistMembers?.some((m) => memberSet.has(m.id) || memberSet.has(m.canonicalAgentId));
+            if (hasAny) {
+              hierarchyChanged = true;
+              return {
+                ...t,
+                specialistMembers: (t.specialistMembers || []).filter(
+                  (m) => !memberSet.has(m.id) && !memberSet.has(m.canonicalAgentId)
+                ),
+                lastActiveAt: Date.now(),
+              };
+            }
+            return t;
+          }),
+        };
+      });
+      if (hierarchyChanged) {
+        store.hierarchy = {
+          ...store.hierarchy,
+          departments: nextDepartments,
+          lastUpdated: Date.now(),
+        };
+        try {
+          localStorage.setItem('aionui:org-hierarchy', JSON.stringify(store.hierarchy));
+          void ipcBridge.org.saveData('aionui:org-hierarchy', JSON.stringify(store.hierarchy)).catch(() => {});
+        } catch {}
+      }
+
+      setOrgStoreSnapshot({
+        projects: store.projects,
+        hierarchy: store.hierarchy,
+      });
+
+      return {
+        success: true,
+        departmentId: deptId,
+        removedCount: memberIds.length,
       };
     }
 
@@ -1103,7 +1346,6 @@ export function setupOrgToolBridgeListener(): () => void {
   });
 
   return () => {
-    bridgeListenerRegistered = false;
-    unsubscribe();
+    // Retain global listener so agent background operations continue when switching tabs/views
   };
 }

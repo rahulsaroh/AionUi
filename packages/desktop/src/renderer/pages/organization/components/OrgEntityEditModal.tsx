@@ -26,9 +26,9 @@ type EditEntityType = 'department' | 'team' | 'member' | 'project' | 'ceo';
 type OrgEntityEditModalProps = {
   visible: boolean;
   entity: EditEntityType;
-  /** The entity being edited. For members, also pass teamId via `context.teamId`. */
+  /** The entity being edited. For members, also pass teamId or projectId via `context`. */
   data: OrgDepartmentNode | OrgTeamNode | OrgAgentMember | OrgProject | import('@/types/organization').RootCEO | null;
-  context?: { departmentId?: string; teamId?: string };
+  context?: { departmentId?: string; teamId?: string; projectId?: string };
   onClose: () => void;
   onSave?: () => void;
 };
@@ -46,6 +46,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     updateDepartment,
     updateTeamNode,
     updateTeamMember,
+    updateMember,
     addTeamMember,
     upsertOrgProject,
     updateRootCeo,
@@ -53,6 +54,8 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     removeDepartment,
     removeOrgTeam,
     removeTeamMember,
+    removeMemberFromProject,
+    deleteMember,
     deleteOrgProject,
     hierarchy,
     projects,
@@ -104,7 +107,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
 
   const configuredModelOptions = useMemo(() => {
-    const list: Array<{ label: string; value: string; group?: string }> = [];
+    const list: Array<{ label: string; value: string; group?: string; providerId?: string }> = [];
     for (const provider of providers ?? []) {
       const models = getAvailableModels(provider);
       for (const m of models) {
@@ -112,12 +115,13 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           label: formatModelLabel ? formatModelLabel(provider, m) : `${provider.name} - ${m}`,
           value: m,
           group: provider.name,
+          providerId: provider.id,
         });
       }
     }
     // Fallback standard options if no providers yet configured
     if (list.length === 0) {
-      return [
+      list.push(
         { label: 'Claude 3.7 Sonnet', value: 'claude-3-7-sonnet' },
         { label: 'Claude 3.5 Sonnet', value: 'claude-3-5-sonnet' },
         { label: 'Claude 3.5 Haiku', value: 'claude-3-5-haiku' },
@@ -125,11 +129,18 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
         { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
         { label: 'DeepSeek V3', value: 'deepseek-chat' },
-        { label: 'DeepSeek R1', value: 'deepseek-reasoner' },
-      ];
+        { label: 'DeepSeek R1', value: 'deepseek-reasoner' }
+      );
+    }
+    if (modelId && !list.some((o) => o.value === modelId)) {
+      list.unshift({
+        label: `${t('common.customModel', { defaultValue: 'Custom Model' })}: ${modelId}`,
+        value: modelId,
+        group: 'Custom',
+      });
     }
     return list;
-  }, [providers, getAvailableModels, formatModelLabel]);
+  }, [providers, getAvailableModels, formatModelLabel, modelId, t]);
 
   const departmentOptions = useMemo(
     () => hierarchy.departments.map((d) => ({ label: d.name, value: d.id })),
@@ -201,6 +212,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
             : ['']
       );
       setProjectStatus((project.status ?? 'active') as 'active' | 'dormant' | 'done');
+      setModelId(project.model?.modelId ?? '');
     }
   }, [visible, data, entity]);
 
@@ -306,9 +318,19 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
 
     if (entity === 'member') {
       if (!memberName.trim()) return;
-      if (data && context.teamId) {
+      if (data) {
         const member = data as OrgAgentMember;
-        updateTeamMember(context.teamId, member.id, {
+        const targetTeamId = context.teamId || member.assignedTeamIds?.[0];
+        if (targetTeamId) {
+          updateTeamMember(targetTeamId, member.id, {
+            name: memberName.trim(),
+            title: memberPrompt.trim() || undefined,
+            role: (memberRole.trim() || member.role) as OrgAgentMember['role'],
+            model: { modelId: modelId.trim() || 'claude-3-7-sonnet' },
+            assistant_backend: memberMcp.trim() || undefined,
+          });
+        }
+        updateMember(member.id, {
           name: memberName.trim(),
           title: memberPrompt.trim() || undefined,
           role: (memberRole.trim() || member.role) as OrgAgentMember['role'],
@@ -338,6 +360,15 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     if (entity === 'project') {
       if (!name.trim() || !projectDeptId) return;
       const assignedPaths = [...new Set(folderPaths.map((path) => path.trim()).filter(Boolean))];
+      const matchedOpt = configuredModelOptions.find((o) => o.value === modelId.trim());
+      const selectedModel = modelId.trim()
+        ? {
+            modelId: modelId.trim(),
+            providerId: matchedOpt?.providerId,
+            modelName: matchedOpt?.label || modelId.trim(),
+          }
+        : undefined;
+
       upsertOrgProject({
         id: (data as OrgProject | null)?.id ?? `proj-${Date.now()}`,
         name: name.trim(),
@@ -349,6 +380,9 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         context: { ...(data as OrgProject | null)?.context, workspacePaths: assignedPaths },
         description: description.trim() || undefined,
         status: projectStatus,
+        model: selectedModel,
+        leadAssistantId: (data as OrgProject | null)?.leadAssistantId,
+        backendTeamId: (data as OrgProject | null)?.backendTeamId,
       });
       onSave?.();
       onClose();
@@ -380,6 +414,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     updateDepartment,
     updateTeamNode,
     updateTeamMember,
+    updateMember,
     addTeamMember,
     upsertOrgProject,
     updateRootCeo,
@@ -461,6 +496,12 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
         else if (isTeam) deleted = removeOrgTeam(data.id);
         else if (isMember && context.teamId) {
           deleted = removeTeamMember(context.teamId, data.id);
+        } else if (isMember && context.projectId) {
+          removeMemberFromProject(context.projectId, data.id);
+          deleted = true;
+        } else if (isMember) {
+          deleteMember(data.id);
+          deleted = true;
         } else if (isProject) {
           deleteOrgProject(data.id);
           deleted = true;
@@ -782,6 +823,23 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
                 </span>
                 <Select value={projectTeamId} onChange={setProjectTeamId} allowClear placeholder='No team'>
                   {teamOptions.map((opt) => (
+                    <Select.Option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>{t('common.model', { defaultValue: 'Model' })}</span>
+                <Select
+                  value={modelId}
+                  onChange={setModelId}
+                  allowCreate
+                  showSearch
+                  allowClear
+                  placeholder={t('conversation.selectModel', { defaultValue: 'Select or enter custom model...' })}
+                >
+                  {configuredModelOptions.map((opt) => (
                     <Select.Option key={opt.value} value={opt.value}>
                       {opt.label}
                     </Select.Option>

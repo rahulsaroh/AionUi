@@ -8,9 +8,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input, Message, Modal, Select } from '@arco-design/web-react';
 import { Delete } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
-import type { OrgProject } from '@/types/organization';
+import { ipcBridge } from '@/common';
+import type { TProviderWithModel } from '@/common/config/storage';
+import type { OrgProject, OrgAgentModelConfig } from '@/types/organization';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { WorkspaceFolderSelect } from '@renderer/components/workspace';
+import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
+import { useTeamAssistantOptions } from '@/renderer/pages/team/hooks/useTeamAssistantOptions';
 import { useOrgStore } from '../store/useOrgStore';
 import { validateWithinMaster, validateOrgFolder, getDefaultProjectPath } from '../utils/orgPathUtils';
 import { createProjectBackendTeam } from '../store/orgBackendTeam';
@@ -30,7 +34,7 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
   defaultTeamId,
   onClose,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   let user: { id?: string } | undefined;
   try {
     const auth = useAuth();
@@ -40,9 +44,14 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
     user = undefined;
   }
   const { hierarchy, upsertOrgProject, deleteOrgProject } = useOrgStore();
+  const { assistants: availableAssistants } = useTeamAssistantOptions(i18n?.language ?? 'en-US');
+  const { providers, getAvailableModels, formatModelLabel } = useModelProviderList();
+
   const [name, setName] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [teamId, setTeamId] = useState('');
+  const [leadAssistantId, setLeadAssistantId] = useState('');
+  const [modelId, setModelId] = useState('');
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<NonNullable<OrgProject['status']>>('active');
@@ -77,6 +86,8 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
       setName(project.name);
       setDepartmentId(project.departmentId);
       setTeamId(project.teamIds?.[0] ?? '');
+      setLeadAssistantId(project.leadAssistantId ?? '');
+      setModelId(project.model?.modelId ?? '');
       setFolderPaths(
         project.workspacePaths?.length
           ? project.workspacePaths
@@ -92,6 +103,8 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
     setName('');
     setDepartmentId(fallbackDept);
     setTeamId(defaultTeamId ?? '');
+    setLeadAssistantId('');
+    setModelId('');
     setFolderPaths(['']);
     setDescription('');
     setStatus('active');
@@ -101,6 +114,29 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
     const department = hierarchy.departments.find((item) => item.id === departmentId);
     return department?.teams ?? [];
   }, [hierarchy.departments, departmentId]);
+
+  const modelOptions = useMemo(() => {
+    const list: Array<{ label: string; value: string; group?: string; providerId?: string }> = [];
+    for (const provider of providers ?? []) {
+      const models = getAvailableModels(provider);
+      for (const m of models) {
+        list.push({
+          label: formatModelLabel ? formatModelLabel(provider, m) : `${provider.name || provider.platform} - ${m}`,
+          value: m,
+          group: provider.name || provider.platform,
+          providerId: provider.id,
+        });
+      }
+    }
+    if (modelId && !list.some((o) => o.value === modelId)) {
+      list.unshift({
+        label: `${t('common.customModel', { defaultValue: 'Custom Model' })}: ${modelId}`,
+        value: modelId,
+        group: 'Custom',
+      });
+    }
+    return list;
+  }, [providers, getAvailableModels, formatModelLabel, modelId, t]);
 
   useEffect(() => {
     if (teamId && !teamOptions.some((team) => team.id === teamId)) {
@@ -142,6 +178,15 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
     let backendTeamId = project?.backendTeamId;
 
     try {
+      const matchedOpt = modelOptions.find((o) => o.value === modelId.trim());
+      const selectedModelConfig: OrgAgentModelConfig | undefined = modelId.trim()
+        ? {
+            modelId: modelId.trim(),
+            providerId: matchedOpt?.providerId,
+            modelName: matchedOpt?.label || modelId.trim(),
+          }
+        : undefined;
+
       if (!backendTeamId) {
         if (!effectivePath) {
           throw new Error('Project folder path is required to initialize the project team.');
@@ -150,9 +195,31 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
           name: name.trim(),
           workspacePath: effectivePath,
           description: description.trim() || undefined,
+          preferredAssistantId: leadAssistantId || undefined,
+          preferredModel: selectedModelConfig,
           masterRoot,
           userId: user?.id ?? 'system_default_user',
         });
+      } else if (selectedModelConfig?.modelId) {
+        try {
+          const existingTeam = (await ipcBridge.team.get.invoke({ id: backendTeamId })) as {
+            assistants?: Array<{ role?: string; conversation_id?: string }>;
+          } | null;
+          const leader = existingTeam?.assistants?.find((a) => a.role === 'leader') || existingTeam?.assistants?.[0];
+          if (leader?.conversation_id) {
+            await ipcBridge.conversation.update.invoke({
+              id: leader.conversation_id,
+              updates: {
+                model: {
+                  id: selectedModelConfig.providerId || 'default',
+                  use_model: selectedModelConfig.modelId,
+                } as unknown as TProviderWithModel,
+              },
+            });
+          }
+        } catch (err) {
+          console.warn('[OrgProjectModal] Could not sync model to backend team:', err);
+        }
       }
 
       upsertOrgProject({
@@ -167,6 +234,8 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
         description: description.trim() || undefined,
         status,
         backendTeamId,
+        leadAssistantId: leadAssistantId || undefined,
+        model: selectedModelConfig,
         mode: project?.mode || 'organization',
       });
       Message.success(t('team.organization.projectSaved', { defaultValue: 'Project saved' }));
@@ -256,6 +325,40 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
             {teamOptions.map((team) => (
               <Select.Option key={team.id} value={team.id}>
                 {team.name}
+              </Select.Option>
+            ))}
+          </Select>
+        </div>
+        <div className='flex flex-col gap-4px'>
+          <span className='text-12px text-t-secondary'>
+            {t('team.create.selectOneLeader', { defaultValue: 'Lead Assistant' })}
+          </span>
+          <Select
+            value={leadAssistantId}
+            onChange={setLeadAssistantId}
+            allowClear
+            placeholder={t('team.create.dispatchAgentPlaceholder', { defaultValue: 'Select lead assistant' })}
+          >
+            {availableAssistants.map((ast) => (
+              <Select.Option key={ast.id} value={ast.id}>
+                {ast.name} ({ast.backend})
+              </Select.Option>
+            ))}
+          </Select>
+        </div>
+        <div className='flex flex-col gap-4px'>
+          <span className='text-12px text-t-secondary'>{t('common.model', { defaultValue: 'Model' })}</span>
+          <Select
+            value={modelId}
+            onChange={setModelId}
+            allowCreate
+            showSearch
+            allowClear
+            placeholder={t('conversation.selectModel', { defaultValue: 'Select or enter custom model...' })}
+          >
+            {modelOptions.map((opt) => (
+              <Select.Option key={`${opt.providerId ?? 'model'}-${opt.value}`} value={opt.value}>
+                {opt.label}
               </Select.Option>
             ))}
           </Select>

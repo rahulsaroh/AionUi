@@ -22,9 +22,8 @@ import { TEAM_MODE_ENABLED } from '@/common/config/constants';
 import ConversationSearchPopover from '@renderer/pages/conversation/GroupedHistory/ConversationSearchPopover';
 import MobileConversationBrand from './MobileConversationBrand';
 import WindowControls from '../WindowControls';
-import { WORKSPACE_STATE_EVENT, dispatchWorkspaceToggleEvent } from '@renderer/utils/workspace/workspaceEvents';
-import type { WorkspaceStateDetail } from '@renderer/utils/workspace/workspaceEvents';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
+import { dispatchWorkspaceToggleEvent, WORKSPACE_STATE_EVENT } from '@/renderer/utils/workspace/workspaceEvents';
 import { useNavigationHistory } from '@/renderer/hooks/context/NavigationHistoryContext';
 import { useFeedback } from '@/renderer/hooks/context/FeedbackContext';
 import { resolveFeedbackModule } from '@/renderer/services/feedback/resolveFeedbackModule';
@@ -113,7 +112,6 @@ const SidebarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size =
 const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
   const { t } = useTranslation();
   const appTitle = useMemo(() => 'Shiraj Agent', []);
-  const [workspaceCollapsed, setWorkspaceCollapsed] = useState(true);
   const [mobileCenterTitle, setMobileCenterTitle] = useState(appTitle);
   const [mobileCenterOffset, setMobileCenterOffset] = useState(0);
   const layout = useLayoutContext();
@@ -146,33 +144,16 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
     [activeScope, location.pathname, navigate, setActiveScope]
   );
 
-  // 监听工作空间折叠状态，保持按钮图标一致 / Sync workspace collapsed state for toggle button
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-    const handler = (event: Event) => {
-      const customEvent = event as CustomEvent<WorkspaceStateDetail>;
-      if (typeof customEvent.detail?.collapsed === 'boolean') {
-        setWorkspaceCollapsed(customEvent.detail.collapsed);
-      }
-    };
-    window.addEventListener(WORKSPACE_STATE_EVENT, handler as EventListener);
-    return () => {
-      window.removeEventListener(WORKSPACE_STATE_EVENT, handler as EventListener);
-    };
-  }, []);
-
   const isDesktopRuntime = isElectronDesktop();
   const isMacRuntime = isDesktopRuntime && isMacOS();
   // Windows/Linux 显示自定义窗口按钮；macOS 在标题栏给工作区一个切换入口
   const showWindowControls = isDesktopRuntime && !isMacRuntime;
-  // Keep the workspace entry in the titlebar on every platform.
-  const showWorkspaceButton = workspaceAvailable;
+  // Always show right sidebar toggle on desktop (like left sidebar)
+  const showRightSidebarToggle = Boolean(layout?.setRightSiderCollapsed) && !layout?.isMobile;
 
-  const workspaceTooltip = workspaceCollapsed
-    ? t('common.expandMore', { defaultValue: 'Expand workspace' })
-    : t('common.collapse', { defaultValue: 'Collapse workspace' });
+  const rightSidebarTooltip = layout?.rightSiderCollapsed
+    ? t('common.expandMore', { defaultValue: 'Expand right sidebar' })
+    : t('common.collapse', { defaultValue: 'Collapse right sidebar' });
   const backToChatTooltip = t('common.back', { defaultValue: 'Back to Chat' });
   const feedbackTooltip = t('conversation.welcome.quickActionFeedback', { defaultValue: 'Report Issue' });
   const isSettingsRoute = location.pathname.startsWith('/settings');
@@ -202,12 +183,25 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
     layout.setSiderCollapsed(!layout.siderCollapsed);
   };
 
-  const handleWorkspaceToggle = () => {
-    if (!workspaceAvailable) {
-      return;
+  const handleRightSidebarToggle = () => {
+    if (!showRightSidebarToggle || !layout?.setRightSiderCollapsed) return;
+    const handled = dispatchWorkspaceToggleEvent();
+    if (!handled) {
+      layout.setRightSiderCollapsed(!layout.rightSiderCollapsed);
     }
-    dispatchWorkspaceToggleEvent();
   };
+
+  useEffect(() => {
+    if (!layout?.setRightSiderCollapsed) return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ collapsed?: boolean }>).detail;
+      if (typeof detail?.collapsed === 'boolean') {
+        layout.setRightSiderCollapsed(detail.collapsed);
+      }
+    };
+    window.addEventListener(WORKSPACE_STATE_EVENT, handler);
+    return () => window.removeEventListener(WORKSPACE_STATE_EVENT, handler);
+  }, [layout?.setRightSiderCollapsed]);
 
   const handleBackToChat = () => {
     const target = lastNonSettingsPathRef.current;
@@ -322,7 +316,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
     if (toolbarRef.current) observer.observe(toolbarRef.current);
 
     return () => observer.disconnect();
-  }, [layout?.isMobile, showBackToChatButton, showWorkspaceButton, mobileCenterTitle]);
+  }, [layout?.isMobile, showBackToChatButton, showRightSidebarToggle, mobileCenterTitle]);
 
   const mobileCenterStyle = layout?.isMobile
     ? ({
@@ -534,14 +528,14 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         >
           <FeedbackIcon size={iconSize} strokeWidth={desktopIconStroke} />
         </button>
-        {showWorkspaceButton && (
+        {showRightSidebarToggle && (
           <button
             type='button'
             className={classNames('app-titlebar__button', layout?.isMobile && 'app-titlebar__button--mobile')}
-            onClick={handleWorkspaceToggle}
-            aria-label={workspaceTooltip}
+            onClick={handleRightSidebarToggle}
+            aria-label={rightSidebarTooltip}
           >
-            {workspaceCollapsed ? (
+            {layout?.rightSiderCollapsed ? (
               <ExpandRight theme='outline' size={iconSize} fill='currentColor' />
             ) : (
               <ExpandLeft theme='outline' size={iconSize} fill='currentColor' />

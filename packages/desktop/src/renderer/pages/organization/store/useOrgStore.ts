@@ -25,8 +25,10 @@ import {
 import {
   applyProjectMutation,
   applyProjectRemoval,
+  addProjectMemberSource,
   normalizeOrgProject,
   reconcileProjectsWithHierarchy,
+  removeProjectMemberSource,
   syncHierarchyProjectReferences,
   updateDepartmentInHierarchy,
   updateTeamInHierarchy,
@@ -470,6 +472,11 @@ function createInitialState(): OrgStoreState {
     (typeof localStorage !== 'undefined' && (localStorage.getItem(STORAGE_KEYS.SCOPE) as OrgScope)) || 'workplace';
   const allProjects = conversationReconciled.projects;
   const allConversations = conversationReconciled.conversations;
+  if (allProjects.length !== rawProjects.length) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(allProjects));
+    } catch {}
+  }
 
   projectsByScope = {
     workplace: allProjects.filter((p) => p.mode === 'workplace'),
@@ -1046,8 +1053,11 @@ export function addTeamMember(teamId: string, member: OrgAgentMember): void {
       lastUpdated: Date.now(),
       departments: nextDepartments,
     };
-    globalState = { ...globalState, hierarchy: nextHierarchy };
-    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    const nextProjects = globalState.projects.map((project) =>
+      project.teamIds?.includes(teamId) ? addProjectMemberSource(project, member.id, teamId) : project
+    );
+    globalState = { ...globalState, hierarchy: nextHierarchy, projects: nextProjects };
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects }, globalState.activeScope);
     void memberHandbook
       .create({
         memberKey: `org:${member.id}`,
@@ -1101,8 +1111,13 @@ export function removeTeamMember(teamId: string, slotOrMemberId: string): boolea
       lastUpdated: Date.now(),
       departments: nextDepartments,
     };
-    globalState = { ...globalState, hierarchy: nextHierarchy };
-    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    const nextProjects = removedMemberId
+      ? globalState.projects.map((project) =>
+          project.teamIds?.includes(teamId) ? removeProjectMemberSource(project, removedMemberId!, teamId) : project
+        )
+      : globalState.projects;
+    globalState = { ...globalState, hierarchy: nextHierarchy, projects: nextProjects };
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: nextProjects }, globalState.activeScope);
     if (removedMemberId) {
       void memberHandbook.delete({ memberKey: `org:${removedMemberId}`, archive: true }).catch((err) => {
         console.warn('[useOrgStore] Failed to archive handbook for removed member:', removedMemberId, err);
@@ -1503,10 +1518,15 @@ export function useOrgStore() {
       })),
       lastUpdated: Date.now(),
     };
-    const nextProjects = globalState.projects.map((project) => ({
-      ...project,
-      teamIds: (project.teamIds ?? []).filter((id) => id !== teamId),
-    }));
+    const nextProjects = globalState.projects.map((project) => {
+      const withoutTeam = { ...project, teamIds: (project.teamIds ?? []).filter((id) => id !== teamId) };
+      const memberSources = withoutTeam.memberSources;
+      if (!memberSources) return withoutTeam;
+      return Object.keys(memberSources).reduce(
+        (next, memberId) => removeProjectMemberSource(next, memberId, teamId),
+        withoutTeam
+      );
+    });
     const nextConversations = globalState.conversations.filter((conversation) => conversation.teamId !== teamId);
     const nextSelection = nextConversations.some(
       (conversation) => conversation.id === globalState.selectedConversationId
@@ -1768,6 +1788,54 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const updateMember = useCallback((memberId: string, patch: Partial<OrgAgentMember>) => {
+    const nextHierarchy = {
+      ...globalState.hierarchy,
+      lastUpdated: Date.now(),
+      departments: globalState.hierarchy.departments.map((department) => ({
+        ...department,
+        teams: department.teams.map((team) => {
+          const isLead = team.teamLeadAgent.id === memberId || team.teamLeadAgent.canonicalAgentId === memberId;
+          const isHr =
+            team.hrCoordinatorAgent &&
+            (team.hrCoordinatorAgent.id === memberId || team.hrCoordinatorAgent.canonicalAgentId === memberId);
+          const hasMember = team.specialistMembers.some((m) => m.id === memberId || m.canonicalAgentId === memberId);
+          if (!isLead && !isHr && !hasMember) return team;
+          return {
+            ...team,
+            teamLeadAgent: isLead ? { ...team.teamLeadAgent, ...patch, id: team.teamLeadAgent.id } : team.teamLeadAgent,
+            hrCoordinatorAgent:
+              isHr && team.hrCoordinatorAgent
+                ? { ...team.hrCoordinatorAgent, ...patch, id: team.hrCoordinatorAgent.id }
+                : team.hrCoordinatorAgent,
+            specialistMembers: team.specialistMembers.map((member) =>
+              member.id === memberId || member.canonicalAgentId === memberId
+                ? { ...member, ...patch, id: member.id }
+                : member
+            ),
+          };
+        }),
+      })),
+    };
+    const nextMembers = globalState.members.map((m) =>
+      m.id === memberId || m.canonicalAgentId === memberId ? { ...m, ...patch, id: m.id } : m
+    );
+    globalState = { ...globalState, hierarchy: nextHierarchy, members: nextMembers };
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    if (patch.name) {
+      void memberHandbook
+        .rename({
+          memberKey: `org:${memberId}`,
+          newMemberName: patch.name,
+        })
+        .catch((err) => {
+          console.warn('[useOrgStore] Failed to rename handbook for org member:', memberId, err);
+        });
+    }
+    notify();
+  }, []);
+
   const addOrgConversation = useCallback((conv: OrgConversation) => {
     const activeScope = globalState.activeScope;
     const conversation: OrgConversation = {
@@ -1919,8 +1987,13 @@ export function useOrgStore() {
   const deleteMember = useCallback((memberId: string) => {
     const currentMembers = globalState.members || [];
     const nextMembers = currentMembers.filter((m) => m.id !== memberId);
-    globalState = { ...globalState, members: nextMembers };
+    const nextProjects = globalState.projects.map((p) => {
+      if (!p.memberIds?.includes(memberId) && !p.memberSources?.[memberId]) return p;
+      return removeProjectMemberSource(p, memberId, 'direct');
+    });
+    globalState = { ...globalState, members: nextMembers, projects: nextProjects };
     saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects }, globalState.activeScope);
     void ipcBridge.org.saveMembers(nextMembers).catch(() => {});
     void memberHandbook.delete({ memberKey: `org:${memberId}`, archive: true }).catch((err) => {
       console.warn('[useOrgStore] Failed to archive handbook for deleted member:', memberId, err);
@@ -1928,12 +2001,52 @@ export function useOrgStore() {
     notify();
   }, []);
 
+  const reorderDepartments = useCallback((startIndex: number, endIndex: number) => {
+    const list = [...globalState.hierarchy.departments];
+    if (
+      startIndex < 0 ||
+      startIndex >= list.length ||
+      endIndex < 0 ||
+      endIndex >= list.length ||
+      startIndex === endIndex
+    )
+      return;
+    const [moved] = list.splice(startIndex, 1);
+    list.splice(endIndex, 0, moved);
+    const nextHierarchy = { ...globalState.hierarchy, departments: list, lastUpdated: Date.now() };
+    globalState = { ...globalState, hierarchy: nextHierarchy };
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: globalState.projects }, globalState.activeScope);
+    notify();
+  }, []);
+
+  const reorderProjects = useCallback((sourceProjectId: string, targetProjectId: string) => {
+    if (sourceProjectId === targetProjectId) return;
+    const activeScope = globalState.activeScope;
+    const currentProjects = [...globalState.projects];
+    const sourceIdx = currentProjects.findIndex((p) => p.id === sourceProjectId);
+    const targetIdx = currentProjects.findIndex((p) => p.id === targetProjectId);
+    if (sourceIdx < 0 || targetIdx < 0) return;
+
+    const [moved] = currentProjects.splice(sourceIdx, 1);
+    const targetProject = currentProjects.find((p) => p.id === targetProjectId);
+    if (targetProject && moved.departmentId !== targetProject.departmentId) {
+      moved.departmentId = targetProject.departmentId;
+    }
+    const insertIdx = currentProjects.findIndex((p) => p.id === targetProjectId);
+    currentProjects.splice(insertIdx >= 0 ? insertIdx : targetIdx, 0, moved);
+
+    const nextHierarchy = syncHierarchyProjectReferences(globalState.hierarchy, currentProjects);
+    projectsByScope[activeScope] = currentProjects;
+    globalState = { ...globalState, hierarchy: nextHierarchy, projects: currentProjects };
+    persistHierarchyAndProjects({ hierarchy: nextHierarchy, projects: currentProjects }, activeScope);
+    notify();
+  }, []);
+
   const assignMemberToProject = useCallback((projectId: string, memberId: string) => {
     const proj = globalState.projects.find((p) => p.id === projectId);
     if (!proj) return;
-    const currentMemberIds = proj.memberIds || [];
-    if (currentMemberIds.includes(memberId)) return;
-    const nextProj = { ...proj, memberIds: [...currentMemberIds, memberId] };
+    const nextProj = addProjectMemberSource(proj, memberId, 'direct');
+    if (nextProj === proj) return;
     const nextProjects = globalState.projects.map((p) => (p.id === projectId ? nextProj : p));
     globalState = { ...globalState, projects: nextProjects };
     persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects }, globalState.activeScope);
@@ -1943,9 +2056,28 @@ export function useOrgStore() {
   const removeMemberFromProject = useCallback((projectId: string, memberId: string) => {
     const proj = globalState.projects.find((p) => p.id === projectId);
     if (!proj) return;
-    const nextMemberIds = (proj.memberIds || []).filter((id) => id !== memberId);
-    const nextProj = { ...proj, memberIds: nextMemberIds };
+    const nextProj = removeProjectMemberSource(proj, memberId, 'direct');
     const nextProjects = globalState.projects.map((p) => (p.id === projectId ? nextProj : p));
+    globalState = { ...globalState, projects: nextProjects };
+    persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects }, globalState.activeScope);
+    notify();
+  }, []);
+
+  const removeMembersFromDepartmentProjects = useCallback((departmentId: string, memberIds: string[]) => {
+    const memberIdSet = new Set(memberIds);
+    let changed = false;
+    const nextProjects = globalState.projects.map((project) => {
+      if (project.departmentId !== departmentId) return project;
+      const currentMemberIds = project.memberIds || [];
+      if (!currentMemberIds.some((id) => memberIdSet.has(id))) return project;
+      changed = true;
+      return {
+        ...project,
+        memberIds: currentMemberIds.filter((id) => !memberIdSet.has(id)),
+        updatedAt: Date.now(),
+      };
+    });
+    if (!changed) return;
     globalState = { ...globalState, projects: nextProjects };
     persistHierarchyAndProjects({ hierarchy: globalState.hierarchy, projects: nextProjects }, globalState.activeScope);
     notify();
@@ -2197,7 +2329,8 @@ export function useOrgStore() {
       globalState.projects,
       globalState.conversations,
       globalState.activeScope,
-      t
+      t,
+      globalState.members
     );
     if ('error' in result) {
       globalState = { ...globalState, openChatError: result.error, selectedConversationId: null, orgViewMode: 'chat' };
@@ -2346,6 +2479,7 @@ export function useOrgStore() {
     addTeamMember: handleAddTeamMember,
     removeTeamMember: handleRemoveTeamMember,
     updateTeamMember,
+    updateMember,
     updateRootCeo,
     updateAgentModel,
     addOrgConversation,
@@ -2356,6 +2490,7 @@ export function useOrgStore() {
     deleteMember,
     assignMemberToProject,
     removeMemberFromProject,
+    removeMembersFromDepartmentProjects,
     addOrgCronJob,
     removeOrgCronJob,
     toggleCronJob,
@@ -2366,6 +2501,8 @@ export function useOrgStore() {
     setSelectedConversationId,
     openChat,
     clearOpenChatError,
+    reorderDepartments,
+    reorderProjects,
   };
 }
 

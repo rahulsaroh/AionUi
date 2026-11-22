@@ -99,6 +99,24 @@ export function validateProjectShape(p: any): boolean {
       !p.allowlist.every((item: unknown) => typeof item === 'string' && item.length <= 4096))
   )
     return false;
+  if (
+    p.memberSources !== undefined &&
+    (typeof p.memberSources !== 'object' ||
+      Array.isArray(p.memberSources) ||
+      Object.keys(p.memberSources).length > 1000 ||
+      !Object.entries(p.memberSources).every(
+        ([memberId, source]) =>
+          memberId.length <= 128 &&
+          typeof source === 'object' &&
+          source !== null &&
+          (!('direct' in source) || typeof source.direct === 'boolean') &&
+          (!('teamIds' in source) ||
+            (Array.isArray(source.teamIds) &&
+              source.teamIds.length <= 100 &&
+              source.teamIds.every((id: unknown) => typeof id === 'string' && id.length <= 128)))
+      ))
+  )
+    return false;
   return true;
 }
 
@@ -108,6 +126,7 @@ function serializeProjectContext(project: OrgProject): string | null {
     ...(project.workspacePaths?.length ? { workspacePaths: project.workspacePaths } : {}),
     ...(project.approvalPolicy ? { approvalPolicy: project.approvalPolicy } : {}),
     ...(project.allowlist?.length ? { allowlist: project.allowlist } : {}),
+    ...(project.memberSources ? { memberSources: project.memberSources } : {}),
   };
   return Object.keys(context).length > 0 ? JSON.stringify(context) : null;
 }
@@ -390,6 +409,7 @@ export class OrgStorageService {
           description: r.description || undefined,
           status: (r.status as OrgProject['status']) || 'active',
           context,
+          memberSources: context?.memberSources,
           workspacePaths: context?.workspacePaths,
           workspacePath: r.workspace_path || null,
           approvalPolicy: context?.approvalPolicy,

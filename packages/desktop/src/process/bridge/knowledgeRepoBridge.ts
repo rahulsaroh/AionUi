@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { knowledgeRepoService } from '../services/knowledgeRepo';
 import type { KnowledgeRepo } from '@/common/types/knowledgeRepo';
 
@@ -12,6 +12,16 @@ export function registerKnowledgeRepoBridge(): void {
   // Ensure the service is initialized
   knowledgeRepoService.initialize().catch((err) => {
     console.error('[KnowledgeRepoBridge] Failed to initialize knowledge repo service:', err);
+  });
+
+  // Forward background clone and sync progress to all renderer windows
+  knowledgeRepoService.onProgress((progress) => {
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('knowledgeRepo:progress', progress);
+      }
+    }
   });
 
   ipcMain.handle('knowledgeRepo:list', async () => {

@@ -247,14 +247,12 @@ describe('migrateOrgStorageV2', () => {
 });
 
 describe('reconcileConversationsWithProjects', () => {
-  it('creates a General project per department when missing', () => {
+  it('does not create any General project when departments lack one', () => {
     const { projects } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
     const appsGeneral = projects.find((p) => p.departmentId === 'dept-apps' && p.name === 'General');
     const ytGeneral = projects.find((p) => p.departmentId === 'dept-yt' && p.name === 'General');
-    expect(appsGeneral).toBeDefined();
-    expect(ytGeneral).toBeDefined();
-    expect(appsGeneral!.id).toBe('proj-general-dept-apps');
-    expect(ytGeneral!.id).toBe('proj-general-dept-yt');
+    expect(appsGeneral).toBeUndefined();
+    expect(ytGeneral).toBeUndefined();
   });
 
   it('assigns conversation to team project via sourceNodeId', () => {
@@ -271,18 +269,33 @@ describe('reconcileConversationsWithProjects', () => {
     expect(conv3?.teamId).toBe('team-tech-news');
   });
 
-  it('falls back to General project when team has no project', () => {
+  it('leaves conversation without projectId when team has no project', () => {
     const { conversations, projects } = reconcileConversationsWithProjects(
       makeHierarchy(),
       makeProjects(),
       makeConversations()
     );
     const conv2 = conversations.find((c) => c.id === 'conv-2');
-    const general = projects.find((p) => p.departmentId === 'dept-apps' && p.name === 'General');
-    expect(conv2?.projectId).toBe(general?.id);
+    expect(conv2?.projectId).toBeUndefined();
     expect(conv2?.teamId).toBe('team-aionui');
-    // Team should be linked to General project
-    expect(general?.teamIds).toContain('team-aionui');
+    const general = projects.find((p) => p.name === 'General');
+    expect(general).toBeUndefined();
+  });
+
+  it('prunes empty auto-generated General projects with no conversations', () => {
+    const legacyGeneralProject: OrgProject = {
+      id: 'proj-general-dept-apps',
+      name: 'General',
+      departmentId: 'dept-apps',
+      teamIds: [],
+      status: 'active',
+    };
+    const { projects } = reconcileConversationsWithProjects(
+      makeHierarchy(),
+      [...makeProjects(), legacyGeneralProject],
+      makeConversations()
+    );
+    expect(projects.some((p) => p.id === 'proj-general-dept-apps')).toBe(false);
   });
 
   it('keeps Root CEO conversations without projectId', () => {
@@ -293,8 +306,8 @@ describe('reconcileConversationsWithProjects', () => {
 
   it('returns migrated count', () => {
     const { migratedCount } = reconcileConversationsWithProjects(makeHierarchy(), makeProjects(), makeConversations());
-    // conv-1, conv-2, conv-3 get projectId; conv-ceo does not
-    expect(migratedCount).toBe(3);
+    // conv-1 and conv-3 get projectId; conv-2 has no project and conv-ceo does not
+    expect(migratedCount).toBe(2);
   });
 
   it('does not re-migrate conversations that already have projectId', () => {

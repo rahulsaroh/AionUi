@@ -18,6 +18,7 @@ import {
   Typography,
   Tooltip,
   Alert,
+  Progress,
 } from '@arco-design/web-react';
 import { Github, Refresh, Delete, CheckOne, Attention, Close, Play, SettingConfig } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
@@ -62,6 +63,26 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
     }
   }, [visible, loadRepos]);
 
+  useEffect(() => {
+    const unsub = knowledgeRepo.onProgress((prog) => {
+      setRepos((prev) =>
+        prev.map((r) => {
+          if (r.id !== prog.repoId) return r;
+          return {
+            ...r,
+            syncStatus: prog.phase === 'completed' ? 'idle' : prog.phase === 'error' ? 'error' : 'syncing',
+            syncError: prog.error,
+            progress: prog,
+          };
+        })
+      );
+      if (prog.phase === 'completed') {
+        void loadRepos();
+      }
+    });
+    return () => unsub();
+  }, [loadRepos]);
+
   const handleAddRepo = async (values: {
     name: string;
     gitUrl: string;
@@ -72,7 +93,7 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
     try {
       setLoading(true);
       await knowledgeRepo.add(values);
-      Message.success('Repository added and synced successfully');
+      Message.success('Repository added and syncing in background');
       setIsAdding(false);
       form.resetFields();
       await loadRepos();
@@ -255,6 +276,24 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
                 {t('team.knowledgeRepos.trust.reapprovalRequired')}
               </Tag>
             </Tooltip>
+          );
+        }
+        if (record.syncStatus === 'syncing') {
+          return (
+            <div className='flex flex-col gap-4px min-w-[130px]'>
+              <Tag color='arcoblue' icon={<Refresh spin />}>
+                {record.progress?.percent !== undefined
+                  ? `${record.progress.percent}%`
+                  : t('team.knowledgeRepos.status.syncing')}
+              </Tag>
+              <Progress
+                percent={record.progress?.percent || 0}
+                size='small'
+                status='normal'
+                animation
+                showText={false}
+              />
+            </div>
           );
         }
         if (record.syncStatus === 'needs_attention') {

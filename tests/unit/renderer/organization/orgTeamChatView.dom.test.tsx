@@ -130,6 +130,45 @@ describe('OrgTeamChatHeader', () => {
     fireEvent.click(parallelButton);
     expect(onChangeViewMode).toHaveBeenCalledWith('parallel');
   });
+
+  it('renders all teammates trigger, hides duplicate role labels, and supports editing', () => {
+    const onEditMember = vi.fn();
+    const mockDuplicateSpecialist: OrgAgentMember = {
+      id: 'spec-dup',
+      name: 'Asset Manager',
+      role: 'Asset Manager',
+      title: 'Asset Manager',
+      status: 'idle',
+    };
+
+    render(
+      <OrgTeamChatHeader
+        team={mockTeam}
+        departmentName='Engineering'
+        members={[mockTeamLead, mockDuplicateSpecialist]}
+        activeMemberId='spec-dup'
+        viewMode='parallel'
+        onChangeViewMode={vi.fn()}
+        onSelectMember={vi.fn()}
+        onEditMember={onEditMember}
+      />
+    );
+
+    // All Teammates button is present
+    expect(screen.getByText('All Teammates')).toBeInTheDocument();
+
+    // Asset Manager name is shown, but duplicate uppercase role badge is not rendered
+    const nameEls = screen.getAllByText('Asset Manager');
+    expect(nameEls.length).toBeGreaterThan(0);
+    // Role badge should not appear separately as 'ASSET MANAGER'
+    expect(screen.queryByText('ASSET MANAGER')).not.toBeInTheDocument();
+
+    // Edit button on tab triggers onEditMember
+    const editBtns = screen.getAllByLabelText('Edit teammate');
+    expect(editBtns.length).toBeGreaterThan(0);
+    fireEvent.click(editBtns[0]);
+    expect(onEditMember).toHaveBeenCalled();
+  });
 });
 
 describe('OrgTeamChatSlot', () => {

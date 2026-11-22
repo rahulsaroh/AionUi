@@ -29,13 +29,13 @@ import type {
   OrgProject,
   OrgTeamNode,
 } from '@/types/organization';
-import { normalizeOrgProject } from './orgCoherence';
+import { addProjectMemberSource, normalizeOrgProject } from './orgCoherence';
 
-export const ORG_STORAGE_VERSION = 7;
+export const ORG_STORAGE_VERSION = 8;
 export const ORG_STORAGE_VERSION_KEY = 'aionui:org-storage-version';
 
 export interface OrgMigrationReport {
-  step: 'pm-agent' | 'team-project' | 'reparent-chat' | 'normalize';
+  step: 'pm-agent' | 'team-project' | 'reparent-chat' | 'normalize' | 'membership-sources';
   detail: string;
 }
 
@@ -97,6 +97,8 @@ function normalizeProjectV2(project: OrgProject): OrgProject {
     name: project.name.trim(),
     departmentId: project.departmentId.trim(),
     teamIds: Array.from(new Set([...(project.teamIds ?? []), ...(legacyTeamId ? [legacyTeamId] : [])])).filter(Boolean),
+    memberIds: project.memberIds,
+    memberSources: project.memberSources,
     goal: project.goal,
     description: project.description,
     context: project.context,
@@ -167,6 +169,30 @@ export function migrateOrgStorageV2(
         targetNodeId: duplicateTeamIds.get(conversation.targetNodeId) ?? conversation.targetNodeId,
       }));
     }
+  }
+
+  if (storedVersion < 8) {
+    const teamsByMember = new Map<string, Set<string>>();
+    for (const department of nextHierarchy.departments)
+      for (const team of department.teams) {
+        for (const member of [...(team.specialistMembers ?? []), ...(team.members ?? [])]) {
+          const teamIds = teamsByMember.get(member.id) ?? new Set<string>();
+          teamIds.add(team.id);
+          teamsByMember.set(member.id, teamIds);
+        }
+      }
+    nextProjects = nextProjects.map((project) => {
+      if (project.memberSources) return normalizeOrgProject(project);
+      let sourced: OrgProject = { ...project, memberSources: {} };
+      for (const memberId of project.memberIds ?? []) {
+        const candidates = [...(teamsByMember.get(memberId) ?? [])].filter((teamId) =>
+          project.teamIds.includes(teamId)
+        );
+        sourced = addProjectMemberSource(sourced, memberId, candidates.length === 1 ? candidates[0] : 'direct');
+      }
+      return sourced;
+    });
+    report.push({ step: 'membership-sources', detail: 'Added project membership sources' });
   }
 
   // Index teams by id with their parent department.
@@ -249,8 +275,6 @@ export interface OrgConversationReconciliationResult {
  * Rules:
  * - Root CEO conversations (sourceNodeId or targetNodeId === 'root-ceo') stay without projectId.
  * - Match via team: if sourceNodeId or targetNodeId is a team id, use that team's project.
- * - Fall back to the department's "General" project (created if missing).
- * - When a conversation is assigned to the "General" project, its team is linked to that project.
  */
 export function reconcileConversationsWithProjects(
   hierarchy: OrgHierarchy,
@@ -268,22 +292,11 @@ export function reconcileConversationsWithProjects(
     }
   }
 
-  // Ensure each department has a "General" project
-  let nextProjects = [...normalizedProjects];
-  for (const dept of hierarchy.departments) {
-    const hasGeneral = nextProjects.some((p) => p.departmentId === dept.id && p.name === 'General');
-    if (!hasGeneral) {
-      const generalProject: OrgProject = {
-        id: `proj-general-${dept.id}`,
-        name: 'General',
-        departmentId: dept.id,
-        teamIds: [],
-        description: 'Default project for unassigned conversations',
-        status: 'active',
-      };
-      nextProjects.push(generalProject);
-    }
-  }
+  // Prune any empty auto-generated "General" projects (e.g. proj-general-*) that have no conversations
+  const referencedProjectIds = new Set(conversations.map((c) => c.projectId).filter((id): id is string => Boolean(id)));
+  const nextProjects = normalizedProjects.filter(
+    (p) => !(p.id.startsWith('proj-general-') && p.name === 'General' && !referencedProjectIds.has(p.id))
+  );
 
   // Build team -> first project id map
   const teamToProject = new Map<string, string>();
@@ -305,18 +318,7 @@ export function reconcileConversationsWithProjects(
     if (conv.projectId) {
       const projectExists = nextProjects.some((p) => p.id === conv.projectId);
       if (!projectExists) {
-        console.warn(
-          '[reconcileConversationsWithProjects] Conversation project missing, re-linking to recovered/general bucket:',
-          conv.id,
-          conv.projectId
-        );
-        const dept = hierarchy.departments.find((d) => d.id === conv.departmentId) || hierarchy.departments[0];
-        if (dept) {
-          const general = nextProjects.find((p) => p.departmentId === dept.id && p.name === 'General');
-          if (general) {
-            return { ...conv, projectId: general.id };
-          }
-        }
+        console.warn('[reconcileConversationsWithProjects] Conversation project missing:', conv.id, conv.projectId);
       }
       return conv;
     }
@@ -333,22 +335,11 @@ export function reconcileConversationsWithProjects(
       projectId = teamToProject.get(teamId);
     }
 
-    // Fall back to department's "General" project
-    if (!projectId && teamId) {
-      const dept = teamToDept.get(teamId)!;
-      const general = nextProjects.find((p) => p.departmentId === dept.id && p.name === 'General');
-      if (general) {
-        projectId = general.id;
-        // Link the team to the General project so it appears under the team
-        if (!general.teamIds.includes(teamId)) {
-          general.teamIds = [...general.teamIds, teamId];
-        }
+    if ((projectId && projectId !== conv.projectId) || (teamId && teamId !== conv.teamId)) {
+      if (projectId && projectId !== conv.projectId) {
+        migratedCount++;
       }
-    }
-
-    if (projectId && projectId !== conv.projectId) {
-      migratedCount++;
-      return { ...conv, projectId, teamId: teamId ?? conv.teamId };
+      return { ...conv, ...(projectId ? { projectId } : {}), teamId: teamId ?? conv.teamId };
     }
     return conv;
   });

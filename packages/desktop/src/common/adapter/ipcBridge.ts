@@ -688,9 +688,17 @@ export const application = {
     void,
     { dataDir?: string; cacheDir?: string; workDir?: string; logDir?: string }
   >('update-system-info'),
-  backupData: bridge.buildProvider<{ success: boolean; backupPath?: string }, { targetDir: string }>(
+  backupData: bridge.buildProvider<{ success: boolean; backupPath?: string; msg?: string }, { targetDir?: string }>(
     'application.backup-data'
   ),
+  restoreData: bridge.buildProvider<{ success: boolean; msg?: string; restoredPath?: string }, { backupPath?: string }>(
+    'application.restore-data'
+  ),
+  getBackupStatus: bridge.buildProvider<
+    { backupDir?: string; autoBackup: boolean; autoBackupInterval: number; lastBackupTime?: number },
+    void
+  >('application.get-backup-status'),
+  setAutoBackup: bridge.buildProvider<void, { enabled: boolean; interval?: number }>('application.set-auto-backup'),
   getZoomFactor: bridge.buildProvider<number, void>('app.get-zoom-factor'),
   setZoomFactor: bridge.buildProvider<number, { factor: number }>('app.set-zoom-factor'),
   getCdpStatus: bridge.buildProvider<IBridgeResponse<ICdpStatus>, void>('app.get-cdp-status'),
@@ -2767,6 +2775,20 @@ export const knowledgeRepo = {
       return window.electronAPI.knowledgeRepoListAssignments();
     }
     return {};
+  },
+  onProgress: (callback: (data: import('../types/knowledgeRepo').KnowledgeRepoProgress) => void) => {
+    if (
+      typeof window !== 'undefined' &&
+      (window as unknown as { electronAPI?: { onKnowledgeRepoProgress?: (cb: (d: unknown) => void) => () => void } })
+        .electronAPI?.onKnowledgeRepoProgress
+    ) {
+      return (
+        window as unknown as { electronAPI: { onKnowledgeRepoProgress: (cb: (d: unknown) => void) => () => void } }
+      ).electronAPI.onKnowledgeRepoProgress((data) => {
+        callback(data as import('../types/knowledgeRepo').KnowledgeRepoProgress);
+      });
+    }
+    return () => {};
   },
 };
 

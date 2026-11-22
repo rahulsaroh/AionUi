@@ -344,6 +344,7 @@ const ChatLayout: React.FC<{
               !rightSiderCollapsed &&
               createWorkspaceDragHandle({ className: 'absolute start-0 top-0 bottom-0', style: {}, reverse: true })}
             <WorkspacePanelHeader
+              showToggle
               collapsed={rightSiderCollapsed}
               onToggle={() => dispatchWorkspaceToggleEvent()}
               togglePlacement={layout?.isMobile ? 'left' : 'right'}

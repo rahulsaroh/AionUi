@@ -30,6 +30,9 @@ const TOOL_REQUIRED_ROLE: Record<string, string> = {
   scan_folder: 'Department Head or Team Lead',
   hire_member: 'Department Head or Team Lead',
   create_team: 'Root CEO, Department Head, or Team Lead',
+  delete_member: 'Root CEO, Department Head, or Team Lead',
+  remove_member: 'Root CEO, Department Head, Team Lead, or Project Head',
+  remove_members_from_department_projects: 'Root CEO, Department Head, or Team Lead',
 };
 
 export type OrgRole = 'ceo' | 'department_head' | 'team_lead' | 'project_head';
@@ -267,6 +270,9 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'create_team',
       'hire_member',
       'assign_member',
+      'remove_member',
+      'delete_member',
+      'remove_members_from_department_projects',
       'assign_task',
       'list_org',
       'find_owner',
@@ -290,6 +296,9 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'create_team',
       'hire_member',
       'assign_member',
+      'remove_member',
+      'delete_member',
+      'remove_members_from_department_projects',
       'assign_task',
       'list_org',
       'find_owner',
@@ -321,6 +330,7 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       'find_owner',
       'get_org_directory',
       'ask_user',
+      'remove_member',
       // Process-side execution tools (jailed + policy-gated + audited):
       'list_dir',
       'read_file',
@@ -502,6 +512,34 @@ export async function handleOrgToolRequest(request: OrgToolExecutionRequest): Pr
       return { success: false, error: 'assign_member requires "projectId" and "memberId".' };
     }
     broadcastOrgLiveStep({ step: `Assigning member ${args.memberId} to project ${args.projectId}`, tool, args });
+  }
+
+  if (tool === 'remove_member') {
+    if (!args.memberId) {
+      return { success: false, error: 'remove_member requires "memberId".' };
+    }
+    broadcastOrgLiveStep({ step: `Removing member ${args.memberId}`, tool, args });
+  }
+
+  if (tool === 'delete_member') {
+    if (!args.memberId) {
+      return { success: false, error: 'delete_member requires "memberId".' };
+    }
+    broadcastOrgLiveStep({ step: `Deleting member ${args.memberId}`, tool, args });
+  }
+
+  if (tool === 'remove_members_from_department_projects') {
+    if (!args.departmentId || !Array.isArray(args.memberIds) || args.memberIds.length === 0) {
+      return {
+        success: false,
+        error: 'remove_members_from_department_projects requires "departmentId" and "memberIds".',
+      };
+    }
+    broadcastOrgLiveStep({
+      step: `Removing ${args.memberIds.length} members from department ${args.departmentId} projects`,
+      tool,
+      args,
+    });
   }
 
   if (tool === 'assign_task') {

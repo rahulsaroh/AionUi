@@ -17,6 +17,12 @@ import { getUserDataDir, scanAndPrepareDataDir, setStoredCustomDataDir } from '@
 import { createSkillFileService } from '@process/services/skills';
 import { getSystemDir, ProcessEnv } from '@process/utils/initStorage';
 import { copyDirectoryRecursively, getConfigPath, getDataPath, resolveCliSafePath } from '@process/utils';
+import {
+  getBackupStatus,
+  performBackup,
+  restoreBackup,
+  updateAutoBackupConfig,
+} from '@process/services/backup/autoBackupService';
 
 export function initApplicationBridgeCore(): void {
   const skillFiles = createSkillFileService();
@@ -164,36 +170,19 @@ export function initApplicationBridgeCore(): void {
   });
 
   ipcBridge.application.backupData.provider(async ({ targetDir }) => {
-    const defaultBackupDir = path.join(getUserDataDir(), 'backups');
-    const safeTarget = targetDir ? resolveCliSafePath(targetDir, defaultBackupDir) : defaultBackupDir;
-    if (!fs.existsSync(safeTarget)) {
-      await fs.promises.mkdir(safeTarget, { recursive: true });
-    }
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const backupSubdir = path.join(safeTarget, `aionui-backup-${timestamp}`);
-    await fs.promises.mkdir(backupSubdir, { recursive: true });
+    return performBackup(targetDir);
+  });
 
-    const dbPath = path.join(getDataPath(), 'aionui-backend.db');
-    if (fs.existsSync(dbPath)) {
-      await fs.promises.copyFile(dbPath, path.join(backupSubdir, 'aionui-backend.db'));
-      const walPath = `${dbPath}-wal`;
-      if (fs.existsSync(walPath)) {
-        await fs.promises.copyFile(walPath, path.join(backupSubdir, 'aionui-backend.db-wal'));
-      }
-      const shmPath = `${dbPath}-shm`;
-      if (fs.existsSync(shmPath)) {
-        await fs.promises.copyFile(shmPath, path.join(backupSubdir, 'aionui-backend.db-shm'));
-      }
-    }
+  ipcBridge.application.restoreData.provider(async ({ backupPath }) => {
+    return restoreBackup(backupPath);
+  });
 
-    const configDir = getConfigPath();
-    if (fs.existsSync(configDir)) {
-      await copyDirectoryRecursively(configDir, path.join(backupSubdir, 'config'));
-    }
+  ipcBridge.application.getBackupStatus.provider(async () => {
+    return getBackupStatus();
+  });
 
-    return { success: true, backupPath: backupSubdir };
+  ipcBridge.application.setAutoBackup.provider(async ({ enabled, interval }) => {
+    await updateAutoBackupConfig(enabled, interval);
   });
 
   ipcBridge.application.getPath.provider(({ name }) => {

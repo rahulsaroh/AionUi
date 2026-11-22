@@ -16,6 +16,7 @@ import {
   Alert,
   Button,
   Collapse,
+  Progress,
 } from '@arco-design/web-react';
 import { Github, Plus, FileText, UploadOne, Delete } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
@@ -260,11 +261,15 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
         authToken: githubToken.trim() || undefined,
       });
       setSelectedRepoIds((prev) => Array.from(new Set([...prev, newRepo.id])));
-      setIsAddingGithub(false);
+      // Clear inputs so user can add another repository right away
       setGithubUrl('');
       setGithubRef('main');
       setGithubToken('');
-      Message.success('Repository cloned and assigned as knowledge');
+      Message.success(
+        t('team.knowledgeRepos.backgroundSyncStarted', {
+          defaultValue: 'Repository attached. Cloning in background...',
+        })
+      );
     } catch (err: unknown) {
       Message.error((err as Error).message || 'Failed to clone repository');
     } finally {
@@ -335,15 +340,37 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
               >
                 <Space direction='vertical' className='w-full'>
                   {allRepos.map((repo) => (
-                    <Checkbox key={repo.id} value={repo.id}>
-                      <div className='flex flex-col'>
+                    <Checkbox key={repo.id} value={repo.id} className='!items-start'>
+                      <div className='flex flex-col flex-1 min-w-0'>
                         <span className='font-medium text-t-primary'>{repo.name}</span>
                         <span className='text-12px text-[color:var(--text-secondary)]'>
                           {repo.manifest?.alwaysOnRules?.length || 0} rules,{' '}
                           {repo.manifest?.onDemandSkills?.length || 0} skills ({repo.ref})
-                          {repo.syncStatus === 'syncing' ? ' • Syncing...' : ''}
+                          {repo.syncStatus === 'syncing' ? ' • Syncing in background...' : ''}
+                          {repo.syncStatus === 'error' ? ' • Sync failed' : ''}
                           {repo.trustStatus === 'reapproval_required' ? ' • Re-approval needed' : ''}
                         </span>
+
+                        {repo.syncStatus === 'syncing' && (
+                          <div className='mt-6px w-full max-w-[420px]'>
+                            <Progress percent={repo.progress?.percent ?? 0} size='small' status='normal' animation />
+                            <div className='text-11px text-[color:var(--text-secondary)] mt-2px'>
+                              {repo.progress?.message ||
+                                t('team.knowledgeRepos.status.syncing', { defaultValue: 'Syncing in background...' })}
+                            </div>
+                          </div>
+                        )}
+
+                        {repo.syncStatus === 'error' && (
+                          <div className='mt-6px w-full max-w-[420px]'>
+                            <Progress percent={100} size='small' status='error' />
+                            <div className='text-11px text-[color:var(--danger-6)] mt-2px break-words'>
+                              {repo.syncError ||
+                                repo.progress?.error ||
+                                t('team.knowledgeRepos.status.error', { defaultValue: 'Sync error' })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </Checkbox>
                   ))}
@@ -365,7 +392,9 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                 icon={<Plus theme='outline' size='12' />}
                 onClick={() => setIsAddingGithub(!isAddingGithub)}
               >
-                {isAddingGithub ? 'Cancel' : 'Add New'}
+                {isAddingGithub
+                  ? t('team.knowledgeRepos.cancel', { defaultValue: 'Cancel' })
+                  : t('team.knowledgeRepos.addNew', { defaultValue: 'Add New' })}
               </Button>
             </div>
 
@@ -395,7 +424,7 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                 </div>
                 <div className='flex justify-end pt-4px'>
                   <Button size='small' type='primary' loading={cloning} onClick={handleCloneAndAssign}>
-                    Clone & Attach
+                    {t('team.knowledgeRepos.cloneAndAttach', { defaultValue: 'Clone & Attach' })}
                   </Button>
                 </div>
               </div>

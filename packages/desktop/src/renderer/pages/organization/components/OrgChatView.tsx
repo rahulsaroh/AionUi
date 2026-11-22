@@ -48,12 +48,14 @@ import {
 import { onOrgPermissionRequested, type OrgPermissionRequest } from '../utils/orgDelegationEngine';
 import { useModelProviderList } from '@/renderer/hooks/agent/useModelProviderList';
 import { computeAutoTitle } from '../utils/orgCoherence';
+import { listProjectTeamMembers, teamRoster } from '../utils/orgRoster';
 import type {
   OrgConversation,
   OrgConversationMessage,
   OrgAgentModelConfig,
   OrgCreatedEntityRef,
   OrgAgentMember,
+  OrgTeamNode,
 } from '@/types/organization';
 
 export interface OrgChatErrorPanelProps {
@@ -94,6 +96,7 @@ export const OrgChatView: React.FC = () => {
   const {
     hierarchy,
     projects,
+    members: storeMembers = [],
     conversations,
     selectedConversationId,
     selectedTeamId,
@@ -107,6 +110,7 @@ export const OrgChatView: React.FC = () => {
     addDepartment,
     addSubTeam,
     addOrgProject,
+    upsertOrgProject,
     addTeamMember,
     updateTeamMember,
     updateNodeStatus,
@@ -332,6 +336,11 @@ export const OrgChatView: React.FC = () => {
     hierarchy.rootCeo.ceoAgent;
 
   const currentAgentModel: OrgAgentModelConfig | undefined = useMemo(() => {
+    // 0. Explicit model on active project
+    if (activeProject?.model?.modelId) {
+      return activeProject.model;
+    }
+
     // 1. Explicit model on current target agent (skip stale hardcoded seed — Step 1e)
     if (currentTargetAgent.model?.modelId && currentTargetAgent.model.modelId !== 'claude-3-7-sonnet') {
       return currentTargetAgent.model;
@@ -392,22 +401,89 @@ export const OrgChatView: React.FC = () => {
 
   const isCeoChat = activeChatTarget.type === 'ceo';
 
-  const teamMembers = useMemo<OrgAgentMember[]>(() => {
-    if (!activeTeam) return [];
+  const allAgentMembers = useMemo(() => {
     const membersList: OrgAgentMember[] = [];
-    if (activeTeam.teamLeadAgent) {
-      membersList.push({ ...activeTeam.teamLeadAgent, role: activeTeam.teamLeadAgent.role || 'lead' });
+    if (hierarchy.rootCeo.ceoAgent) membersList.push(hierarchy.rootCeo.ceoAgent);
+    if (hierarchy.rootCeo.chiefOfStaffAgent) membersList.push(hierarchy.rootCeo.chiefOfStaffAgent);
+    for (const department of hierarchy.departments) {
+      if (department.departmentCeoAgent) membersList.push(department.departmentCeoAgent);
+      if (department.pmAgent) membersList.push(department.pmAgent);
+      for (const team of department.teams) membersList.push(...teamRoster(team));
     }
-    if (activeTeam.hrCoordinatorAgent) {
-      membersList.push({ ...activeTeam.hrCoordinatorAgent, role: activeTeam.hrCoordinatorAgent.role || 'hr' });
-    }
-    if (activeTeam.specialistMembers) {
-      for (const spec of activeTeam.specialistMembers) {
-        membersList.push({ ...spec, role: spec.role || 'specialist' });
+    const seenIds = new Set(membersList.map((m) => m.id));
+    for (const m of storeMembers || []) {
+      if (!seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        membersList.push(m);
       }
     }
     return membersList;
-  }, [activeTeam]);
+  }, [hierarchy, storeMembers]);
+
+  const effectiveTeam = useMemo<OrgTeamNode | undefined>(() => {
+    if (activeTeam) return activeTeam;
+    if (activeProject) {
+      const lead = activeProjectHead || {
+        id: `lead-${activeProject.id}`,
+        canonicalAgentId: `canonical-lead-${activeProject.id}`,
+        name: 'Project Lead',
+        role: 'project_manager',
+        assignedTeamIds: [],
+        lastActiveAt: null,
+        status: 'idle',
+      };
+      return {
+        id: activeProject.id,
+        departmentId: activeProject.departmentId,
+        name: activeProject.name,
+        teamLeadAgent: lead,
+        specialistMembers: [],
+        status: 'idle',
+        lastActiveAt: null,
+        workspacePath: activeProject.workspacePath,
+      };
+    }
+    return undefined;
+  }, [activeTeam, activeProject, activeProjectHead]);
+
+  const teamMembers = useMemo<OrgAgentMember[]>(() => {
+    if (!effectiveTeam && !activeProject) return [];
+    const membersList: OrgAgentMember[] = [];
+    const seenIds = new Set<string>();
+
+    if (effectiveTeam?.teamLeadAgent) {
+      membersList.push({ ...effectiveTeam.teamLeadAgent, role: effectiveTeam.teamLeadAgent.role || 'lead' });
+      seenIds.add(effectiveTeam.teamLeadAgent.id);
+      if (effectiveTeam.teamLeadAgent.canonicalAgentId) seenIds.add(effectiveTeam.teamLeadAgent.canonicalAgentId);
+    }
+    if (effectiveTeam?.hrCoordinatorAgent) {
+      membersList.push({ ...effectiveTeam.hrCoordinatorAgent, role: effectiveTeam.hrCoordinatorAgent.role || 'hr' });
+      seenIds.add(effectiveTeam.hrCoordinatorAgent.id);
+      if (effectiveTeam.hrCoordinatorAgent.canonicalAgentId)
+        seenIds.add(effectiveTeam.hrCoordinatorAgent.canonicalAgentId);
+    }
+    if (effectiveTeam?.specialistMembers) {
+      for (const spec of effectiveTeam.specialistMembers) {
+        if (!seenIds.has(spec.id) && (!spec.canonicalAgentId || !seenIds.has(spec.canonicalAgentId))) {
+          membersList.push({ ...spec, role: spec.role || 'specialist' });
+          seenIds.add(spec.id);
+          if (spec.canonicalAgentId) seenIds.add(spec.canonicalAgentId);
+        }
+      }
+    }
+
+    if (activeProject) {
+      const projMembers = listProjectTeamMembers(activeProject, activeDept, allAgentMembers);
+      for (const m of projMembers) {
+        if (!seenIds.has(m.id) && (!m.canonicalAgentId || !seenIds.has(m.canonicalAgentId))) {
+          membersList.push({ ...m, role: m.role || 'specialist' });
+          seenIds.add(m.id);
+          if (m.canonicalAgentId) seenIds.add(m.canonicalAgentId);
+        }
+      }
+    }
+    return membersList;
+  }, [effectiveTeam, activeProject, activeDept, allAgentMembers]);
 
   const [teamViewMode, setTeamViewModeState] = useState<OrgTeamChatViewMode>('parallel');
   const [activeMemberId, setActiveMemberId] = useState<string>('');
@@ -419,30 +495,30 @@ export const OrgChatView: React.FC = () => {
   const memberSlotRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    if (!activeTeam) return;
+    if (!effectiveTeam) return;
     if (teamMembers.length <= 1) {
       setTeamViewModeState('single');
       return;
     }
     try {
-      const stored = localStorage.getItem(`org-team-view-mode-${activeTeam.id}`);
+      const stored = localStorage.getItem(`org-team-view-mode-${effectiveTeam.id}`);
       if (stored === 'single') setTeamViewModeState('single');
       else setTeamViewModeState('parallel');
     } catch {
       setTeamViewModeState('parallel');
     }
-  }, [activeTeam?.id, teamMembers.length]);
+  }, [effectiveTeam?.id, teamMembers.length]);
 
   const setTeamViewMode = useCallback(
     (mode: OrgTeamChatViewMode) => {
       setTeamViewModeState(mode);
-      if (activeTeam) {
+      if (effectiveTeam) {
         try {
-          localStorage.setItem(`org-team-view-mode-${activeTeam.id}`, mode);
+          localStorage.setItem(`org-team-view-mode-${effectiveTeam.id}`, mode);
         } catch {}
       }
     },
-    [activeTeam]
+    [effectiveTeam]
   );
 
   useEffect(() => {
@@ -505,7 +581,7 @@ export const OrgChatView: React.FC = () => {
   }, [teamViewMode, teamMembers.length, checkParallelScroll]);
 
   useEffect(() => {
-    if (!activeTeam || teamMembers.length <= 1) return;
+    if (!effectiveTeam || teamMembers.length <= 1) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -548,7 +624,7 @@ export const OrgChatView: React.FC = () => {
       }
 
       if (activeConversation && activeConversation.type === 'team_execution') {
-        if (activeTeam && member.id === activeTeam.teamLeadAgent.id) {
+        if (effectiveTeam && member.id === effectiveTeam.teamLeadAgent.id) {
           return activeConversation;
         }
         const sessionScopedId = `conv-${activeConversation.id}-${member.id}`;
@@ -559,9 +635,9 @@ export const OrgChatView: React.FC = () => {
           id: sessionScopedId,
           title: `${member.name} - Chat`,
           type: 'agent_direct',
-          sourceNodeId: activeTeam?.id || 'root-ceo',
+          sourceNodeId: effectiveTeam?.id || 'root-ceo',
           targetNodeId: member.id,
-          teamId: activeTeam?.id,
+          teamId: effectiveTeam?.id,
           projectId: activeConversation.projectId,
           targetAgentId: member.id,
           targetRole: member.role,
@@ -576,17 +652,19 @@ export const OrgChatView: React.FC = () => {
       const match = conversations.find(
         (c) =>
           c.targetAgentId === member.id &&
-          (activeTeam ? c.teamId === activeTeam.id || c.sourceNodeId === activeTeam.id : true)
+          (activeProject ? c.projectId === activeProject.id : true) &&
+          (effectiveTeam ? c.teamId === effectiveTeam.id || c.sourceNodeId === effectiveTeam.id : true)
       );
       if (match) return match;
 
       return {
-        id: `conv-${activeTeam?.id || 'team'}-${member.id}`,
+        id: `conv-${effectiveTeam?.id || activeProject?.id || 'team'}-${member.id}`,
         title: `${member.name} - Chat`,
         type: 'agent_direct',
-        sourceNodeId: activeTeam?.id || 'root-ceo',
+        sourceNodeId: effectiveTeam?.id || activeProject?.id || 'root-ceo',
         targetNodeId: member.id,
-        teamId: activeTeam?.id,
+        teamId: effectiveTeam?.id,
+        projectId: activeProject?.id,
         targetAgentId: member.id,
         targetRole: member.role,
         targetAgentName: member.name,
@@ -596,7 +674,7 @@ export const OrgChatView: React.FC = () => {
         messages: [],
       };
     },
-    [activeConversation, conversations, activeTeam]
+    [activeConversation, conversations, effectiveTeam, activeProject]
   );
 
   const handleSendMemberMessage = useCallback(
@@ -853,6 +931,9 @@ export const OrgChatView: React.FC = () => {
   const handleSelectAgentModel = useCallback(
     async (newModel: OrgAgentModelConfig) => {
       updateAgentModel(currentTargetAgent.id, newModel);
+      if (activeProject) {
+        void upsertOrgProject({ ...activeProject, model: newModel });
+      }
 
       // If active conversation has an established backend session, apply or reset it
       if (activeConversation?.backendConversationId) {
@@ -1424,28 +1505,15 @@ export const OrgChatView: React.FC = () => {
         ? t('team.organization.statusError', { defaultValue: 'Error' })
         : t('team.organization.statusIdle', { defaultValue: 'Idle' });
 
-  const isTeamChat =
-    !isCeoChat &&
-    Boolean(activeTeam) &&
-    teamMembers.length > 1 &&
-    (!selectedProjectId || Boolean(selectedTeamId) || Boolean(activeTargetAgent)) &&
-    (Boolean(selectedTeamId) ||
-      Boolean(activeConversation?.teamId) ||
-      Boolean(
-        activeTargetAgent &&
-        activeTeam &&
-        (activeTeam.teamLeadAgent.id === activeTargetAgent.id ||
-          activeTeam.hrCoordinatorAgent?.id === activeTargetAgent.id ||
-          activeTeam.specialistMembers.some((m) => m.id === activeTargetAgent.id))
-      ));
+  const isTeamChat = !isCeoChat && Boolean(effectiveTeam) && teamMembers.length > 1;
 
-  if (isTeamChat && activeTeam) {
+  if (isTeamChat && effectiveTeam) {
     return (
       <div className='flex flex-col h-full w-full bg-[var(--color-bg-1)] overflow-hidden select-text'>
         <OrgChatErrorPanel error={openChatError} onDismiss={clearOpenChatError} />
 
         <OrgTeamChatHeader
-          team={activeTeam}
+          team={effectiveTeam}
           departmentName={activeDept?.name}
           members={teamMembers}
           activeMemberId={currentMember?.id || teamMembers[0].id}
@@ -1456,6 +1524,7 @@ export const OrgChatView: React.FC = () => {
           workspacePath={activeWorkspacePath}
           onNewConversation={handleNewConversation}
           onOpenCanvas={() => setOrgViewMode('canvas')}
+          onEditMember={(m) => setEditingMember(m)}
         />
 
         <div className='relative flex flex-1 h-full w-full overflow-hidden min-h-0'>
@@ -1480,8 +1549,8 @@ export const OrgChatView: React.FC = () => {
 
               {teamMembers.map((member) => {
                 const isCurrent = member.id === currentMember?.id;
-                const isLeader = member.id === activeTeam.teamLeadAgent.id;
-                const isHr = member.id === activeTeam.hrCoordinatorAgent?.id;
+                const isLeader = member.id === effectiveTeam.teamLeadAgent.id;
+                const isHr = member.id === effectiveTeam.hrCoordinatorAgent?.id;
                 const conv = getMemberConversation(member);
 
                 return (
@@ -1492,7 +1561,7 @@ export const OrgChatView: React.FC = () => {
                   >
                     <OrgTeamChatSlot
                       member={member}
-                      team={activeTeam}
+                      team={effectiveTeam}
                       departmentName={activeDept?.name}
                       conversation={conv}
                       isLeader={isLeader}
@@ -1548,8 +1617,8 @@ export const OrgChatView: React.FC = () => {
                 style={{ scrollSnapType: 'x proximity' }}
               >
                 {teamMembers.map((member, index) => {
-                  const isLeader = member.id === activeTeam.teamLeadAgent.id;
-                  const isHr = member.id === activeTeam.hrCoordinatorAgent?.id;
+                  const isLeader = member.id === effectiveTeam.teamLeadAgent.id;
+                  const isHr = member.id === effectiveTeam.hrCoordinatorAgent?.id;
                   const isLast = index === teamMembers.length - 1;
                   const conv = getMemberConversation(member);
 
@@ -1571,7 +1640,7 @@ export const OrgChatView: React.FC = () => {
                     >
                       <OrgTeamChatSlot
                         member={member}
-                        team={activeTeam}
+                        team={effectiveTeam}
                         departmentName={activeDept?.name}
                         conversation={conv}
                         isLeader={isLeader}
@@ -1621,7 +1690,8 @@ export const OrgChatView: React.FC = () => {
             data={editingMember}
             context={{
               departmentId: activeDept?.id,
-              teamId: activeTeam?.id,
+              teamId: activeTeam?.id || effectiveTeam?.id,
+              projectId: activeProject?.id,
             }}
             onClose={() => setEditingMember(null)}
             onSave={handleSaveMember}

@@ -179,7 +179,7 @@ const AionrsConversationPanel: React.FC<{ conversation: AionrsConversation; slid
   // not double up or reserve an empty column.
   const isAntigravityMode =
     conversation.extra?.session_mode === 'antigravity' || conversation.extra?.session_mode === 'plan';
-  const workspaceEnabled = (Boolean(conversation.extra?.workspace) || isAntigravityMode) && !conversation.project_id;
+  const workspaceEnabled = !conversation.project_id;
   const cronJobId = resolveCronJobId(conversation.extra);
   const { info: presetAssistantInfo } = usePresetAssistantInfo(conversation);
   const aionrsAssistantId = presetAssistantInfo?.assistantId;
@@ -330,15 +330,14 @@ const ChatConversation: React.FC<{
     [conversation?.id]
   );
   useActiveLease({ type: 'conversation', id: conversation?.id });
-  const isAntigravityOrAcp = conversation?.type === 'antigravity' || conversation?.type === 'acp';
-  const workspaceEnabled = (Boolean(conversation?.extra?.workspace) || isAntigravityOrAcp) && !conversation?.project_id;
-  const cronJobId = resolveCronJobId(conversation?.extra);
-  const layout = useLayoutContext();
-  const isMobile = Boolean(layout?.isMobile);
-
   const isAionrsConversation = conversation?.type === 'aionrs';
   const isLegacyReadOnlyConversation = isLegacyReadOnlyConversationType(conversation?.type);
   const resolvedHideSendBox = hideSendBox || isLegacyReadOnlyConversationType(conversation?.type);
+  const isAntigravityOrAcp = conversation?.type === 'antigravity' || conversation?.type === 'acp';
+  const workspaceEnabled = !conversation?.project_id && !isLegacyReadOnlyConversation;
+  const cronJobId = resolveCronJobId(conversation?.extra);
+  const layout = useLayoutContext();
+  const isMobile = Boolean(layout?.isMobile);
 
   // 使用统一的 Hook 获取预设助手信息（ACP/Codex 会话）
   // Use unified hook for preset assistant info (ACP/Codex conversations)
@@ -456,14 +455,14 @@ const ChatConversation: React.FC<{
   // If preset assistant info exists, use preset logo/name; while loading, avoid fallback; otherwise use backend logo
   const chatLayoutProps = presetAssistantInfo
     ? {
-        presetAssistant: { ...presetAssistantInfo, id: acpAssistantId },
-      }
+      presetAssistant: { ...presetAssistantInfo, id: acpAssistantId },
+    }
     : isLoadingPreset
       ? {} // Still loading custom agents — avoid showing backend logo prematurely
       : {
-          backend: resolvedConversationBackend,
-          agent_name: conversationAgentName,
-        };
+        backend: resolvedConversationBackend,
+        agent_name: conversationAgentName,
+      };
 
   const headerExtraNode = (
     <div className='flex items-center gap-8px'>

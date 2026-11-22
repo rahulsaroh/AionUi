@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { OrgConversation, OrgHierarchy, OrgProject } from '@/types/organization';
 import { resolveOrgChatTarget } from '@/renderer/pages/organization/utils/openOrgChat';
+import { removeProjectMemberSource } from '@/renderer/pages/organization/utils/orgCoherence';
 
 const t = (key: string, opts?: Record<string, unknown>) => (opts?.defaultValue as string) || key;
 
@@ -320,5 +321,66 @@ describe('resolveOrgChatTarget', () => {
     expect('error' in r2).toBe(false);
     if ('error' in r2) throw new Error(r2.error);
     expect(r2.conversation.id).toBe(r1.conversation.id);
+  });
+
+  it('resolves member from allMembers even when removed from team specialistMembers', () => {
+    // Team has empty specialistMembers (e.g. user deleted them from team)
+    const hierarchyWithoutSpec: OrgHierarchy = {
+      ...hierarchy,
+      departments: [
+        {
+          ...hierarchy.departments[0],
+          teams: [
+            {
+              ...hierarchy.departments[0].teams[0],
+              specialistMembers: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    const deletedFromTeamMember = {
+      id: 'agent-member',
+      canonicalAgentId: 'canon-member',
+      name: 'Member',
+      title: 'Dev',
+      role: 'specialist',
+      assignedTeamIds: [],
+      status: 'idle' as const,
+      lastActiveAt: 1,
+    };
+
+    const res = resolveOrgChatTarget(
+      { type: 'member', id: 'agent-member', projectId: 'proj-1' },
+      hierarchyWithoutSpec,
+      projects,
+      [],
+      'organization',
+      t,
+      [deletedFromTeamMember]
+    );
+
+    expect('error' in res).toBe(false);
+    if ('error' in res) throw new Error(res.error);
+    expect(res.conversation.targetAgentId).toBe('agent-member');
+    expect(res.conversation.projectId).toBe('proj-1');
+    expect(res.workspacePath).toBe('/proj-one');
+  });
+
+  it('removes member from project when member was linked via teamId even with legacy memberSources', () => {
+    const proj: OrgProject = {
+      id: 'proj-wtn',
+      name: 'Weekly Tech News',
+      departmentId: 'dept-1',
+      teamIds: ['team-1'],
+      memberIds: ['m-1', 'm-2'],
+      status: 'active',
+    };
+
+    // When team-1 removes m-1
+    const updated = removeProjectMemberSource(proj, 'm-1', 'team-1');
+    expect(updated.memberIds).toEqual(['m-2']);
+    expect(updated.memberSources?.['m-1']).toBeUndefined();
   });
 });

@@ -15,6 +15,7 @@ import type {
   EffectiveInstructionResult,
   TeammateCapabilityCard,
   KnowledgeAssignment,
+  KnowledgeRepoProgress,
 } from '@/common/types/knowledgeRepo';
 import { knowledgeRepoGitService } from './knowledgeRepoGitService';
 import { knowledgeRepoScanner } from './knowledgeRepoScanner';
@@ -39,6 +40,7 @@ export class KnowledgeRepoService {
   private isChecking: boolean = false;
   private dataDir: string = '';
   private worktreesDir: string = '';
+  private progressListeners: Set<(progress: KnowledgeRepoProgress) => void> = new Set();
 
   constructor() {
     this.initPaths();
@@ -149,8 +151,28 @@ export class KnowledgeRepoService {
     await this.persistState();
   }
 
+  onProgress(listener: (progress: KnowledgeRepoProgress) => void): () => void {
+    this.progressListeners.add(listener);
+    return () => {
+      this.progressListeners.delete(listener);
+    };
+  }
+
+  private emitProgress(progress: KnowledgeRepoProgress): void {
+    for (const listener of this.progressListeners) {
+      try {
+        listener(progress);
+      } catch (err) {
+        console.error('[KnowledgeRepo] Progress listener error:', err);
+      }
+    }
+  }
+
   /**
-   * Add and clone a new knowledge repository shallowly.
+   * Add and clone a new knowledge repository in the background.
+   * Returns the newly created repository record immediately with syncStatus: 'syncing',
+   * allowing the UI to remain fully responsive, display a progress bar with percentage,
+   * and allow adding multiple repos concurrently.
    */
   async addRepo(params: {
     name: string;
@@ -169,9 +191,12 @@ export class KnowledgeRepoService {
       hasAuthToken = true;
     }
 
-    const token = params.authToken;
-    const currentCommitSha = await knowledgeRepoGitService.shallowClone(params.gitUrl, ref, cachePath, token);
-    const manifest = await knowledgeRepoScanner.scan(cachePath, params.subpath);
+    const initialProgress: KnowledgeRepoProgress = {
+      repoId: id,
+      phase: 'cloning',
+      percent: 0,
+      message: 'Starting clone...',
+    };
 
     const repo: KnowledgeRepo = {
       id,
@@ -180,21 +205,111 @@ export class KnowledgeRepoService {
       ref,
       subpath: params.subpath,
       cachePath,
-      currentCommitSha,
+      currentCommitSha: '',
       lastCheckedAt: Date.now(),
       lastUpdatedAt: Date.now(),
-      syncStatus: 'idle',
+      syncStatus: 'syncing',
       updatePolicy: 'auto',
       trustStatus: 'trusted',
-      manifest,
+      manifest: {
+        alwaysOnRules: [],
+        onDemandSkills: [],
+        setupFiles: [],
+        estimatedTokens: 0,
+      },
       hasAuthToken,
+      progress: initialProgress,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     this.repos.set(id, repo);
     await this.persistState();
+
+    // Start background clone execution without blocking caller
+    void this.executeBackgroundClone(id, params);
+
     return repo;
+  }
+
+  private async executeBackgroundClone(
+    id: string,
+    params: {
+      name: string;
+      gitUrl: string;
+      ref?: string;
+      subpath?: string;
+      authToken?: string;
+    }
+  ): Promise<void> {
+    const repo = this.repos.get(id);
+    if (!repo) return;
+
+    const token = params.authToken || this.getDecryptedToken(id);
+    const ref = params.ref || 'main';
+
+    try {
+      const currentCommitSha = await knowledgeRepoGitService.shallowClone(
+        params.gitUrl,
+        ref,
+        repo.cachePath,
+        token,
+        (percent, message) => {
+          const liveRepo = this.repos.get(id);
+          if (liveRepo) {
+            const progress: KnowledgeRepoProgress = {
+              repoId: id,
+              phase: 'cloning',
+              percent,
+              message,
+            };
+            liveRepo.progress = progress;
+            this.emitProgress(progress);
+          }
+        }
+      );
+
+      // Scanning phase
+      const scanProgress: KnowledgeRepoProgress = {
+        repoId: id,
+        phase: 'scanning',
+        percent: 96,
+        message: 'Scanning repository guidelines & skills...',
+      };
+      repo.progress = scanProgress;
+      this.emitProgress(scanProgress);
+
+      const manifest = await knowledgeRepoScanner.scan(repo.cachePath, params.subpath);
+
+      repo.manifest = manifest;
+      repo.currentCommitSha = currentCommitSha;
+      repo.syncStatus = 'idle';
+      repo.syncError = undefined;
+      repo.lastUpdatedAt = Date.now();
+      const completedProgress: KnowledgeRepoProgress = {
+        repoId: id,
+        phase: 'completed',
+        percent: 100,
+        message: 'Ready',
+      };
+      repo.progress = completedProgress;
+      await this.persistState();
+      this.emitProgress(completedProgress);
+    } catch (err: unknown) {
+      const errorMsg = (err as Error).message || 'Failed to clone repository';
+      repo.syncStatus = 'error';
+      repo.syncError = errorMsg;
+      const errorProgress: KnowledgeRepoProgress = {
+        repoId: id,
+        phase: 'error',
+        percent: 0,
+        message: errorMsg,
+        error: errorMsg,
+      };
+      repo.progress = errorProgress;
+      await this.persistState();
+      this.emitProgress(errorProgress);
+    }
   }
 
   /**

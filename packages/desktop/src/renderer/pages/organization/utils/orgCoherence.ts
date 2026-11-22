@@ -26,10 +26,73 @@ function normalizePath(value: string | undefined | null): string | undefined {
   return next ? next : undefined;
 }
 
+export function normalizeProjectMembership(project: OrgProject): OrgProject {
+  if (!project.memberSources) return project;
+  const memberSources: NonNullable<OrgProject['memberSources']> = {};
+  for (const [memberId, source] of Object.entries(project.memberSources)) {
+    const id = memberId.trim();
+    const teamIds = Array.from(new Set((source.teamIds ?? []).map((teamId) => teamId.trim()).filter(Boolean)));
+    if (id && (source.direct || teamIds.length))
+      memberSources[id] = { ...(source.direct ? { direct: true } : {}), ...(teamIds.length ? { teamIds } : {}) };
+  }
+  return { ...project, memberSources, memberIds: Object.keys(memberSources) };
+}
+
+export function addProjectMemberSource(project: OrgProject, memberId: string, source: 'direct' | string): OrgProject {
+  const memberSources: NonNullable<OrgProject['memberSources']> = {
+    ...(project.memberSources ?? Object.fromEntries((project.memberIds ?? []).map((id) => [id, { direct: true }]))),
+  };
+  const current = memberSources[memberId] ?? {};
+  if ((source === 'direct' && current.direct) || (source !== 'direct' && current.teamIds?.includes(source)))
+    return project;
+  memberSources[memberId] =
+    source === 'direct'
+      ? { ...current, direct: true }
+      : { ...current, teamIds: Array.from(new Set([...(current.teamIds ?? []), source])) };
+  return normalizeProjectMembership({ ...project, memberSources });
+}
+
+export function removeProjectMemberSource(
+  project: OrgProject,
+  memberId: string,
+  source: 'direct' | string
+): OrgProject {
+  const memberSources: NonNullable<OrgProject['memberSources']> = {
+    ...(project.memberSources ?? Object.fromEntries((project.memberIds ?? []).map((id) => [id, { direct: true }]))),
+  };
+  const current = memberSources[memberId];
+  if (!current) return project;
+
+  const matchesDirect = source === 'direct' && current.direct;
+  const isLinkedTeam = source !== 'direct' && Boolean(project.teamIds?.includes(source));
+  const matchesTeam =
+    source !== 'direct' && (Boolean(current.teamIds?.includes(source)) || (isLinkedTeam && !current.teamIds?.length));
+
+  if (!matchesDirect && !matchesTeam) {
+    if (isLinkedTeam) {
+      delete memberSources[memberId];
+      return normalizeProjectMembership({ ...project, memberSources });
+    }
+    return project;
+  }
+
+  const next: { direct?: boolean; teamIds?: string[] } =
+    source === 'direct'
+      ? { ...current, direct: undefined }
+      : {
+          ...current,
+          direct: isLinkedTeam && !current.teamIds?.length ? undefined : current.direct,
+          teamIds: (current.teamIds ?? []).filter((id: string) => id !== source),
+        };
+  if (!next.direct && !next.teamIds?.length) delete memberSources[memberId];
+  else memberSources[memberId] = next;
+  return normalizeProjectMembership({ ...project, memberSources });
+}
+
 export function normalizeOrgProject(project: OrgProject): OrgProject {
   // `teamId` (v1 single-team) is normalized into `teamIds` and dropped.
   const { teamId: _legacyTeamId, ...rest } = project as { teamId?: string };
-  return {
+  return normalizeProjectMembership({
     ...rest,
     id: project.id.trim(),
     name: project.name.trim(),
@@ -42,7 +105,7 @@ export function normalizeOrgProject(project: OrgProject): OrgProject {
     path: normalizePath(project.path),
     status: (project.status ?? 'active') as 'active' | 'dormant' | 'done',
     backendTeamId: project.backendTeamId ? project.backendTeamId.trim() : undefined,
-  };
+  });
 }
 
 export function findDepartment(hierarchy: OrgHierarchy, departmentId: string): OrgDepartmentNode | undefined {

@@ -59,9 +59,43 @@ export function useWorkspaceCollapse({
   preferenceKey,
   isTemporaryWorkspace,
 }: UseWorkspaceCollapseParams): UseWorkspaceCollapseReturn {
-  // Workspace panel always starts collapsed; preference and hasFiles events
-  // drive expand. See WORKSPACE_HAS_FILES_EVENT handler below.
-  const [rightSiderCollapsed, setRightSiderCollapsed] = useState(true);
+  // Default: restore user preference if present, otherwise start collapsed.
+  const [rightSiderCollapsed, setRightSiderCollapsed] = useState<boolean>(() => {
+    if (isMobile) return true;
+    if (preferenceKey && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`workspace-preference-${preferenceKey}`);
+        if (stored === 'expanded') return false;
+        if (stored === 'collapsed') return true;
+      } catch {
+        // ignore errors
+      }
+    }
+    return true;
+  });
+
+  // Keep preference in sync when active conversation/team changes
+  useEffect(() => {
+    if (isMobile) {
+      setRightSiderCollapsed(true);
+      return;
+    }
+    if (preferenceKey && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`workspace-preference-${preferenceKey}`);
+        if (stored === 'expanded') {
+          setRightSiderCollapsed(false);
+          return;
+        }
+        if (stored === 'collapsed') {
+          setRightSiderCollapsed(true);
+          return;
+        }
+      } catch {
+        // ignore errors
+      }
+    }
+  }, [preferenceKey, isMobile]);
 
   // Mirror ref for collapse state
   const rightCollapsedRef = useRef(rightSiderCollapsed);

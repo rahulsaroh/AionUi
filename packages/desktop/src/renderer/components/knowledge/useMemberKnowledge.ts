@@ -43,6 +43,33 @@ export function useMemberKnowledge(memberKey?: string) {
     }
   }, [memberKey, refresh]);
 
+  useEffect(() => {
+    const unsubscribe = knowledgeRepo.onProgress((progressEvent) => {
+      setAllRepos((prev) =>
+        prev.map((repo) => {
+          if (repo.id !== progressEvent.repoId) return repo;
+          const nextSyncStatus =
+            progressEvent.phase === 'completed' ? 'idle' : progressEvent.phase === 'error' ? 'error' : 'syncing';
+          return {
+            ...repo,
+            syncStatus: nextSyncStatus,
+            syncError: progressEvent.error,
+            progress: progressEvent,
+          };
+        })
+      );
+      if (progressEvent.phase === 'completed') {
+        void knowledgeRepo.list().then((latest) => {
+          if (latest) setAllRepos(latest);
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   const assignedRepos = useMemo(() => {
     const idSet = new Set(assignedRepoIds);
     return allRepos.filter((r) => idSet.has(r.id));
@@ -85,7 +112,6 @@ export function useMemberKnowledge(memberKey?: string) {
   const addAndAssignRepo = useCallback(
     async (params: { gitUrl: string; ref?: string; authToken?: string; name?: string }) => {
       if (!memberKey) throw new Error('Missing memberKey');
-      setLoading(true);
       try {
         const urlParts = params.gitUrl.replace(/\.git$/, '').split('/');
         const defaultName = urlParts[urlParts.length - 1] || 'repo';
@@ -111,7 +137,10 @@ export function useMemberKnowledge(memberKey?: string) {
         });
 
         setAssignedRepoIds(nextIds);
-        await refresh();
+        setAllRepos((prev) => {
+          const exists = prev.some((r) => r.id === newRepo.id);
+          return exists ? prev.map((r) => (r.id === newRepo.id ? newRepo : r)) : [...prev, newRepo];
+        });
         return newRepo;
       } catch (err: unknown) {
         setError((err as Error).message || 'Failed to add and assign repo');

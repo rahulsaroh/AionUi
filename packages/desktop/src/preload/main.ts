@@ -203,6 +203,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   knowledgeRepoGetAssignment: (memberKey: string) => ipcRenderer.invoke('knowledgeRepo:getAssignment', memberKey),
   knowledgeRepoSetAssignment: (params: unknown) => ipcRenderer.invoke('knowledgeRepo:setAssignment', params),
   knowledgeRepoListAssignments: () => ipcRenderer.invoke('knowledgeRepo:listAssignments'),
+  onKnowledgeRepoProgress: (callback: (data: unknown) => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on('knowledgeRepo:progress', handler);
+    return () => {
+      ipcRenderer.off('knowledgeRepo:progress', handler);
+    };
+  },
   // Member Handbook APIs
   memberHandbookGetHandbookDir: () => ipcRenderer.invoke('memberHandbook:getHandbookDir'),
   memberHandbookSetHandbookDir: (dir: string) => ipcRenderer.invoke('memberHandbook:setHandbookDir', dir),

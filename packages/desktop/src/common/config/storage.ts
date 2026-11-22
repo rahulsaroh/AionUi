@@ -55,6 +55,14 @@ export interface IConfigStorageRefer {
   'system.notificationEnabled'?: boolean;
   // 定时任务完成时显示系统通知 / Show system notification when scheduled task completes
   'system.cronNotificationEnabled'?: boolean;
+  // 备份存储目录 / Directory where backups are saved
+  'system.backupDir'?: string;
+  // 是否启用自动备份 / Whether automatic periodic backup is enabled
+  'system.autoBackup'?: boolean;
+  // 自动备份间隔（小时） / Auto backup interval in hours
+  'system.autoBackupInterval'?: number;
+  // 上次备份时间戳（毫秒） / Last backup timestamp in ms
+  'system.lastBackupTime'?: number;
   // 阻止系统休眠以保证定时任务执行 / Prevent system sleep to ensure scheduled tasks run
   'system.keepAwake'?: boolean;
   // Automatically preview newly created Office files in the current workspace

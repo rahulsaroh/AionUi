@@ -2,10 +2,13 @@ import { act, render, screen } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const platform = vi.hoisted(() => ({ desktop: true, mac: false }));
+const platformMocks = vi.hoisted(() => ({
+  isElectronDesktopMock: vi.fn(() => true),
+  isMacOSMock: vi.fn(() => false),
+}));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }));
 vi.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: '/conversation/test', search: '', hash: '' }),
@@ -16,75 +19,77 @@ vi.mock('@/common', () => ({
 }));
 vi.mock('@/common/config/constants', () => ({ TEAM_MODE_ENABLED: false }));
 vi.mock('@renderer/pages/conversation/GroupedHistory/ConversationSearchPopover', () => ({ default: () => null }));
-vi.mock('@/renderer/components/layout/Titlebar/MobileConversationBrand', () => ({ default: () => null }));
-vi.mock('@/renderer/components/layout/WindowControls', () => ({
+vi.mock('@renderer/components/layout/Titlebar/MobileConversationBrand', () => ({ default: () => null }));
+vi.mock('@renderer/components/layout/WindowControls', () => ({
   default: () => <div data-testid='window-controls' />,
 }));
-vi.mock('@/renderer/hooks/context/LayoutContext', () => ({
-  useLayoutContext: () => ({ isMobile: false }),
+vi.mock('@renderer/hooks/context/LayoutContext', () => ({
+  useLayoutContext: () => ({
+    isMobile: false,
+    rightSiderCollapsed: true,
+    setRightSiderCollapsed: vi.fn(),
+  }),
 }));
-vi.mock('@/renderer/hooks/context/NavigationHistoryContext', () => ({
+vi.mock('@renderer/hooks/context/NavigationHistoryContext', () => ({
   useNavigationHistory: () => null,
 }));
-vi.mock('@/renderer/hooks/context/FeedbackContext', () => ({
+vi.mock('@renderer/hooks/context/FeedbackContext', () => ({
   useFeedback: () => ({ openFeedback: vi.fn() }),
 }));
-vi.mock('@/renderer/services/feedback/resolveFeedbackModule', () => ({
+vi.mock('@renderer/services/feedback/resolveFeedbackModule', () => ({
   resolveFeedbackModule: () => 'conversation-session',
 }));
-vi.mock('@/renderer/utils/platform', () => ({
-  isElectronDesktop: () => platform.desktop,
-  isMacOS: () => platform.mac,
+vi.mock('@renderer/utils/platform', () => ({
+  isElectronDesktop: platformMocks.isElectronDesktopMock,
+  isMacOS: platformMocks.isMacOSMock,
+}));
+// Mock useOrgStore to avoid i18n initialization
+vi.mock('@/renderer/pages/organization/store/useOrgStore', () => ({
+  useOrgStore: () => ({
+    activeScope: 'workplace',
+    setActiveScope: vi.fn(),
+  }),
 }));
 
 import Titlebar from '@/renderer/components/layout/Titlebar';
-import { WORKSPACE_STATE_EVENT } from '@/renderer/utils/workspace/workspaceEvents';
 
-describe('Titlebar workspace toggle', () => {
+describe('Titlebar right sidebar toggle', () => {
   beforeEach(() => {
-    platform.desktop = true;
-    platform.mac = false;
+    platformMocks.isElectronDesktopMock.mockReturnValue(true);
+    platformMocks.isMacOSMock.mockReturnValue(false);
   });
 
-  it('places the Windows workspace toggle directly after Bug Report', () => {
+  it('shows the right sidebar toggle on desktop', () => {
     render(<Titlebar workspaceAvailable />);
 
     const report = screen.getByRole('button', { name: 'conversation.welcome.quickActionFeedback' });
-    const workspace = screen.getByRole('button', { name: 'common.expandMore' });
+    const rightSidebarToggle = screen.getByRole('button', { name: 'common.expandMore' });
 
-    expect(report.nextElementSibling).toBe(workspace);
-    expect(workspace.nextElementSibling).toBe(screen.getByTestId('window-controls'));
+    // The right sidebar toggle should be after the feedback button
+    expect(report.nextElementSibling).toBe(rightSidebarToggle);
+    // The sync indicator should be after the right sidebar toggle
+    const syncIndicator = screen.getByText('Synced').closest('div');
+    expect(rightSidebarToggle.nextElementSibling).toBe(syncIndicator);
   });
 
   it.each([
     { runtime: 'macOS desktop', desktop: true, mac: true },
     { runtime: 'WebUI', desktop: false, mac: false },
-  ])('keeps the workspace toggle after Bug Report on $runtime', ({ desktop, mac }) => {
-    platform.desktop = desktop;
-    platform.mac = mac;
+  ])('shows the right sidebar toggle on $runtime', ({ desktop, mac }) => {
+    platformMocks.isElectronDesktopMock.mockReturnValue(desktop);
+    platformMocks.isMacOSMock.mockReturnValue(mac);
     render(<Titlebar workspaceAvailable />);
 
     const report = screen.getByRole('button', { name: 'conversation.welcome.quickActionFeedback' });
-    const workspace = screen.getByRole('button', { name: 'common.expandMore' });
+    const rightSidebarToggle = screen.getByRole('button', { name: 'common.expandMore' });
 
-    expect(report.nextElementSibling).toBe(workspace);
+    expect(report.nextElementSibling).toBe(rightSidebarToggle);
     expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument();
   });
 
-  it('updates the workspace action when the panel becomes expanded', () => {
-    render(<Titlebar workspaceAvailable />);
-
-    act(() => {
-      window.dispatchEvent(new CustomEvent(WORKSPACE_STATE_EVENT, { detail: { collapsed: false } }));
-    });
-
-    expect(screen.getByRole('button', { name: 'common.collapse' })).toBeInTheDocument();
-  });
-
-  it('omits the workspace toggle when no workspace is available', () => {
+  it('shows the right sidebar toggle regardless of workspaceAvailable prop', () => {
     render(<Titlebar workspaceAvailable={false} />);
 
-    expect(screen.queryByRole('button', { name: 'common.expandMore' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'common.collapse' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'common.expandMore' })).toBeInTheDocument();
   });
 });

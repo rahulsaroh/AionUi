@@ -95,6 +95,7 @@ import { registerPwa } from './services/registerPwa';
 import { ipcBridge } from '@/common';
 import { repairAllCronJobTimeZonesOnce } from '@renderer/pages/cron/repairCronJobTimeZone';
 import { bootstrapRendererConfig } from '@renderer/services/bootstrapRenderer';
+import { setupOrgToolBridgeListener } from '@renderer/pages/organization/store/orgToolExecutor';
 
 // Components and utilities
 import BackendStartingView from './components/layout/BackendStartingView';
@@ -345,6 +346,7 @@ const Main = () => {
 
   useEffect(() => {
     if (!ready) return;
+    setupOrgToolBridgeListener();
     void bootstrapRendererConfig().finally(() => setConfigReady(true));
   }, [ready]);
 

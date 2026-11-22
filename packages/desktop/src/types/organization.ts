@@ -149,6 +149,8 @@ export interface OrgProject {
   teamIds: string[];
   /** IDs of agents from the global member pool assigned to this project. */
   memberIds?: string[];
+  /** Origin of each project membership. `memberIds` is derived from these sources. */
+  memberSources?: Record<string, { direct?: boolean; teamIds?: string[] }>;
   goal?: string;
   description?: string;
   context?: {
@@ -160,6 +162,8 @@ export interface OrgProject {
     approvalPolicy?: OrgApprovalPolicy;
     /** Persisted per-project allowlist (mirrors OrgProject.allowlist). */
     allowlist?: string[];
+    /** Persisted membership provenance (mirrors OrgProject.memberSources). */
+    memberSources?: Record<string, { direct?: boolean; teamIds?: string[] }>;
   };
   /** All project folders available to the project agent. workspacePath remains the primary folder for legacy clients. */
   workspacePaths?: string[];
@@ -169,6 +173,8 @@ export interface OrgProject {
   workspacePath?: string | null;
   /** Underlying AionCore backend team ID (if backed by a real team) */
   backendTeamId?: string;
+  leadAssistantId?: string;
+  model?: OrgAgentModelConfig;
   /** App mode: 'workplace' or 'organization' - isolates data between modes */
   mode?: 'workplace' | 'organization';
   /** Per-project approval policy (Codex-style). Defaults to 'auto_edit'. */

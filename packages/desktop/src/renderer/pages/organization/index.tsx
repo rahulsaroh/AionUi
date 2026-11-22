@@ -15,7 +15,7 @@ import { OrgMasterFolderModal } from './components/OrgMasterFolderModal';
 import { useOrgStore } from './store/useOrgStore';
 
 export const OrganizationPage: React.FC = () => {
-  const { orgViewMode, hierarchy, projects, selectedProjectId, selectedTeamId } = useOrgStore();
+  const { orgViewMode, hierarchy, projects, selectedProjectId, selectedTeamId, selectedConversationId } = useOrgStore();
   const [masterModalDismissed, setMasterModalDismissed] = useState(false);
 
   const shouldShowMasterModal = !hierarchy.rootCeo.workspacePath && !masterModalDismissed;
@@ -43,6 +43,8 @@ export const OrganizationPage: React.FC = () => {
     <>
       {orgViewMode === 'canvas' ? (
         <OrganizationCanvasView />
+      ) : selectedConversationId ? (
+        <OrgChatView />
       ) : activeBackendTeamId && backendTeam ? (
         <TeamPage key={backendTeam.id} team={backendTeam} />
       ) : activeBackendTeamId && isTeamLoading ? (

@@ -71,6 +71,10 @@ vi.mock('@/common', () => ({
       restart: { invoke: restartMock },
       getStartOnBootStatus: { invoke: vi.fn(() => Promise.resolve({ success: false })) },
       getGpuStatus: { invoke: vi.fn(() => Promise.resolve({ success: false })) },
+      getBackupStatus: { invoke: vi.fn(() => Promise.resolve({ autoBackup: false, autoBackupInterval: 24 })) },
+      backupData: { invoke: vi.fn(() => Promise.resolve({ success: true })) },
+      restoreData: { invoke: vi.fn(() => Promise.resolve({ success: true })) },
+      setAutoBackup: { invoke: vi.fn(() => Promise.resolve()) },
     },
     systemSettings: {
       getCloseToTray: { invoke: vi.fn(() => Promise.resolve(false)) },

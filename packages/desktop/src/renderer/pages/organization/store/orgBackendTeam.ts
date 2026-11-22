@@ -16,6 +16,7 @@ export type CreateProjectBackendTeamParams = {
   workspacePath: string;
   description?: string;
   preferredAssistantId?: string;
+  preferredModel?: string | import('@/types/organization').OrgAgentModelConfig;
   masterRoot?: string | null;
   userId?: string;
 };
@@ -57,9 +58,10 @@ export async function pickLeadAssistant(preferredAssistantId?: string): Promise<
   const candidates = teamEligible.length > 0 ? teamEligible : assistants;
 
   const preferred =
-    candidates.find((a) => a.id.toLowerCase().includes('claude') || a.name.toLowerCase().includes('claude')) ||
-    candidates.find((a) => a.id.toLowerCase().includes('gemini') || a.name.toLowerCase().includes('gemini')) ||
+    candidates.find((a) => a.id.toLowerCase().includes('aion') || a.name.toLowerCase().includes('aion')) ||
     candidates.find((a) => a.id.toLowerCase().includes('lead') || a.name.toLowerCase().includes('manager')) ||
+    candidates.find((a) => a.id.toLowerCase().includes('gemini') || a.name.toLowerCase().includes('gemini')) ||
+    candidates.find((a) => a.id.toLowerCase().includes('claude') || a.name.toLowerCase().includes('claude')) ||
     candidates[0];
 
   return preferred;
@@ -91,10 +93,15 @@ export async function createProjectBackendTeam(params: CreateProjectBackendTeamP
   }
 
   const lead = await pickLeadAssistant(params.preferredAssistantId);
-  const model = await resolveDefaultTeamAgentModel({
-    assistant_id: lead.id,
-    assistant_backend: assistantRuntimeKey(lead),
-  });
+  let model: string;
+  if (params.preferredModel) {
+    model = typeof params.preferredModel === 'string' ? params.preferredModel : params.preferredModel.modelId;
+  } else {
+    model = await resolveDefaultTeamAgentModel({
+      assistant_id: lead.id,
+      assistant_backend: assistantRuntimeKey(lead),
+    });
+  }
 
   const agentInput: TeamAssistantInput = {
     role: 'leader',
