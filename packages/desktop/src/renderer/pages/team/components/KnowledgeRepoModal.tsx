@@ -35,6 +35,11 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
   const [repos, setRepos] = useState<KnowledgeRepo[]>([]);
   const [loading, setLoading] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [cloudSyncInfo, setCloudSyncInfo] = useState<{
+    isCloudSync: boolean;
+    folderName?: string;
+    warningMessage?: string;
+  } | null>(null);
   const [selectedChangesRepo, setSelectedChangesRepo] = useState<KnowledgeRepo | null>(null);
   const [selectedSetupRepo, setSelectedSetupRepo] = useState<KnowledgeRepo | null>(null);
   const [setupCommand, setSetupCommand] = useState<string>('');
@@ -48,8 +53,9 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
   const loadRepos = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await knowledgeRepo.list();
+      const [list, syncDetection] = await Promise.all([knowledgeRepo.list(), knowledgeRepo.isCloudSyncPath()]);
       setRepos(list);
+      setCloudSyncInfo(syncDetection.isCloudSync ? syncDetection : null);
     } catch (err: unknown) {
       Message.error((err as Error).message || 'Failed to load repos');
     } finally {
@@ -68,9 +74,10 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
       setRepos((prev) =>
         prev.map((r) => {
           if (r.id !== prog.repoId) return r;
+          const nextSyncStatus = prog.phase === 'completed' ? 'ready' : prog.phase === 'error' ? 'failed' : 'syncing';
           return {
             ...r,
-            syncStatus: prog.phase === 'completed' ? 'idle' : prog.phase === 'error' ? 'error' : 'syncing',
+            syncStatus: nextSyncStatus,
             syncError: prog.error,
             progress: prog,
           };
@@ -298,21 +305,37 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
         }
         if (record.syncStatus === 'needs_attention') {
           return (
-            <Tag color='gold' icon={<Attention />}>
-              {record.syncError || t('team.knowledgeRepos.status.needsAttention')}
-            </Tag>
+            <div className='flex flex-col gap-2px max-w-[220px]'>
+              <Tag color='gold' icon={<Attention />}>
+                {t('team.knowledgeRepos.status.needsAttention', { defaultValue: 'Needs Attention' })}
+              </Tag>
+              {record.syncError && (
+                <Typography.Text
+                  type='warning'
+                  className='text-11px break-all'
+                  ellipsis={{ rows: 2, showTooltip: true }}
+                >
+                  {record.syncError}
+                </Typography.Text>
+              )}
+            </div>
           );
         }
-        if (record.syncStatus === 'error') {
+        if (record.syncStatus === 'error' || record.syncStatus === 'failed') {
           return (
-            <Tag color='red' icon={<Close />}>
-              {record.syncError || t('team.knowledgeRepos.status.error')}
-            </Tag>
+            <div className='flex flex-col gap-2px max-w-[220px]'>
+              <Tag color='red' icon={<Close />}>
+                {t('team.knowledgeRepos.status.failed', { defaultValue: 'Failed' })}
+              </Tag>
+              <Typography.Text type='error' className='text-11px break-all' ellipsis={{ rows: 2, showTooltip: true }}>
+                {record.syncError || t('team.knowledgeRepos.status.error', { defaultValue: 'Sync error' })}
+              </Typography.Text>
+            </div>
           );
         }
         return (
           <Tag color='green' icon={<CheckOne />}>
-            {t('team.knowledgeRepos.status.idle')}
+            {t('team.knowledgeRepos.status.ready', { defaultValue: 'Ready' })}
           </Tag>
         );
       },
@@ -332,8 +355,14 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
           <Button size='mini' icon={<SettingConfig />} onClick={() => openEnvModal(record)}>
             {t('team.knowledgeRepos.envVars')}
           </Button>
-          <Button size='mini' icon={<Refresh />} onClick={() => handleUpdate(record.id)}>
-            {t('team.knowledgeRepos.updateNow')}
+          <Button
+            size='mini'
+            icon={<Refresh spin={record.syncStatus === 'syncing'} />}
+            onClick={() => handleUpdate(record.id)}
+          >
+            {record.syncStatus === 'failed' || record.syncStatus === 'error'
+              ? t('team.knowledgeRepos.retry', { defaultValue: 'Retry' })
+              : t('team.knowledgeRepos.updateNow', { defaultValue: 'Update' })}
           </Button>
           {record.previousCommitSha && (
             <Button size='mini' onClick={() => handleRollback(record.id)}>
@@ -363,6 +392,18 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
         }
         style={{ width: 920 }}
       >
+        {cloudSyncInfo?.isCloudSync && (
+          <Alert
+            type='warning'
+            showIcon
+            className='mb-12px'
+            title={t('team.knowledgeRepos.cloudSyncWarningTitle', { defaultValue: 'Cloud Storage Cache Detected' })}
+            content={t('team.knowledgeRepos.cloudSyncWarningMessage', {
+              folder: cloudSyncInfo.folderName || 'Cloud Drive',
+              defaultValue: `The knowledge cache is located in a ${cloudSyncInfo.folderName || 'cloud-synced'} folder. File locks and sync conflicts may cause clone or update failures. Change the cache directory in Settings.`,
+            })}
+          />
+        )}
         <Table
           rowKey='id'
           loading={loading}

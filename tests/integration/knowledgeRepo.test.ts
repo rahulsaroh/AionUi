@@ -18,6 +18,7 @@ import {
   knowledgeRepoGitService,
 } from '@/process/services/knowledgeRepo';
 import { isValidGitHttpsUrl, sanitizeGitRef } from '@/process/services/knowledgeRepo/knowledgeRepoGitService';
+import { detectCloudSyncPath } from '@/common/utils/cloudSyncDetector';
 
 const execFileAsync = promisify(execFile);
 
@@ -633,5 +634,165 @@ describe('Knowledge Repos Integration & Safety Tests', () => {
     // Removing member assignment cleans up key
     await service2.removeMemberAssignment(orgKey);
     expect(service2.getAssignment(orgKey)).toBeUndefined();
+  });
+
+  it('detects cloud-synced paths for Google Drive, OneDrive, Dropbox, and Box', () => {
+    // Google Drive
+    expect(detectCloudSyncPath('G:\\My Drive\\projects\\my-workspace').isCloudSync).toBe(true);
+    expect(detectCloudSyncPath('C:\\Users\\user\\Google Drive\\knowledge').isCloudSync).toBe(true);
+    expect(detectCloudSyncPath('/Users/user/Google Drive/repo').isCloudSync).toBe(true);
+
+    // OneDrive
+    expect(detectCloudSyncPath('C:\\Users\\user\\OneDrive - Company\\data').isCloudSync).toBe(true);
+
+    // Dropbox
+    expect(detectCloudSyncPath('C:\\Users\\user\\Dropbox\\repo').isCloudSync).toBe(true);
+
+    // Normal path outside cloud sync
+    const normalPath = path.join(os.homedir(), '.config', 'aionui', 'knowledge-repos');
+    expect(detectCloudSyncPath(normalPath).isCloudSync).toBe(false);
+  });
+
+  it('manages local cache directory override and defaults', async () => {
+    const customDir = path.join(tempDir, 'custom-knowledge-cache');
+    await service.setCacheDir(customDir);
+    expect(service.getCacheDir()).toBe(customDir);
+
+    const repoPath = service.getRepoCachePath('test-repo-1');
+    expect(repoPath).toBe(path.join(customDir, 'test-repo-1'));
+  });
+
+  it('saves and loads workspace manifest with assigned teammates and pinned commits', async () => {
+    const workspacePath = path.join(tempDir, 'workspace-drive');
+    await fs.mkdir(workspacePath, { recursive: true });
+
+    // Add a dummy repo to service
+    const repoFixture = {
+      id: 'repo-manifest-1',
+      name: 'Manifest Repo',
+      gitUrl: 'https://github.com/example/manifest-repo',
+      ref: 'main',
+      pinnedCommitSha: 'abc1234',
+      cachePath: service.getRepoCachePath('repo-manifest-1'),
+      syncStatus: 'ready' as const,
+      updatePolicy: 'pinned' as const,
+      trustStatus: 'trusted' as const,
+      manifest: { alwaysOnRules: [], onDemandSkills: [], setupFiles: [], estimatedTokens: 0 },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    (service as unknown as { repos: Map<string, typeof repoFixture> }).repos.set('repo-manifest-1', repoFixture);
+
+    const memberKey = 'team:team-video:lead';
+    await service.setAssignment(memberKey, { repoIds: ['repo-manifest-1'] });
+
+    await service.saveWorkspaceManifest(workspacePath);
+
+    // Verify manifest file exists in workspace
+    const manifestPath = path.join(workspacePath, 'knowledge-manifest.json');
+    const rawContent = await fs.readFile(manifestPath, 'utf-8');
+    const parsed = JSON.parse(rawContent);
+    expect(parsed.version).toBe(1);
+    expect(parsed.repos).toHaveLength(1);
+    expect(parsed.repos[0].url).toBe('https://github.com/example/manifest-repo');
+    expect(parsed.repos[0].branch).toBe('main');
+    expect(parsed.repos[0].pinnedCommit).toBe('abc1234');
+    expect(parsed.repos[0].followLatest).toBe(false);
+    expect(parsed.repos[0].assignedTeammates).toContain(memberKey);
+
+    // Verify loadWorkspaceManifest can load it back
+    const loaded = await service.loadWorkspaceManifest(workspacePath);
+    expect(loaded?.repos).toHaveLength(1);
+    expect(loaded?.repos[0].id).toBe('repo-manifest-1');
+  });
+
+  it('cleans stale index.lock and lock files in repo directory', async () => {
+    const testRepoDir = path.join(tempDir, 'lock-test-repo');
+    const gitDir = path.join(testRepoDir, '.git');
+    await fs.mkdir(gitDir, { recursive: true });
+
+    const lockFiles = [
+      path.join(gitDir, 'index.lock'),
+      path.join(gitDir, 'HEAD.lock'),
+      path.join(gitDir, 'shallow.lock'),
+    ];
+
+    for (const lock of lockFiles) {
+      await fs.writeFile(lock, 'dummy lock');
+    }
+
+    const removed = await knowledgeRepoGitService.cleanStaleLocks(testRepoDir);
+    expect(removed.length).toBe(3);
+
+    for (const lock of lockFiles) {
+      const exists = await fs
+        .access(lock)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
+    }
+  });
+
+  it('performs cloneToTempAndAtomicRename and shallow fetchAndResetHard', async () => {
+    const cacheRepoTarget = path.join(tempDir, 'cache-repos', 'cloned-repo');
+
+    // 1. cloneToTempAndAtomicRename
+    await knowledgeRepoGitService.cloneToTempAndAtomicRename({
+      gitUrl: remoteRepoDir,
+      ref: 'main',
+      targetDir: cacheRepoTarget,
+    });
+
+    const agentsMdPath = path.join(cacheRepoTarget, 'AGENTS.md');
+    const content = await fs.readFile(agentsMdPath, 'utf-8');
+    expect(content).toContain('OpenMontage');
+
+    // 2. Add new commit to remote fixture
+    const workDir = path.join(tempDir, 'remote-work');
+    await fs.writeFile(path.join(workDir, 'NEW_RULE.md'), '# New Rule Content\n');
+    await execFileAsync('git', ['-C', workDir, 'add', '.']);
+    await execFileAsync('git', ['-C', workDir, 'commit', '-m', 'Add NEW_RULE.md']);
+    await execFileAsync('git', ['-C', workDir, 'push', 'origin', 'HEAD:main']);
+
+    // 3. fetchAndResetHard
+    await knowledgeRepoGitService.fetchAndResetHard({
+      repoDir: cacheRepoTarget,
+      ref: 'main',
+    });
+
+    const newRuleContent = await fs.readFile(path.join(cacheRepoTarget, 'NEW_RULE.md'), 'utf-8');
+    expect(newRuleContent).toContain('New Rule Content');
+  });
+
+  it('reports per-repo status as ready on success and failed with reason on error', async () => {
+    // 1. Success case using local fixture git repo
+    const targetDir = service.getRepoCachePath('repo-status-success');
+    await knowledgeRepoGitService.syncRepoWithRetry({
+      gitUrl: remoteRepoDir,
+      ref: 'main',
+      targetDir,
+    });
+    expect(
+      await fs
+        .access(targetDir)
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(true);
+
+    // 2. Failure case with retry: invalid URL
+    let errorCaught = false;
+    try {
+      await knowledgeRepoGitService.syncRepoWithRetry({
+        gitUrl: 'https://invalid-non-existent-domain-404.com/fake/repo.git',
+        ref: 'main',
+        targetDir: path.join(tempDir, 'fail-target'),
+        maxRetries: 2,
+        initialBackoffMs: 50,
+      });
+    } catch (err: unknown) {
+      errorCaught = true;
+      expect((err as Error).message).toContain('Failed to sync repository after 2 attempts');
+    }
+    expect(errorCaught).toBe(true);
   });
 });

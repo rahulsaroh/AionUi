@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Tag, Tooltip } from '@arco-design/web-react';
-import { BookOne, Refresh, Attention, CheckOne } from '@icon-park/react';
+import { BookOne, Refresh, Attention, CheckOne, Close } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
 import { useMemberKnowledge } from './useMemberKnowledge';
 
@@ -46,18 +46,30 @@ export const KnowledgeChip: React.FC<KnowledgeChipProps> = ({
   }
 
   const repoNames = assignedRepos.map((r) => r.name).join(', ');
+  const failedRepo = assignedRepos.find((r) => r.syncStatus === 'failed' || r.syncStatus === 'error');
   const statusLabel =
     status === 'updating'
       ? t('team.knowledgeRepos.status.syncing', { defaultValue: 'Updating...' })
-      : status === 'needs_attention'
-        ? t('team.knowledgeRepos.status.needsAttention', { defaultValue: 'Needs attention' })
-        : t('team.knowledgeRepos.status.idle', { defaultValue: 'Up to date' });
+      : status === 'failed'
+        ? `${t('team.knowledgeRepos.status.failed', { defaultValue: 'Failed' })}${failedRepo?.syncError ? `: ${failedRepo.syncError}` : ''}`
+        : status === 'needs_attention'
+          ? t('team.knowledgeRepos.status.needsAttention', { defaultValue: 'Needs attention' })
+          : t('team.knowledgeRepos.status.ready', { defaultValue: 'Ready' });
 
-  const statusColor = status === 'updating' ? 'arcoblue' : status === 'needs_attention' ? 'orange' : 'green';
+  const statusColor =
+    status === 'updating'
+      ? 'arcoblue'
+      : status === 'failed'
+        ? 'red'
+        : status === 'needs_attention'
+          ? 'orange'
+          : 'green';
 
   const statusIcon =
     status === 'updating' ? (
       <Refresh theme='outline' size='12' className='animate-spin' />
+    ) : status === 'failed' ? (
+      <Close theme='outline' size='12' />
     ) : status === 'needs_attention' ? (
       <Attention theme='outline' size='12' />
     ) : (

@@ -215,15 +215,31 @@ export interface ElectronBridgeAPI {
     ref?: string;
     subpath?: string;
     authToken?: string;
+    workspacePath?: string;
   }) => Promise<import('../knowledgeRepo').KnowledgeRepo>;
   knowledgeRepoUpdate?: (id: string) => Promise<import('../knowledgeRepo').KnowledgeRepo>;
+  knowledgeRepoSyncRepo?: (id: string) => Promise<import('../knowledgeRepo').KnowledgeRepo>;
+  knowledgeRepoSyncWorkspace?: (params: {
+    workspacePath: string;
+    teammateKey?: string;
+  }) => Promise<import('../knowledgeRepo').KnowledgeRepo[]>;
+  knowledgeRepoSyncTeammate?: (params: {
+    memberKey: string;
+    workspacePath?: string;
+  }) => Promise<import('../knowledgeRepo').KnowledgeRepo[]>;
+  knowledgeRepoGetCacheDir?: () => Promise<string>;
+  knowledgeRepoSetCacheDir?: (dir: string) => Promise<string>;
+  knowledgeRepoOpenFolder?: () => Promise<boolean>;
+  knowledgeRepoIsCloudSyncPath?: (
+    targetPath?: string
+  ) => Promise<import('@/common/utils/cloudSyncDetector').CloudSyncDetection>;
   knowledgeRepoRollback?: (id: string) => Promise<import('../knowledgeRepo').KnowledgeRepo>;
   knowledgeRepoPin?: (params: { id: string; pin: boolean }) => Promise<import('../knowledgeRepo').KnowledgeRepo>;
   knowledgeRepoSetTrust?: (params: {
     id: string;
     trustStatus: import('../knowledgeRepo').KnowledgeRepoTrustStatus;
   }) => Promise<import('../knowledgeRepo').KnowledgeRepo>;
-  knowledgeRepoRemove?: (id: string) => Promise<void>;
+  knowledgeRepoRemove?: (params: string | { id: string; workspacePath?: string }) => Promise<void>;
   knowledgeRepoBuildInstructions?: (params: {
     memberName: string;
     rolePrompt?: string;
@@ -257,6 +273,7 @@ export interface ElectronBridgeAPI {
   knowledgeRepoSetAssignment?: (params: {
     memberKey: string;
     assignment: import('../knowledgeRepo').KnowledgeAssignment;
+    workspacePath?: string;
   }) => Promise<void>;
   knowledgeRepoListAssignments?: () => Promise<Record<string, import('../knowledgeRepo').KnowledgeAssignment>>;
   // Member Handbook APIs

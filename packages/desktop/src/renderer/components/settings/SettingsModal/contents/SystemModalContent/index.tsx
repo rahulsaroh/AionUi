@@ -5,7 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
-import { memberHandbook } from '@/common/adapter/ipcBridge';
+import { memberHandbook, knowledgeRepo } from '@/common/adapter/ipcBridge';
 import type { IGpuStatus, IStartOnBootStatus } from '@/common/adapter/ipcBridge';
 import { configService } from '@/common/config/configService';
 import { backfillMissingHandbooks } from '@/renderer/utils/memberHandbook/backfillHandbooks';
@@ -87,6 +87,12 @@ const SystemModalContent: React.FC = () => {
   const [restoring, setRestoring] = useState(false);
   const [handbookDir, setHandbookDir] = useState<string>('');
   const [backfillingHandbooks, setBackfillingHandbooks] = useState(false);
+  const [knowledgeRepoDir, setKnowledgeRepoDir] = useState<string>('');
+  const [knowledgeRepoCloudSync, setKnowledgeRepoCloudSync] = useState<{
+    isCloudSync: boolean;
+    folderName?: string;
+    warningMessage?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -152,6 +158,17 @@ const SystemModalContent: React.FC = () => {
           if (dir) {
             setHandbookDir(dir);
             form.setFieldValue('handbookDir', dir);
+          }
+        })
+        .catch(() => {});
+      knowledgeRepo
+        .getCacheDir()
+        .then(async (dir) => {
+          if (dir) {
+            setKnowledgeRepoDir(dir);
+            form.setFieldValue('knowledgeRepoDir', dir);
+            const syncInfo = await knowledgeRepo.isCloudSyncPath(dir);
+            setKnowledgeRepoCloudSync(syncInfo);
           }
         })
         .catch(() => {});
@@ -752,6 +769,47 @@ const SystemModalContent: React.FC = () => {
     }
   }, [t]);
 
+  const handleKnowledgeRepoDirChange = useCallback(
+    async (newDir: string) => {
+      try {
+        const updatedDir = await knowledgeRepo.setCacheDir(newDir);
+        setKnowledgeRepoDir(updatedDir);
+        form.setFieldValue('knowledgeRepoDir', updatedDir);
+        const syncInfo = await knowledgeRepo.isCloudSyncPath(updatedDir);
+        setKnowledgeRepoCloudSync(syncInfo);
+        Message.success(
+          t('settings.knowledgeRepoCacheDirSaved', { defaultValue: 'Knowledge repos cache directory updated' })
+        );
+      } catch (err) {
+        Message.error(
+          t('settings.knowledgeRepoCacheDirFailed', { defaultValue: 'Failed to update cache directory: ' }) +
+            String(err)
+        );
+      }
+    },
+    [form, t]
+  );
+
+  const handleOpenKnowledgeRepoFolder = useCallback(async () => {
+    try {
+      await knowledgeRepo.openFolder();
+    } catch {
+      Message.error(t('settings.openFolderFailed', { defaultValue: 'Failed to open folder' }));
+    }
+  }, [t]);
+
+  const handleCopyKnowledgeRepoPath = useCallback(async () => {
+    try {
+      const dir = knowledgeRepoDir || (await knowledgeRepo.getCacheDir());
+      if (dir) {
+        await navigator.clipboard.writeText(dir);
+        Message.success(t('settings.knowledgeRepoPathCopied', { defaultValue: 'Path copied to clipboard' }));
+      }
+    } catch {
+      Message.error(t('settings.knowledgeRepoCopyFailed', { defaultValue: 'Failed to copy path' }));
+    }
+  }, [knowledgeRepoDir, t]);
+
   return (
     <div className='flex flex-col h-full w-full'>
       {modalContextHolder}
@@ -909,6 +967,45 @@ const SystemModalContent: React.FC = () => {
                         </>
                       )}
                     </div>
+                  </div>
+                }
+              />
+              <DirInputItem
+                label={t('settings.knowledgeRepoCacheDir', { defaultValue: 'Knowledge Repos Cache Directory' })}
+                field='knowledgeRepoDir'
+                onCustomChange={handleKnowledgeRepoDirChange}
+                extra={
+                  <div className='flex flex-col gap-8px mt-6px text-12px text-t-secondary'>
+                    <div className='flex items-center justify-between'>
+                      <span>
+                        {t('settings.knowledgeRepoCacheDirDesc', {
+                          defaultValue:
+                            'Local cache folder for cloned knowledge repositories (<userData>/knowledge-repos by default)',
+                        })}
+                      </span>
+                      <div className='flex items-center gap-8px'>
+                        {isDesktop && (
+                          <>
+                            <Button size='mini' type='secondary' onClick={() => void handleOpenKnowledgeRepoFolder()}>
+                              {t('settings.openFolder', { defaultValue: 'Open folder' })}
+                            </Button>
+                            <Button size='mini' type='secondary' onClick={() => void handleCopyKnowledgeRepoPath()}>
+                              {t('settings.copyPath', { defaultValue: 'Copy path' })}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {knowledgeRepoCloudSync?.isCloudSync && (
+                      <Alert
+                        type='warning'
+                        content={t('settings.knowledgeRepoCloudSyncWarning', {
+                          defaultValue:
+                            'Warning: This path is inside a cloud-synced directory ({{folder}}). File locks and sync conflicts may cause clone or update failures.',
+                          folder: knowledgeRepoCloudSync.folderName || 'Cloud Storage',
+                        })}
+                      />
+                    )}
                   </div>
                 }
               />

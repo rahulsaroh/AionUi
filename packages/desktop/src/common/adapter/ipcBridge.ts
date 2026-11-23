@@ -2655,7 +2655,14 @@ export const knowledgeRepo = {
     }
     return undefined;
   },
-  add: async (params: { name: string; gitUrl: string; ref?: string; subpath?: string; authToken?: string }) => {
+  add: async (params: {
+    name: string;
+    gitUrl: string;
+    ref?: string;
+    subpath?: string;
+    authToken?: string;
+    workspacePath?: string;
+  }) => {
     if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoAdd) {
       return window.electronAPI.knowledgeRepoAdd(params);
     }
@@ -2666,6 +2673,51 @@ export const knowledgeRepo = {
       return window.electronAPI.knowledgeRepoUpdate(id);
     }
     throw new Error('Knowledge repos are only supported in desktop mode');
+  },
+  syncRepo: async (id: string) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoSyncRepo) {
+      return window.electronAPI.knowledgeRepoSyncRepo(id);
+    }
+    throw new Error('Knowledge repos are only supported in desktop mode');
+  },
+  syncWorkspace: async (params: { workspacePath: string; teammateKey?: string }) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoSyncWorkspace) {
+      return window.electronAPI.knowledgeRepoSyncWorkspace(params);
+    }
+    return [];
+  },
+  syncTeammate: async (params: { memberKey: string; workspacePath?: string }) => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoSyncTeammate) {
+      return window.electronAPI.knowledgeRepoSyncTeammate(params);
+    }
+    return [];
+  },
+  getCacheDir: async (): Promise<string> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoGetCacheDir) {
+      return window.electronAPI.knowledgeRepoGetCacheDir();
+    }
+    return '';
+  },
+  setCacheDir: async (dir: string): Promise<string> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoSetCacheDir) {
+      return window.electronAPI.knowledgeRepoSetCacheDir(dir);
+    }
+    throw new Error('Knowledge repos are only supported in desktop mode');
+  },
+  openFolder: async (): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoOpenFolder) {
+      return window.electronAPI.knowledgeRepoOpenFolder();
+    }
+    return false;
+  },
+  isCloudSyncPath: async (
+    targetPath?: string
+  ): Promise<import('@/common/utils/cloudSyncDetector').CloudSyncDetection> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoIsCloudSyncPath) {
+      return window.electronAPI.knowledgeRepoIsCloudSyncPath(targetPath);
+    }
+    const { detectCloudSyncPath } = await import('@/common/utils/cloudSyncDetector');
+    return detectCloudSyncPath(targetPath || '');
   },
   rollback: async (id: string) => {
     if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoRollback) {
@@ -2685,9 +2737,9 @@ export const knowledgeRepo = {
     }
     throw new Error('Knowledge repos are only supported in desktop mode');
   },
-  remove: async (id: string) => {
+  remove: async (params: string | { id: string; workspacePath?: string }) => {
     if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoRemove) {
-      return window.electronAPI.knowledgeRepoRemove(id);
+      return window.electronAPI.knowledgeRepoRemove(params);
     }
     throw new Error('Knowledge repos are only supported in desktop mode');
   },
@@ -2765,6 +2817,7 @@ export const knowledgeRepo = {
   setAssignment: async (params: {
     memberKey: string;
     assignment: import('../types/knowledgeRepo').KnowledgeAssignment;
+    workspacePath?: string;
   }): Promise<void> => {
     if (typeof window !== 'undefined' && window.electronAPI?.knowledgeRepoSetAssignment) {
       return window.electronAPI.knowledgeRepoSetAssignment(params);

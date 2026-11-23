@@ -5,3 +5,5 @@
  */
 
 export { uuid, parseError, resolveLocaleKey } from './utils';
+export { detectCloudSyncPath } from './cloudSyncDetector';
+export type { CloudSyncDetection, CloudSyncProvider } from './cloudSyncDetector';

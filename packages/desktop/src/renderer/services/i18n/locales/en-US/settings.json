@@ -1463,5 +1463,12 @@
   "memberHandbookOpenFailed": "Failed to open handbooks folder",
   "memberHandbookBackfillNone": "No members found to backfill",
   "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
-  "memberHandbookBackfillFailed": "Backfill failed: "
+  "memberHandbookBackfillFailed": "Backfill failed: ",
+  "knowledgeRepoCacheDir": "Knowledge Repos Cache Directory",
+  "knowledgeRepoCacheDirDesc": "Local cache folder for cloned knowledge repositories (<userData>/knowledge-repos by default)",
+  "knowledgeRepoCacheDirSaved": "Knowledge repos cache directory updated",
+  "knowledgeRepoCacheDirFailed": "Failed to update cache directory: ",
+  "knowledgeRepoPathCopied": "Path copied to clipboard",
+  "knowledgeRepoCopyFailed": "Failed to copy path",
+  "knowledgeRepoCloudSyncWarning": "Warning: This path is inside a cloud-synced directory ({{folder}}). File locks and sync conflicts may cause clone or update failures."
 }

@@ -16,7 +16,10 @@ import type {
   TeammateCapabilityCard,
   KnowledgeAssignment,
   KnowledgeRepoProgress,
+  WorkspaceKnowledgeManifest,
+  WorkspaceKnowledgeRepoEntry,
 } from '@/common/types/knowledgeRepo';
+import { detectCloudSyncPath, type CloudSyncDetection } from '@/common/utils/cloudSyncDetector';
 import { knowledgeRepoGitService } from './knowledgeRepoGitService';
 import { knowledgeRepoScanner } from './knowledgeRepoScanner';
 import { knowledgeRepoDiffGenerator } from './knowledgeRepoDiffGenerator';
@@ -38,7 +41,8 @@ export class KnowledgeRepoService {
   private syncTimer: NodeJS.Timeout | null = null;
   private intervalMs: number = DEFAULT_INTERVAL_MS;
   private isChecking: boolean = false;
-  private dataDir: string = '';
+  private defaultCacheDir: string = '';
+  private customCacheDir: string | null = null;
   private worktreesDir: string = '';
   private progressListeners: Set<(progress: KnowledgeRepoProgress) => void> = new Set();
 
@@ -48,19 +52,66 @@ export class KnowledgeRepoService {
 
   private initPaths(): void {
     if (typeof app !== 'undefined' && app.getPath) {
-      this.dataDir = path.join(app.getPath('userData'), 'knowledge_repos');
+      this.defaultCacheDir = path.join(app.getPath('userData'), 'knowledge-repos');
       this.worktreesDir = path.join(app.getPath('userData'), 'knowledge_worktrees');
     } else {
-      this.dataDir = path.join(process.cwd(), '.cache', 'knowledge_repos');
+      this.defaultCacheDir = path.join(process.cwd(), '.cache', 'knowledge-repos');
       this.worktreesDir = path.join(process.cwd(), '.cache', 'knowledge_worktrees');
     }
   }
 
+  get dataDir(): string {
+    return this.getCacheDir();
+  }
+
+  set dataDir(val: string) {
+    this.customCacheDir = val;
+  }
+
+  getCacheDir(): string {
+    return this.customCacheDir || this.defaultCacheDir;
+  }
+
+  async setCacheDir(newDir: string): Promise<string> {
+    const trimmed = (newDir || '').trim();
+    if (!trimmed) {
+      throw new Error('Cache directory cannot be empty');
+    }
+    this.customCacheDir = trimmed;
+    await fs.mkdir(trimmed, { recursive: true });
+    for (const repo of this.repos.values()) {
+      repo.cachePath = this.getRepoCachePath(repo.id);
+    }
+    await this.persistState();
+    return trimmed;
+  }
+
+  getRepoCachePath(repoId: string): string {
+    return path.join(this.getCacheDir(), repoId);
+  }
+
+  isCloudSyncPath(targetPath?: string): CloudSyncDetection {
+    const dir = targetPath || this.getCacheDir();
+    return detectCloudSyncPath(dir);
+  }
+
   async initialize(): Promise<void> {
-    await fs.mkdir(this.dataDir, { recursive: true });
+    await fs.mkdir(this.getCacheDir(), { recursive: true });
     await fs.mkdir(this.worktreesDir, { recursive: true });
     await this.loadPersistedState();
     this.startAutoUpdateTimer();
+    // On startup: background sync for all registered repos
+    void this.syncAllOnStartup();
+  }
+
+  async syncAllOnStartup(): Promise<void> {
+    for (const repo of this.repos.values()) {
+      try {
+        await this.syncRepo(repo.id);
+      } catch (err) {
+        console.error(`[KnowledgeRepo] Startup sync failed for ${repo.name}:`, err);
+      }
+    }
   }
 
   setAgentTaskRunning(repoIds: string[], isRunning: boolean): void {
@@ -126,13 +177,16 @@ export class KnowledgeRepoService {
     };
   }
 
-  async setAssignment(memberKey: string, assignment: KnowledgeAssignment): Promise<void> {
+  async setAssignment(memberKey: string, assignment: KnowledgeAssignment, workspacePath?: string): Promise<void> {
     const validRepoIds = (assignment.repoIds || []).filter((id) => this.repos.has(id));
     this.assignments.set(memberKey, {
       repoIds: validRepoIds,
       whenToUseHint: assignment.whenToUseHint,
     });
     await this.persistState();
+    if (workspacePath) {
+      await this.saveWorkspaceManifest(workspacePath);
+    }
   }
 
   listAssignments(): Record<string, KnowledgeAssignment> {
@@ -146,9 +200,12 @@ export class KnowledgeRepoService {
     return result;
   }
 
-  async removeMemberAssignment(memberKey: string): Promise<void> {
+  async removeMemberAssignment(memberKey: string, workspacePath?: string): Promise<void> {
     this.assignments.delete(memberKey);
     await this.persistState();
+    if (workspacePath) {
+      await this.saveWorkspaceManifest(workspacePath);
+    }
   }
 
   onProgress(listener: (progress: KnowledgeRepoProgress) => void): () => void {
@@ -180,9 +237,10 @@ export class KnowledgeRepoService {
     ref?: string;
     subpath?: string;
     authToken?: string;
+    workspacePath?: string;
   }): Promise<KnowledgeRepo> {
     const id = `k_repo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const cachePath = path.join(this.dataDir, id);
+    const cachePath = this.getRepoCachePath(id);
     const ref = params.ref || 'main';
 
     let hasAuthToken = false;
@@ -226,35 +284,53 @@ export class KnowledgeRepoService {
     this.repos.set(id, repo);
     await this.persistState();
 
+    if (params.workspacePath) {
+      await this.saveWorkspaceManifest(params.workspacePath);
+    }
+
     // Start background clone execution without blocking caller
     void this.executeBackgroundClone(id, params);
 
     return repo;
   }
 
-  private async executeBackgroundClone(
-    id: string,
-    params: {
-      name: string;
-      gitUrl: string;
-      ref?: string;
-      subpath?: string;
-      authToken?: string;
-    }
-  ): Promise<void> {
+  /**
+   * Sync a single repository according to Requirement 3:
+   * - If missing: git clone --depth 1 into a temp dir and atomically rename into place.
+   * - If present: git fetch --depth 1 and git reset --hard.
+   * - Clean stale index.lock files.
+   * - Retry up to 3 times with backoff.
+   * - Sets per-repo status to 'ready' (idle) or 'failed' with reason.
+   */
+  async syncRepo(id: string): Promise<KnowledgeRepo> {
     const repo = this.repos.get(id);
-    if (!repo) return;
+    if (!repo) throw new Error(`Repo not found: ${id}`);
 
-    const token = params.authToken || this.getDecryptedToken(id);
-    const ref = params.ref || 'main';
+    repo.cachePath = this.getRepoCachePath(id);
+    repo.syncStatus = 'syncing';
+    repo.syncError = undefined;
+    repo.lastCheckedAt = Date.now();
+
+    const initialProgress: KnowledgeRepoProgress = {
+      repoId: id,
+      phase: 'cloning',
+      percent: 5,
+      message: 'Connecting and syncing repository...',
+    };
+    repo.progress = initialProgress;
+    this.emitProgress(initialProgress);
+
+    const token = this.getDecryptedToken(id);
 
     try {
-      const currentCommitSha = await knowledgeRepoGitService.shallowClone(
-        params.gitUrl,
-        ref,
-        repo.cachePath,
-        token,
-        (percent, message) => {
+      const currentCommitSha = await knowledgeRepoGitService.syncRepoWithRetry({
+        gitUrl: repo.gitUrl,
+        ref: repo.ref || 'main',
+        targetDir: repo.cachePath,
+        updatePolicy: repo.updatePolicy === 'pinned' ? 'pinned' : 'follow-latest',
+        pinnedCommitSha: repo.pinnedCommitSha,
+        authToken: token,
+        onProgress: (percent, message) => {
           const liveRepo = this.repos.get(id);
           if (liveRepo) {
             const progress: KnowledgeRepoProgress = {
@@ -266,8 +342,8 @@ export class KnowledgeRepoService {
             liveRepo.progress = progress;
             this.emitProgress(progress);
           }
-        }
-      );
+        },
+      });
 
       // Scanning phase
       const scanProgress: KnowledgeRepoProgress = {
@@ -279,13 +355,17 @@ export class KnowledgeRepoService {
       repo.progress = scanProgress;
       this.emitProgress(scanProgress);
 
-      const manifest = await knowledgeRepoScanner.scan(repo.cachePath, params.subpath);
+      const manifest = await knowledgeRepoScanner.scan(repo.cachePath, repo.subpath);
 
+      if (repo.currentCommitSha && repo.currentCommitSha !== currentCommitSha) {
+        repo.previousCommitSha = repo.currentCommitSha;
+      }
       repo.manifest = manifest;
       repo.currentCommitSha = currentCommitSha;
-      repo.syncStatus = 'idle';
+      repo.syncStatus = 'ready';
       repo.syncError = undefined;
       repo.lastUpdatedAt = Date.now();
+
       const completedProgress: KnowledgeRepoProgress = {
         repoId: id,
         phase: 'completed',
@@ -296,8 +376,8 @@ export class KnowledgeRepoService {
       await this.persistState();
       this.emitProgress(completedProgress);
     } catch (err: unknown) {
-      const errorMsg = (err as Error).message || 'Failed to clone repository';
-      repo.syncStatus = 'error';
+      const errorMsg = (err as Error).message || 'Failed to sync repository';
+      repo.syncStatus = 'failed';
       repo.syncError = errorMsg;
       const errorProgress: KnowledgeRepoProgress = {
         repoId: id,
@@ -310,6 +390,181 @@ export class KnowledgeRepoService {
       await this.persistState();
       this.emitProgress(errorProgress);
     }
+
+    return repo;
+  }
+
+  private async executeBackgroundClone(
+    id: string,
+    params?: {
+      workspacePath?: string;
+    }
+  ): Promise<void> {
+    await this.syncRepo(id);
+    if (params?.workspacePath) {
+      await this.saveWorkspaceManifest(params.workspacePath);
+    }
+  }
+
+  /**
+   * Load workspace manifest: knowledge-manifest.json
+   */
+  async loadWorkspaceManifest(workspacePath: string): Promise<WorkspaceKnowledgeManifest | null> {
+    if (!workspacePath) return null;
+    const manifestPath = path.join(workspacePath, 'knowledge-manifest.json');
+    try {
+      const data = await fs.readFile(manifestPath, 'utf8');
+      const parsed = JSON.parse(data) as WorkspaceKnowledgeManifest;
+      if (parsed && Array.isArray(parsed.repos)) {
+        return parsed;
+      }
+    } catch {
+      // Manifest does not exist or unreadable
+    }
+    return null;
+  }
+
+  /**
+   * Save workspace manifest: knowledge-manifest.json
+   * Writes manifest atomically so cloud sync does not write partial files.
+   */
+  async saveWorkspaceManifest(workspacePath: string, manifest?: WorkspaceKnowledgeManifest): Promise<void> {
+    if (!workspacePath) return;
+    await fs.mkdir(workspacePath, { recursive: true });
+    const manifestPath = path.join(workspacePath, 'knowledge-manifest.json');
+
+    let toSave: WorkspaceKnowledgeManifest;
+    if (manifest) {
+      toSave = manifest;
+    } else {
+      const repoEntries: WorkspaceKnowledgeRepoEntry[] = [];
+      for (const repo of this.repos.values()) {
+        const teammates = Array.from(this.assignments.entries())
+          .filter(([_, assign]) => assign.repoIds.includes(repo.id))
+          .map(([memberKey]) => memberKey);
+
+        repoEntries.push({
+          id: repo.id,
+          name: repo.name,
+          url: repo.gitUrl,
+          branch: repo.ref,
+          updatePolicy: repo.updatePolicy === 'pinned' ? 'pinned' : 'follow-latest',
+          followLatest: repo.updatePolicy !== 'pinned',
+          pinnedCommit: repo.pinnedCommitSha,
+          teammates,
+          assignedTeammates: teammates,
+          subpath: repo.subpath,
+        });
+      }
+      toSave = {
+        version: 1,
+        repos: repoEntries,
+      };
+    }
+
+    const tempFile = path.join(
+      workspacePath,
+      `.knowledge-manifest.tmp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+    );
+    await fs.writeFile(tempFile, JSON.stringify(toSave, null, 2), 'utf8');
+    await fs.rename(tempFile, manifestPath);
+  }
+
+  /**
+   * Rebuild or sync cache from workspace manifest on any machine.
+   */
+  async syncWorkspace(workspacePath: string, options?: { teammateKey?: string }): Promise<KnowledgeRepo[]> {
+    const manifest = await this.loadWorkspaceManifest(workspacePath);
+    if (!manifest) return [];
+
+    const syncedRepos: KnowledgeRepo[] = [];
+
+    for (const entry of manifest.repos) {
+      const teammates = entry.teammates || entry.assignedTeammates || [];
+      if (options?.teammateKey && teammates.length > 0 && !teammates.includes(options.teammateKey)) {
+        continue;
+      }
+
+      let repo = this.repos.get(entry.id);
+      if (!repo) {
+        repo = {
+          id: entry.id,
+          name: entry.name || path.basename(entry.url, '.git'),
+          gitUrl: entry.url,
+          ref: entry.branch || 'main',
+          subpath: entry.subpath,
+          cachePath: this.getRepoCachePath(entry.id),
+          syncStatus: 'syncing',
+          updatePolicy: entry.updatePolicy === 'pinned' ? 'pinned' : 'auto',
+          pinnedCommitSha: entry.pinnedCommit,
+          trustStatus: 'trusted',
+          manifest: {
+            alwaysOnRules: [],
+            onDemandSkills: [],
+            setupFiles: [],
+            estimatedTokens: 0,
+          },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        this.repos.set(entry.id, repo);
+      } else {
+        repo.cachePath = this.getRepoCachePath(entry.id);
+        repo.ref = entry.branch || repo.ref || 'main';
+        if (entry.updatePolicy === 'pinned') {
+          repo.updatePolicy = 'pinned';
+          repo.pinnedCommitSha = entry.pinnedCommit;
+        } else if (entry.updatePolicy === 'follow-latest') {
+          repo.updatePolicy = 'auto';
+        }
+      }
+
+      if (entry.teammates && entry.teammates.length > 0) {
+        for (const tm of entry.teammates) {
+          const current = this.assignments.get(tm);
+          const repoIds = Array.from(new Set([...(current?.repoIds || []), entry.id]));
+          this.assignments.set(tm, {
+            repoIds,
+            whenToUseHint: entry.whenToUseHint || current?.whenToUseHint,
+          });
+        }
+      }
+
+      const synced = await this.syncRepo(entry.id);
+      syncedRepos.push(synced);
+    }
+
+    await this.persistState();
+    return syncedRepos;
+  }
+
+  /**
+   * On teammate load, sync each repo assigned to that teammate:
+   * Rebuilds from manifest if workspacePath provided, then syncs each assigned repo.
+   */
+  async syncTeammate(memberKey: string, workspacePath?: string): Promise<KnowledgeRepo[]> {
+    if (workspacePath) {
+      await this.syncWorkspace(workspacePath, { teammateKey: memberKey });
+    }
+
+    const assignment = this.getAssignment(memberKey);
+    if (!assignment || assignment.repoIds.length === 0) {
+      return [];
+    }
+
+    const results: KnowledgeRepo[] = [];
+    for (const repoId of assignment.repoIds) {
+      try {
+        const synced = await this.syncRepo(repoId);
+        results.push(synced);
+      } catch (err) {
+        console.error(`[KnowledgeRepo] Teammate sync error for repo ${repoId}:`, err);
+        const existing = this.repos.get(repoId);
+        if (existing) results.push(existing);
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -603,7 +858,7 @@ export class KnowledgeRepoService {
     return decrypted;
   }
 
-  async removeRepo(id: string): Promise<void> {
+  async removeRepo(id: string, workspacePath?: string): Promise<void> {
     const repo = this.repos.get(id);
     if (!repo) return;
     this.repos.delete(id);
@@ -624,6 +879,10 @@ export class KnowledgeRepoService {
       // Ignore directory removal failure
     }
     await this.persistState();
+
+    if (workspacePath) {
+      await this.saveWorkspaceManifest(workspacePath);
+    }
   }
 
   async checkAllRepos(): Promise<void> {
@@ -768,43 +1027,60 @@ export class KnowledgeRepoService {
   }
 
   private async loadPersistedState(): Promise<void> {
-    const stateFile = path.join(this.dataDir, 'repos.json');
-    try {
-      const data = await fs.readFile(stateFile, 'utf8');
-      const parsed = JSON.parse(data) as {
-        repos: KnowledgeRepo[];
-        tokens: Record<string, string>;
-        envVars: Record<string, Record<string, string>>;
-        assignments?: Record<string, KnowledgeAssignment>;
-      };
-      if (Array.isArray(parsed.repos)) {
-        for (const r of parsed.repos) {
-          this.repos.set(r.id, r);
+    const candidateDirs = [
+      this.getCacheDir(),
+      this.defaultCacheDir,
+      typeof app !== 'undefined' && app.getPath
+        ? path.join(app.getPath('userData'), 'knowledge_repos')
+        : path.join(process.cwd(), '.cache', 'knowledge_repos'),
+    ];
+
+    for (const dir of candidateDirs) {
+      const stateFile = path.join(dir, 'repos.json');
+      try {
+        const data = await fs.readFile(stateFile, 'utf8');
+        const parsed = JSON.parse(data) as {
+          cacheDir?: string | null;
+          repos: KnowledgeRepo[];
+          tokens: Record<string, string>;
+          envVars: Record<string, Record<string, string>>;
+          assignments?: Record<string, KnowledgeAssignment>;
+        };
+        if (parsed.cacheDir) {
+          this.customCacheDir = parsed.cacheDir;
         }
-      }
-      if (parsed.tokens) {
-        for (const [k, v] of Object.entries(parsed.tokens)) {
-          this.authTokens.set(k, v);
+        if (Array.isArray(parsed.repos)) {
+          for (const r of parsed.repos) {
+            r.cachePath = this.getRepoCachePath(r.id);
+            this.repos.set(r.id, r);
+          }
         }
-      }
-      if (parsed.envVars) {
-        for (const [k, v] of Object.entries(parsed.envVars)) {
-          this.repoEnvVars.set(k, v);
+        if (parsed.tokens) {
+          for (const [k, v] of Object.entries(parsed.tokens)) {
+            this.authTokens.set(k, v);
+          }
         }
-      }
-      if (parsed.assignments) {
-        for (const [k, v] of Object.entries(parsed.assignments)) {
-          this.assignments.set(k, v);
+        if (parsed.envVars) {
+          for (const [k, v] of Object.entries(parsed.envVars)) {
+            this.repoEnvVars.set(k, v);
+          }
         }
+        if (parsed.assignments) {
+          for (const [k, v] of Object.entries(parsed.assignments)) {
+            this.assignments.set(k, v);
+          }
+        }
+        break; // Loaded successfully
+      } catch {
+        // Try next candidate
       }
-    } catch {
-      // First run or missing state file
     }
   }
 
   private async persistState(): Promise<void> {
-    await fs.mkdir(this.dataDir, { recursive: true });
-    const stateFile = path.join(this.dataDir, 'repos.json');
+    const cacheDir = this.getCacheDir();
+    await fs.mkdir(cacheDir, { recursive: true });
+    const stateFile = path.join(cacheDir, 'repos.json');
     const tokensObj: Record<string, string> = {};
     for (const [k, v] of this.authTokens.entries()) {
       tokensObj[k] = v;
@@ -818,6 +1094,7 @@ export class KnowledgeRepoService {
       assignmentsObj[k] = v;
     }
     const payload = {
+      cacheDir: this.customCacheDir,
       repos: Array.from(this.repos.values()),
       tokens: tokensObj,
       envVars: envVarsObj,

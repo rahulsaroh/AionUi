@@ -1464,5 +1464,12 @@
   "memberHandbookOpenFailed": "打开手册文件夹失败",
   "memberHandbookBackfillNone": "未找到需要补全手册的成员",
   "memberHandbookBackfillSuccess": "补全完成：创建了 {{created}} 份，{{skipped}} 份已存在",
-  "memberHandbookBackfillFailed": "补全失败："
+  "memberHandbookBackfillFailed": "补全失败：",
+  "knowledgeRepoCacheDir": "知识库缓存目录",
+  "knowledgeRepoCacheDirDesc": "已克隆知识代码库的本地缓存目录（默认位于 <userData>/knowledge-repos）",
+  "knowledgeRepoCacheDirSaved": "知识库缓存目录已更新",
+  "knowledgeRepoCacheDirFailed": "更新知识库缓存目录失败：",
+  "knowledgeRepoPathCopied": "路径已复制到剪贴板",
+  "knowledgeRepoCopyFailed": "复制路径失败",
+  "knowledgeRepoCloudSyncWarning": "警告：该路径位于云同步文件夹（{{folder}}）中，文件锁定和同步冲突可能导致克隆或更新失败。"
 }

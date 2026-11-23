@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { knowledgeRepo } from '@/common/adapter/ipcBridge';
 import type { KnowledgeRepo } from '@/common/types/knowledgeRepo';
 
-export type KnowledgeUpdateStatus = 'none' | 'updating' | 'needs_attention' | 'up_to_date';
+export type KnowledgeUpdateStatus = 'none' | 'updating' | 'needs_attention' | 'up_to_date' | 'failed';
 
 export function useMemberKnowledge(memberKey?: string) {
   const [allRepos, setAllRepos] = useState<KnowledgeRepo[]>([]);
@@ -17,25 +17,35 @@ export function useMemberKnowledge(memberKey?: string) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!memberKey) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [repos, assignment] = await Promise.all([knowledgeRepo.list(), knowledgeRepo.getAssignment(memberKey)]);
-      setAllRepos(repos || []);
-      setAssignedRepoIds(assignment?.repoIds || []);
-      setWhenToUseHint(assignment?.whenToUseHint || '');
-    } catch (err: unknown) {
-      setError((err as Error).message || 'Failed to load knowledge');
-    } finally {
-      setLoading(false);
-    }
-  }, [memberKey]);
+  const refresh = useCallback(
+    async (shouldSyncTeammate: boolean = false) => {
+      if (!memberKey) return;
+      setLoading(true);
+      setError(null);
+      try {
+        if (shouldSyncTeammate) {
+          try {
+            await knowledgeRepo.syncTeammate({ memberKey });
+          } catch {
+            // Repo failures are recorded per-repo in syncStatus / syncError
+          }
+        }
+        const [repos, assignment] = await Promise.all([knowledgeRepo.list(), knowledgeRepo.getAssignment(memberKey)]);
+        setAllRepos(repos || []);
+        setAssignedRepoIds(assignment?.repoIds || []);
+        setWhenToUseHint(assignment?.whenToUseHint || '');
+      } catch (err: unknown) {
+        setError((err as Error).message || 'Failed to load knowledge');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [memberKey]
+  );
 
   useEffect(() => {
     if (memberKey) {
-      void refresh();
+      void refresh(true);
     } else {
       setAllRepos([]);
       setAssignedRepoIds([]);
@@ -49,7 +59,7 @@ export function useMemberKnowledge(memberKey?: string) {
         prev.map((repo) => {
           if (repo.id !== progressEvent.repoId) return repo;
           const nextSyncStatus =
-            progressEvent.phase === 'completed' ? 'idle' : progressEvent.phase === 'error' ? 'error' : 'syncing';
+            progressEvent.phase === 'completed' ? 'ready' : progressEvent.phase === 'error' ? 'failed' : 'syncing';
           return {
             ...repo,
             syncStatus: nextSyncStatus,
@@ -78,11 +88,10 @@ export function useMemberKnowledge(memberKey?: string) {
   const status: KnowledgeUpdateStatus = useMemo(() => {
     if (assignedRepos.length === 0) return 'none';
     if (assignedRepos.some((r) => r.syncStatus === 'syncing')) return 'updating';
-    if (
-      assignedRepos.some(
-        (r) => r.syncStatus === 'needs_attention' || r.syncStatus === 'error' || r.trustStatus === 'reapproval_required'
-      )
-    ) {
+    if (assignedRepos.some((r) => r.syncStatus === 'error' || r.syncStatus === 'failed')) {
+      return 'failed';
+    }
+    if (assignedRepos.some((r) => r.syncStatus === 'needs_attention' || r.trustStatus === 'reapproval_required')) {
       return 'needs_attention';
     }
     return 'up_to_date';

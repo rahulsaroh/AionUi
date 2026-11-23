@@ -52,6 +52,7 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
 
   const [selectedRepoIds, setSelectedRepoIds] = useState<string[]>([]);
   const [hint, setHint] = useState<string>('');
+  const [cloudSyncInfo, setCloudSyncInfo] = useState<{ isCloudSync: boolean; folderName?: string } | null>(null);
   const [trustApprovalRepo, setTrustApprovalRepo] = useState<KnowledgeRepo | null>(null);
   const [previewInstructions, setPreviewInstructions] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<Array<{ ruleA: string; ruleB: string; resolvedInFavorOf: string }>>([]);
@@ -82,6 +83,10 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
       setGithubRef('main');
       setGithubToken('');
       setIsAddingDoc(false);
+
+      void knowledgeRepo.isCloudSyncPath().then((detection) => {
+        setCloudSyncInfo(detection?.isCloudSync ? detection : null);
+      });
 
       if (memberKey) {
         void memberHandbook
@@ -301,6 +306,45 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
         confirmLoading={hookLoading}
       >
         <Form layout='vertical'>
+          {cloudSyncInfo?.isCloudSync && (
+            <Alert
+              type='warning'
+              showIcon
+              className='mb-12px'
+              title={t('team.knowledgeRepos.cloudSyncWarningTitle', { defaultValue: 'Cloud Storage Cache Detected' })}
+              content={t('team.knowledgeRepos.cloudSyncWarningMessage', {
+                folder: cloudSyncInfo.folderName || 'Cloud Drive',
+                defaultValue: `The knowledge cache is located in a ${cloudSyncInfo.folderName || 'cloud-synced'} folder. File locks and sync conflicts may cause clone or update failures. Change the cache directory in Settings.`,
+              })}
+            />
+          )}
+
+          {allRepos.filter(
+            (r) => selectedRepoIds.includes(r.id) && (r.syncStatus === 'failed' || r.syncStatus === 'error')
+          ).length > 0 && (
+            <Alert
+              type='error'
+              showIcon
+              className='mb-12px'
+              title={t('team.knowledgeRepos.failuresDetected', {
+                defaultValue: 'Some knowledge repositories failed to sync',
+              })}
+              content={
+                <ul className='m-0 ps-16px text-12px'>
+                  {allRepos
+                    .filter(
+                      (r) => selectedRepoIds.includes(r.id) && (r.syncStatus === 'failed' || r.syncStatus === 'error')
+                    )
+                    .map((r) => (
+                      <li key={r.id}>
+                        <strong>{r.name}</strong>: {r.syncError || 'Sync failed'}
+                      </li>
+                    ))}
+                </ul>
+              }
+            />
+          )}
+
           {conflicts.length > 0 && (
             <Alert
               type='warning'
@@ -347,7 +391,10 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                           {repo.manifest?.alwaysOnRules?.length || 0} rules,{' '}
                           {repo.manifest?.onDemandSkills?.length || 0} skills ({repo.ref})
                           {repo.syncStatus === 'syncing' ? ' • Syncing in background...' : ''}
-                          {repo.syncStatus === 'error' ? ' • Sync failed' : ''}
+                          {repo.syncStatus === 'error' || repo.syncStatus === 'failed'
+                            ? ` • Failed: ${repo.syncError || 'Sync failed'}`
+                            : ''}
+                          {repo.syncStatus === 'ready' || repo.syncStatus === 'idle' ? ' • Ready' : ''}
                           {repo.trustStatus === 'reapproval_required' ? ' • Re-approval needed' : ''}
                         </span>
 
@@ -361,7 +408,7 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                           </div>
                         )}
 
-                        {repo.syncStatus === 'error' && (
+                        {(repo.syncStatus === 'error' || repo.syncStatus === 'failed') && (
                           <div className='mt-6px w-full max-w-[420px]'>
                             <Progress percent={100} size='small' status='error' />
                             <div className='text-11px text-[color:var(--danger-6)] mt-2px break-words'>

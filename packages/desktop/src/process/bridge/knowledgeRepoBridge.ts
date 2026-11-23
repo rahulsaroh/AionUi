@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, shell } from 'electron';
 import { knowledgeRepoService } from '../services/knowledgeRepo';
 import type { KnowledgeRepo } from '@/common/types/knowledgeRepo';
 
@@ -42,6 +42,7 @@ export function registerKnowledgeRepoBridge(): void {
         ref?: string;
         subpath?: string;
         authToken?: string;
+        workspacePath?: string;
       }
     ) => {
       return knowledgeRepoService.addRepo(params);
@@ -50,6 +51,45 @@ export function registerKnowledgeRepoBridge(): void {
 
   ipcMain.handle('knowledgeRepo:update', async (_event, id: string) => {
     return knowledgeRepoService.updateRepo(id);
+  });
+
+  ipcMain.handle('knowledgeRepo:syncRepo', async (_event, id: string) => {
+    return knowledgeRepoService.syncRepo(id);
+  });
+
+  ipcMain.handle(
+    'knowledgeRepo:syncWorkspace',
+    async (_event, params: { workspacePath: string; teammateKey?: string }) => {
+      return knowledgeRepoService.syncWorkspace(params.workspacePath, { teammateKey: params.teammateKey });
+    }
+  );
+
+  ipcMain.handle(
+    'knowledgeRepo:syncTeammate',
+    async (_event, params: { memberKey: string; workspacePath?: string }) => {
+      return knowledgeRepoService.syncTeammate(params.memberKey, params.workspacePath);
+    }
+  );
+
+  ipcMain.handle('knowledgeRepo:getCacheDir', async () => {
+    return knowledgeRepoService.getCacheDir();
+  });
+
+  ipcMain.handle('knowledgeRepo:setCacheDir', async (_event, dir: string) => {
+    return knowledgeRepoService.setCacheDir(dir);
+  });
+
+  ipcMain.handle('knowledgeRepo:openFolder', async () => {
+    const dir = knowledgeRepoService.getCacheDir();
+    if (shell && shell.openPath) {
+      await shell.openPath(dir);
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.handle('knowledgeRepo:isCloudSyncPath', async (_event, targetPath?: string) => {
+    return knowledgeRepoService.isCloudSyncPath(targetPath);
   });
 
   ipcMain.handle('knowledgeRepo:rollback', async (_event, id: string) => {
@@ -67,8 +107,10 @@ export function registerKnowledgeRepoBridge(): void {
     }
   );
 
-  ipcMain.handle('knowledgeRepo:remove', async (_event, id: string) => {
-    return knowledgeRepoService.removeRepo(id);
+  ipcMain.handle('knowledgeRepo:remove', async (_event, params: string | { id: string; workspacePath?: string }) => {
+    const id = typeof params === 'string' ? params : params.id;
+    const workspacePath = typeof params === 'string' ? undefined : params.workspacePath;
+    return knowledgeRepoService.removeRepo(id, workspacePath);
   });
 
   ipcMain.handle(
@@ -142,9 +184,10 @@ export function registerKnowledgeRepoBridge(): void {
       params: {
         memberKey: string;
         assignment: { repoIds: string[]; whenToUseHint?: string };
+        workspacePath?: string;
       }
     ) => {
-      return knowledgeRepoService.setAssignment(params.memberKey, params.assignment);
+      return knowledgeRepoService.setAssignment(params.memberKey, params.assignment, params.workspacePath);
     }
   );
 

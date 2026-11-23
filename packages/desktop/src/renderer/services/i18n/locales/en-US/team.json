@@ -499,10 +499,17 @@
     "commit": "Commit",
     "status": {
       "idle": "Up to date",
+      "ready": "Ready",
       "syncing": "Syncing...",
       "error": "Sync error",
+      "failed": "Failed",
       "needsAttention": "Needs attention"
     },
+    "retry": "Retry",
+    "cloudSyncWarningTitle": "Cloud Storage Cache Detected",
+    "cloudSyncWarningMessage": "The knowledge cache is located in a {{folder}} folder. File locks and sync conflicts may cause clone or update failures. Change the cache directory in Settings.",
+    "failuresDetected": "Some knowledge repositories failed to sync:",
+    "documentKnowledge": "Document Knowledge",
     "trust": {
       "untrusted": "Untrusted",
       "trusted": "Trusted",

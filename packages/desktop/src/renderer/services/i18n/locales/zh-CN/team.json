@@ -409,10 +409,17 @@
     "commit": "提交",
     "status": {
       "idle": "已是最新",
+      "ready": "就绪",
       "syncing": "同步中...",
       "error": "同步失败",
+      "failed": "同步失败",
       "needsAttention": "需要注意"
     },
+    "retry": "重试",
+    "cloudSyncWarningTitle": "检测到知识库缓存位于云同步目录",
+    "cloudSyncWarningMessage": "知识库缓存目录位于 {{folder}} 同步文件夹中。文件锁定与同步冲突可能导致克隆或更新失败。建议在系统设置中修改缓存目录。",
+    "failuresDetected": "部分知识库同步失败：",
+    "documentKnowledge": "文档知识",
     "trust": {
       "untrusted": "未信任",
       "trusted": "已信任",

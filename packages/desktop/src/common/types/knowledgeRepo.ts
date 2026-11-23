@@ -4,7 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type KnowledgeRepoSyncStatus = 'idle' | 'syncing' | 'error' | 'needs_attention';
+export type KnowledgeRepoSyncStatus = 'idle' | 'ready' | 'syncing' | 'error' | 'failed' | 'needs_attention';
+
+export type WorkspaceKnowledgeRepoEntry = {
+  id: string;
+  name?: string;
+  url: string; // repo URL
+  branch?: string; // branch or tag; default = 'main'
+  updatePolicy?: 'follow-latest' | 'pinned'; // follow-latest or pinned commit
+  followLatest?: boolean;
+  pinnedCommit?: string;
+  teammates?: string[]; // which teammate uses it (memberSlotId or memberKey)
+  assignedTeammates?: string[];
+  whenToUseHint?: string;
+  subpath?: string;
+};
+
+export type WorkspaceKnowledgeManifest = {
+  version: number;
+  repos: WorkspaceKnowledgeRepoEntry[];
+};
 
 export type KnowledgeRepoTrustStatus = 'untrusted' | 'trusted' | 'reapproval_required';
 
