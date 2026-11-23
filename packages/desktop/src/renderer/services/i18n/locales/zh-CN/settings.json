@@ -1466,7 +1466,7 @@
   "memberHandbookBackfillSuccess": "补全完成：创建了 {{created}} 份，{{skipped}} 份已存在",
   "memberHandbookBackfillFailed": "补全失败：",
   "knowledgeRepoCacheDir": "知识库缓存目录",
-  "knowledgeRepoCacheDirDesc": "已克隆知识代码库的本地缓存目录（默认位于 <userData>/knowledge-repos）",
+  "knowledgeRepoCacheDirDesc": "已克隆知识代码库的本地缓存目录（默认位于 <dataDir>/knowledge-repos）",
   "knowledgeRepoCacheDirSaved": "知识库缓存目录已更新",
   "knowledgeRepoCacheDirFailed": "更新知识库缓存目录失败：",
   "knowledgeRepoPathCopied": "路径已复制到剪贴板",

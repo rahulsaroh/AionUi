@@ -60,13 +60,19 @@ describe('autoBackupService', () => {
     }
   });
 
-  it('performs complete backup of database, org database, config, and auth files', async () => {
+  it('performs complete backup of database, org database, config, auth files, and knowledge repos', async () => {
     // Setup test data
     fs.writeFileSync(path.join(testDirs.dataDir, 'aionui-backend.db'), 'chat-database-content');
     fs.writeFileSync(path.join(testDirs.dataDir, 'aionui-backend.db-wal'), 'wal-content');
     fs.writeFileSync(path.join(testDirs.dataDir, 'aionui.db'), 'org-database-content');
     fs.writeFileSync(path.join(testDirs.configDir, 'config.json'), '{"theme":"dark"}');
     fs.writeFileSync(path.join(testDirs.userDataDir, 'auth.enc'), 'secret-tokens');
+
+    // Setup knowledge repos in app data directory
+    const repoDir = path.join(testDirs.userDataDir, 'knowledge-repos', 'test-repo');
+    fs.mkdirSync(repoDir, { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'AGENTS.md'), '# Knowledge Rules');
+    fs.writeFileSync(path.join(testDirs.userDataDir, 'knowledge-repos', 'repos.json'), '{"repos":[]}');
 
     const result = await performBackup(testDirs.backupTargetDir);
     expect(result.success).toBe(true);
@@ -79,24 +85,33 @@ describe('autoBackupService', () => {
     expect(fs.readFileSync(path.join(backupDir, 'aionui.db'), 'utf8')).toBe('org-database-content');
     expect(fs.readFileSync(path.join(backupDir, 'config', 'config.json'), 'utf8')).toBe('{"theme":"dark"}');
     expect(fs.readFileSync(path.join(backupDir, 'auth.enc'), 'utf8')).toBe('secret-tokens');
+    expect(fs.readFileSync(path.join(backupDir, 'knowledge-repos', 'test-repo', 'AGENTS.md'), 'utf8')).toBe(
+      '# Knowledge Rules'
+    );
+    expect(fs.readFileSync(path.join(backupDir, 'knowledge-repos', 'repos.json'), 'utf8')).toBe('{"repos":[]}');
 
     const manifestRaw = fs.readFileSync(path.join(backupDir, 'backup-manifest.json'), 'utf8');
     const manifest = JSON.parse(manifestRaw);
     expect(manifest.version).toBe(1);
     expect(manifest.items).toContain('aionui-backend.db');
     expect(manifest.items).toContain('aionui.db');
+    expect(manifest.items).toContain('knowledge-repos');
   });
 
-  it('restores database and settings from a backup snapshot folder', async () => {
+  it('restores database, settings, and knowledge repos from a backup snapshot folder', async () => {
     // 1. Create a backup snapshot folder
     const snapshotDir = path.join(testDirs.backupTargetDir, 'aionui-backup-20261122_120000');
     fs.mkdirSync(snapshotDir, { recursive: true });
     fs.mkdirSync(path.join(snapshotDir, 'config'), { recursive: true });
+    const snapshotKnowledgeRepo = path.join(snapshotDir, 'knowledge-repos', 'restored-repo');
+    fs.mkdirSync(snapshotKnowledgeRepo, { recursive: true });
 
     fs.writeFileSync(path.join(snapshotDir, 'aionui-backend.db'), 'restored-chat-content');
     fs.writeFileSync(path.join(snapshotDir, 'aionui.db'), 'restored-org-content');
     fs.writeFileSync(path.join(snapshotDir, 'config', 'config.json'), '{"restored":true}');
     fs.writeFileSync(path.join(snapshotDir, 'auth.enc'), 'restored-auth');
+    fs.writeFileSync(path.join(snapshotKnowledgeRepo, 'AGENTS.md'), '# Restored Knowledge');
+    fs.writeFileSync(path.join(snapshotDir, 'knowledge-repos', 'repos.json'), '{"repos":[{"id":"restored-repo"}]}');
 
     // 2. Perform restore
     const res = await restoreBackup(snapshotDir);
@@ -107,6 +122,12 @@ describe('autoBackupService', () => {
     expect(fs.readFileSync(path.join(testDirs.dataDir, 'aionui.db'), 'utf8')).toBe('restored-org-content');
     expect(fs.readFileSync(path.join(testDirs.configDir, 'config.json'), 'utf8')).toBe('{"restored":true}');
     expect(fs.readFileSync(path.join(testDirs.userDataDir, 'auth.enc'), 'utf8')).toBe('restored-auth');
+    expect(
+      fs.readFileSync(path.join(testDirs.userDataDir, 'knowledge-repos', 'restored-repo', 'AGENTS.md'), 'utf8')
+    ).toBe('# Restored Knowledge');
+    expect(fs.readFileSync(path.join(testDirs.userDataDir, 'knowledge-repos', 'repos.json'), 'utf8')).toBe(
+      '{"repos":[{"id":"restored-repo"}]}'
+    );
   });
 
   it('restores from a parent directory by finding the newest backup snapshot', async () => {

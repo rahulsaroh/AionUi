@@ -20,6 +20,7 @@ import type {
   WorkspaceKnowledgeRepoEntry,
 } from '@/common/types/knowledgeRepo';
 import { detectCloudSyncPath, type CloudSyncDetection } from '@/common/utils/cloudSyncDetector';
+import { getUserDataDir } from '@/common/platform/userDataPath';
 import { knowledgeRepoGitService } from './knowledgeRepoGitService';
 import { knowledgeRepoScanner } from './knowledgeRepoScanner';
 import { knowledgeRepoDiffGenerator } from './knowledgeRepoDiffGenerator';
@@ -51,12 +52,29 @@ export class KnowledgeRepoService {
   }
 
   private initPaths(): void {
-    if (typeof app !== 'undefined' && app.getPath) {
-      this.defaultCacheDir = path.join(app.getPath('userData'), 'knowledge-repos');
-      this.worktreesDir = path.join(app.getPath('userData'), 'knowledge_worktrees');
-    } else {
-      this.defaultCacheDir = path.join(process.cwd(), '.cache', 'knowledge-repos');
-      this.worktreesDir = path.join(process.cwd(), '.cache', 'knowledge_worktrees');
+    this.defaultCacheDir = this.getDefaultCacheDir();
+    this.worktreesDir = this.getWorktreesDir();
+  }
+
+  getDefaultCacheDir(): string {
+    try {
+      return path.join(getUserDataDir(), 'knowledge-repos');
+    } catch {
+      if (typeof app !== 'undefined' && app?.getPath) {
+        return path.join(app.getPath('userData'), 'knowledge-repos');
+      }
+      return path.join(process.cwd(), '.cache', 'knowledge-repos');
+    }
+  }
+
+  getWorktreesDir(): string {
+    try {
+      return path.join(getUserDataDir(), 'knowledge_worktrees');
+    } catch {
+      if (typeof app !== 'undefined' && app?.getPath) {
+        return path.join(app.getPath('userData'), 'knowledge_worktrees');
+      }
+      return path.join(process.cwd(), '.cache', 'knowledge_worktrees');
     }
   }
 
@@ -69,7 +87,26 @@ export class KnowledgeRepoService {
   }
 
   getCacheDir(): string {
-    return this.customCacheDir || this.defaultCacheDir;
+    return this.customCacheDir || this.getDefaultCacheDir();
+  }
+
+  async resetCacheDir(): Promise<string> {
+    this.customCacheDir = null;
+    const defaultDir = this.getDefaultCacheDir();
+    await fs.mkdir(defaultDir, { recursive: true });
+    for (const repo of this.repos.values()) {
+      repo.cachePath = this.getRepoCachePath(repo.id);
+    }
+    await this.persistState();
+    return defaultDir;
+  }
+
+  async reload(): Promise<void> {
+    this.repos.clear();
+    this.authTokens.clear();
+    this.repoEnvVars.clear();
+    this.assignments.clear();
+    await this.loadPersistedState();
   }
 
   async setCacheDir(newDir: string): Promise<string> {
@@ -1027,13 +1064,23 @@ export class KnowledgeRepoService {
   }
 
   private async loadPersistedState(): Promise<void> {
-    const candidateDirs = [
-      this.getCacheDir(),
-      this.defaultCacheDir,
-      typeof app !== 'undefined' && app.getPath
-        ? path.join(app.getPath('userData'), 'knowledge_repos')
-        : path.join(process.cwd(), '.cache', 'knowledge_repos'),
-    ];
+    const defaultDir = this.getDefaultCacheDir();
+    const candidateDirs: string[] = [];
+    if (this.customCacheDir) {
+      candidateDirs.push(this.customCacheDir);
+    } else {
+      candidateDirs.push(defaultDir);
+      try {
+        candidateDirs.push(path.join(getUserDataDir(), 'knowledge_repos'));
+      } catch {
+        // ignore
+      }
+      if (typeof app !== 'undefined' && app.getPath) {
+        candidateDirs.push(path.join(app.getPath('userData'), 'knowledge_repos'));
+      } else {
+        candidateDirs.push(path.join(process.cwd(), '.cache', 'knowledge_repos'));
+      }
+    }
 
     for (const dir of candidateDirs) {
       const stateFile = path.join(dir, 'repos.json');
@@ -1046,7 +1093,7 @@ export class KnowledgeRepoService {
           envVars: Record<string, Record<string, string>>;
           assignments?: Record<string, KnowledgeAssignment>;
         };
-        if (parsed.cacheDir) {
+        if (parsed.cacheDir && parsed.cacheDir !== defaultDir) {
           this.customCacheDir = parsed.cacheDir;
         }
         if (Array.isArray(parsed.repos)) {

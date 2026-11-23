@@ -141,6 +141,20 @@ export function initApplicationBridgeCore(): void {
             }
           }
         }
+
+        // Also copy knowledge repositories and member handbooks to the new data directory
+        const extraDirs = ['knowledge-repos', 'knowledge_repos', 'member-handbooks'];
+        for (const dirName of extraDirs) {
+          const srcDir = path.join(userDataDir, dirName);
+          const destDir = path.join(safeDataDir, dirName);
+          if (fs.existsSync(srcDir) && path.resolve(srcDir) !== path.resolve(destDir)) {
+            try {
+              await copyDirectoryRecursively(srcDir, destDir);
+            } catch (err) {
+              console.warn(`[applicationBridgeCore] Could not copy ${dirName}:`, err);
+            }
+          }
+        }
       }
 
       // Persist the custom data directory setting so Electron uses it on every startup

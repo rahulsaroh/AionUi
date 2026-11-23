@@ -115,16 +115,43 @@ export async function performBackup(targetDir?: string): Promise<IBackupResult> 
       }
     }
 
-    // 5. Back up knowledge repository metadata and member handbooks
-    const knowledgeReposFile = path.join(userDataDir, 'knowledge_repos', 'repos.json');
-    if (fs.existsSync(knowledgeReposFile)) {
+    // 5. Back up knowledge repositories (cloned repos, git data, and metadata) and member handbooks
+    const knowledgeReposDir = path.join(userDataDir, 'knowledge-repos');
+    let customKnowledgeDir: string | undefined;
+    try {
+      const { knowledgeRepoService } = await import('@/process/services/knowledgeRepo');
+      const activeCacheDir = knowledgeRepoService.getCacheDir();
+      if (activeCacheDir && path.resolve(activeCacheDir) !== path.resolve(knowledgeReposDir)) {
+        customKnowledgeDir = activeCacheDir;
+      }
+    } catch {
+      // ignore
+    }
+
+    const targetSourceDir = fs.existsSync(knowledgeReposDir)
+      ? knowledgeReposDir
+      : customKnowledgeDir && fs.existsSync(customKnowledgeDir)
+        ? customKnowledgeDir
+        : undefined;
+
+    if (targetSourceDir) {
       try {
-        const destKnowledgeDir = path.join(backupSubdir, 'knowledge_repos');
-        await fs.promises.mkdir(destKnowledgeDir, { recursive: true });
-        await fs.promises.copyFile(knowledgeReposFile, path.join(destKnowledgeDir, 'repos.json'));
-        backedUpItems.push('knowledge_repos/repos.json');
+        const destKnowledgeDir = path.join(backupSubdir, 'knowledge-repos');
+        await copyDirectoryRecursively(targetSourceDir, destKnowledgeDir);
+        backedUpItems.push('knowledge-repos');
       } catch (err) {
-        console.warn('[AutoBackup] Could not copy knowledge_repos/repos.json:', err);
+        console.warn('[AutoBackup] Could not copy knowledge-repos:', err);
+      }
+    }
+
+    const legacyKnowledgeDir = path.join(userDataDir, 'knowledge_repos');
+    if (fs.existsSync(legacyKnowledgeDir)) {
+      try {
+        const destLegacyDir = path.join(backupSubdir, 'knowledge_repos');
+        await copyDirectoryRecursively(legacyKnowledgeDir, destLegacyDir);
+        backedUpItems.push('knowledge_repos');
+      } catch (err) {
+        console.warn('[AutoBackup] Could not copy knowledge_repos:', err);
       }
     }
 
@@ -290,6 +317,31 @@ export async function restoreBackup(backupPath?: string): Promise<IRestoreResult
     }
 
     // 5. Restore knowledge repo metadata and member handbooks if present
+    const srcKnowledgeRepos = path.join(snapshotDir, 'knowledge-repos');
+    if (fs.existsSync(srcKnowledgeRepos)) {
+      try {
+        let destKnowledgeDir = path.join(userDataDir, 'knowledge-repos');
+        try {
+          const { knowledgeRepoService } = await import('@/process/services/knowledgeRepo');
+          const activeCache = knowledgeRepoService.getCacheDir();
+          if (activeCache) {
+            destKnowledgeDir = activeCache;
+          }
+        } catch {
+          // ignore
+        }
+        await copyDirectoryRecursively(srcKnowledgeRepos, destKnowledgeDir);
+        try {
+          const { knowledgeRepoService } = await import('@/process/services/knowledgeRepo');
+          await knowledgeRepoService.reload();
+        } catch {
+          // ignore
+        }
+      } catch (err) {
+        console.warn('[AutoBackup] Could not restore knowledge-repos:', err);
+      }
+    }
+
     const srcKnowledge = path.join(snapshotDir, 'knowledge_repos', 'repos.json');
     if (fs.existsSync(srcKnowledge)) {
       try {

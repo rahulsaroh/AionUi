@@ -631,6 +631,7 @@ export function scanAndPrepareDataDir(targetDataDir: string): void {
   const crashDir = path.join(targetDataDir, 'crashDumps');
   const partitionsDir = path.join(targetDataDir, 'Partitions');
   const browserPartitionDir = path.join(partitionsDir, 'aionui-browser');
+  const knowledgeReposDir = path.join(targetDataDir, 'knowledge-repos');
 
   try {
     if (!fs.existsSync(aionuiDir)) fs.mkdirSync(aionuiDir, { recursive: true });
@@ -639,6 +640,7 @@ export function scanAndPrepareDataDir(targetDataDir: string): void {
     if (!fs.existsSync(crashDir)) fs.mkdirSync(crashDir, { recursive: true });
     if (!fs.existsSync(partitionsDir)) fs.mkdirSync(partitionsDir, { recursive: true });
     if (!fs.existsSync(browserPartitionDir)) fs.mkdirSync(browserPartitionDir, { recursive: true });
+    if (!fs.existsSync(knowledgeReposDir)) fs.mkdirSync(knowledgeReposDir, { recursive: true });
   } catch (err) {
     console.warn(`[AionUi] Failed to ensure subdirectories in ${targetDataDir}:`, err);
   }
@@ -695,6 +697,11 @@ export function scanAndPrepareDataDir(targetDataDir: string): void {
           const backupConfig = path.join(newestBackupDir, 'config');
           if (fs.existsSync(backupConfig)) {
             copyDirectoryContentsSync(backupConfig, configDir);
+          }
+
+          const backupKnowledge = path.join(newestBackupDir, 'knowledge-repos');
+          if (fs.existsSync(backupKnowledge)) {
+            copyDirectoryContentsSync(backupKnowledge, knowledgeReposDir);
           }
         }
       } catch (err) {

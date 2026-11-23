@@ -1465,7 +1465,7 @@
   "memberHandbookBackfillSuccess": "Backfill completed: {{created}} created, {{skipped}} already existed",
   "memberHandbookBackfillFailed": "Backfill failed: ",
   "knowledgeRepoCacheDir": "Knowledge Repos Cache Directory",
-  "knowledgeRepoCacheDirDesc": "Local cache folder for cloned knowledge repositories (<userData>/knowledge-repos by default)",
+  "knowledgeRepoCacheDirDesc": "Local cache folder for cloned knowledge repositories (<dataDir>/knowledge-repos by default)",
   "knowledgeRepoCacheDirSaved": "Knowledge repos cache directory updated",
   "knowledgeRepoCacheDirFailed": "Failed to update cache directory: ",
   "knowledgeRepoPathCopied": "Path copied to clipboard",

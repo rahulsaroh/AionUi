@@ -980,7 +980,7 @@ const SystemModalContent: React.FC = () => {
                       <span>
                         {t('settings.knowledgeRepoCacheDirDesc', {
                           defaultValue:
-                            'Local cache folder for cloned knowledge repositories (<userData>/knowledge-repos by default)',
+                            'Local cache folder for cloned knowledge repositories (<dataDir>/knowledge-repos by default)',
                         })}
                       </span>
                       <div className='flex items-center gap-8px'>
