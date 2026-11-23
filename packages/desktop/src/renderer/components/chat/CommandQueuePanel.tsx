@@ -439,6 +439,7 @@ const CommandQueuePanel: React.FC<CommandQueuePanelProps> = ({
       }),
       okButtonProps: { status: 'danger' },
       okText: t('conversation.commandQueue.clear', { defaultValue: 'Clear draft box' }),
+      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
       onOk: onClear,
     });
   };

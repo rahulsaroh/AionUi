@@ -409,6 +409,8 @@ const CssThemeSettings: React.FC = () => {
       Modal.confirm({
         title: t('common.confirmDelete'),
         content: t('settings.cssTheme.deleteConfirm'),
+        okText: t('common.delete', { defaultValue: 'Delete' }),
+        cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
         okButtonProps: { status: 'danger' },
         onOk: async () => {
           try {

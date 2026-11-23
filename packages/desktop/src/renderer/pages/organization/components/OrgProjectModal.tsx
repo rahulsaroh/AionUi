@@ -252,6 +252,8 @@ export const OrgProjectModal: React.FC<OrgProjectModalProps> = ({
     Modal.confirm({
       title: t('team.organization.deleteProject', { defaultValue: 'Delete project' }),
       content: t('team.organization.deleteProjectConfirm', { defaultValue: 'Delete this project assignment?' }),
+      okText: t('common.delete', { defaultValue: 'Delete' }),
+      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
       okButtonProps: { status: 'danger' },
       onOk: () => {
         deleteOrgProject(project.id);

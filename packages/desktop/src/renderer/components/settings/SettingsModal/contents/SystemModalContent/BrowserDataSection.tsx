@@ -81,6 +81,8 @@ const BrowserDataSection: React.FC = () => {
     Modal.confirm({
       title: t('settings.browserData.clearConfirmTitle'),
       content: t('settings.browserData.clearConfirmContent'),
+      okText: t('common.clear', { defaultValue: 'Clear' }),
+      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
       okButtonProps: { status: 'danger' },
       onOk: async () => {
         setClearing(true);

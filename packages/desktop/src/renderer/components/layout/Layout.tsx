@@ -215,10 +215,10 @@ const Layout: React.FC<{
     window.addEventListener(WORKSPACE_STATE_EVENT, handleWorkspaceState);
     return () => window.removeEventListener(WORKSPACE_STATE_EVENT, handleWorkspaceState);
   }, []);
-  const rightSiderCollapsed = Boolean(currentProject) ? explorerCollapsed : nonProjectRightSiderCollapsed;
+  const rightSiderCollapsed = currentProject ? explorerCollapsed : nonProjectRightSiderCollapsed;
   const setRightSiderCollapsed = useCallback(
     (nextCollapsed: boolean) => {
-      if (Boolean(currentProject)) {
+      if (currentProject) {
         setExplorerCollapsed(nextCollapsed);
       } else {
         setNonProjectRightSiderCollapsed(nextCollapsed);
@@ -379,9 +379,9 @@ const Layout: React.FC<{
 
   const siderWidth = isMobile
     ? Math.max(
-      MOBILE_SIDER_MIN_WIDTH,
-      Math.min(MOBILE_SIDER_MAX_WIDTH, Math.round(viewportWidth * MOBILE_SIDER_WIDTH_RATIO))
-    )
+        MOBILE_SIDER_MIN_WIDTH,
+        Math.min(MOBILE_SIDER_MAX_WIDTH, Math.round(viewportWidth * MOBILE_SIDER_WIDTH_RATIO))
+      )
     : desktopSiderWidth;
   useEffect(() => {
     collapsedRef.current = collapsed;
@@ -389,17 +389,17 @@ const Layout: React.FC<{
 
   const siderStyle = isMobile
     ? {
-      position: 'fixed' as const,
-      left: 0,
-      zIndex: 100,
-      transform: collapsed ? 'translateX(-100%)' : 'translateX(0)',
-      transition: 'none',
-      pointerEvents: collapsed ? ('none' as const) : ('auto' as const),
-    }
+        position: 'fixed' as const,
+        left: 0,
+        zIndex: 100,
+        transform: collapsed ? 'translateX(-100%)' : 'translateX(0)',
+        transition: 'none',
+        pointerEvents: collapsed ? ('none' as const) : ('auto' as const),
+      }
     : {
-      position: 'relative' as const,
-      overflow: 'visible' as const,
-    };
+        position: 'relative' as const,
+        overflow: 'visible' as const,
+      };
 
   return (
     <LayoutContext.Provider
@@ -454,12 +454,12 @@ const Layout: React.FC<{
               <ArcoLayout.Content className='pt-0 px-8px pb-0 layout-sider-content'>
                 {React.isValidElement(sider)
                   ? React.cloneElement(sider, {
-                    onSessionClick: () => {
-                      cleanupSiderTooltips();
-                      if (isMobile) setCollapsed(true);
-                    },
-                    collapsed,
-                  } as any)
+                      onSessionClick: () => {
+                        cleanupSiderTooltips();
+                        if (isMobile) setCollapsed(true);
+                      },
+                      collapsed,
+                    } as any)
                   : sider}
               </ArcoLayout.Content>
               {!isMobile &&
@@ -484,12 +484,12 @@ const Layout: React.FC<{
                 style={
                   isMobile
                     ? {
-                      width: '100%',
-                    }
+                        width: '100%',
+                      }
                     : previewMaximized
                       ? // 最大化时聊天区隐藏（保持挂载不卸载，还原后即刻恢复）
-                      // Hidden while maximized (kept mounted so restoring is instant)
-                      { display: 'none' }
+                        // Hidden while maximized (kept mounted so restoring is instant)
+                        { display: 'none' }
                       : undefined
                 }
               >

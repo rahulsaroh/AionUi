@@ -668,7 +668,11 @@ const GuidPage: React.FC = () => {
   ) : null;
 
   return (
-    <ConfigProvider getPopupContainer={() => guidContainerRef.current || document.body}>
+    <ConfigProvider
+      getPopupContainer={() => guidContainerRef.current || document.body}
+      effectGlobalModal={false}
+      effectGlobalNotice={false}
+    >
       <div ref={guidContainerRef} className={styles.guidContainer}>
         <div className={styles.guidLayout}>
           <div className={styles.heroHeader}>

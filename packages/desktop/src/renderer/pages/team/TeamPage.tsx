@@ -401,114 +401,114 @@ const TeamAgentControls: React.FC<{
   conversation: propConversation,
   onRuntimeChanged: propOnRuntimeChanged,
 }) => {
-    const { t } = useTranslation();
-    const layout = useLayoutContext();
-    const teamPermission = useTeamPermission();
-    const isMobile = layout?.isMobile ?? false;
+  const { t } = useTranslation();
+  const layout = useLayoutContext();
+  const teamPermission = useTeamPermission();
+  const isMobile = layout?.isMobile ?? false;
 
-    const { data: fetchedConversation, mutate: mutateConversation } = useSWR(
-      !propConversation && assistant.conversation_id ? ['team-conversation', assistant.conversation_id] : null,
-      () => getConversationOrNull(assistant.conversation_id)
-    );
-    const conversation = propConversation ?? fetchedConversation;
+  const { data: fetchedConversation, mutate: mutateConversation } = useSWR(
+    !propConversation && assistant.conversation_id ? ['team-conversation', assistant.conversation_id] : null,
+    () => getConversationOrNull(assistant.conversation_id)
+  );
+  const conversation = propConversation ?? fetchedConversation;
 
-    const isAionrs = conversation?.type === 'aionrs';
-    const initialModelId = (conversation?.extra as { current_model_id?: string })?.current_model_id;
-    const isAcpLike = conversation?.type === 'acp' || isAcpLikeBackend(assistant.assistant_backend);
-    const cronJobId = resolveCronJobId(conversation?.extra);
+  const isAionrs = conversation?.type === 'aionrs';
+  const initialModelId = (conversation?.extra as { current_model_id?: string })?.current_model_id;
+  const isAcpLike = conversation?.type === 'acp' || isAcpLikeBackend(assistant.assistant_backend);
+  const cronJobId = resolveCronJobId(conversation?.extra);
 
-    const warmup = useMemo<{ status: AcpWarmupStatus; trigger?: () => Promise<void> }>(
-      () => ({
-        status: warmupStatus ?? (warmupDisabled ? 'dormant' : runtimeAvailabilityToWarmupStatus(fallbackAvailability)),
-        trigger: warmupDisabled ? undefined : buildTeamRetryStartHandler({ team_id, slot_id: assistant.slot_id }),
-      }),
-      [warmupStatus, fallbackAvailability, warmupDisabled, team_id, assistant.slot_id]
-    );
-    const runtimeActionAvailability = resolveRuntimeActionAvailability({
-      warmupStatus,
-      warmupDisabled: Boolean(warmupDisabled),
-      slotWork: teamRunView.slotWorkBySlot[assistant.slot_id],
-      sessionStopped: teamRunView.sessionStopped,
-      fallbackAvailability,
-    });
-    const restartDisabled = runtimeActionAvailability !== 'ready';
-    const contextResetAvailability =
-      assistant.role === 'leader'
-        ? 'leader_not_targetable'
-        : assistant.context_reset.supported
-          ? runtimeActionAvailability
-          : assistant.context_reset.availability;
+  const warmup = useMemo<{ status: AcpWarmupStatus; trigger?: () => Promise<void> }>(
+    () => ({
+      status: warmupStatus ?? (warmupDisabled ? 'dormant' : runtimeAvailabilityToWarmupStatus(fallbackAvailability)),
+      trigger: warmupDisabled ? undefined : buildTeamRetryStartHandler({ team_id, slot_id: assistant.slot_id }),
+    }),
+    [warmupStatus, fallbackAvailability, warmupDisabled, team_id, assistant.slot_id]
+  );
+  const runtimeActionAvailability = resolveRuntimeActionAvailability({
+    warmupStatus,
+    warmupDisabled: Boolean(warmupDisabled),
+    slotWork: teamRunView.slotWorkBySlot[assistant.slot_id],
+    sessionStopped: teamRunView.sessionStopped,
+    fallbackAvailability,
+  });
+  const restartDisabled = runtimeActionAvailability !== 'ready';
+  const contextResetAvailability =
+    assistant.role === 'leader'
+      ? 'leader_not_targetable'
+      : assistant.context_reset.supported
+        ? runtimeActionAvailability
+        : assistant.context_reset.availability;
 
-    const handleRuntimeChanged = useCallback(async () => {
-      if (propOnRuntimeChanged) {
-        await propOnRuntimeChanged();
-      } else {
-        await Promise.all([mutateConversation(), onRunStateStale('context-reset.result')]);
-      }
-    }, [propOnRuntimeChanged, mutateConversation, onRunStateStale]);
+  const handleRuntimeChanged = useCallback(async () => {
+    if (propOnRuntimeChanged) {
+      await propOnRuntimeChanged();
+    } else {
+      await Promise.all([mutateConversation(), onRunStateStale('context-reset.result')]);
+    }
+  }, [propOnRuntimeChanged, mutateConversation, onRunStateStale]);
 
-    return (
-      <div className='flex items-center gap-8px shrink-0'>
-        {conversation && <CronJobManager conversation_id={conversation.id} cron_job_id={cronJobId} />}
-        {!isMobile && assistant.conversation_id && !isAionrs && isAcpLike && (
-          <div className='min-w-0 max-w-160px [&_button]:max-w-full [&_button_span]:truncate'>
-            <AcpModelSelector
-              key={assistant.conversation_id}
-              conversation_id={assistant.conversation_id}
-              backend={assistant.assistant_backend}
-              initialModelId={initialModelId}
-              prepareSetRuntime={teamPermission?.warmupSession}
-              configOptionsPort={teamPermission?.configOptionsPort}
-              warmup={warmup}
-            />
+  return (
+    <div className='flex items-center gap-8px shrink-0'>
+      {conversation && <CronJobManager conversation_id={conversation.id} cron_job_id={cronJobId} />}
+      {!isMobile && assistant.conversation_id && !isAionrs && isAcpLike && (
+        <div className='min-w-0 max-w-160px [&_button]:max-w-full [&_button_span]:truncate'>
+          <AcpModelSelector
+            key={assistant.conversation_id}
+            conversation_id={assistant.conversation_id}
+            backend={assistant.assistant_backend}
+            initialModelId={initialModelId}
+            prepareSetRuntime={teamPermission?.warmupSession}
+            configOptionsPort={teamPermission?.configOptionsPort}
+            warmup={warmup}
+          />
+        </div>
+      )}
+      {assistant.conversation_id && !isAionrs && isAcpLike && isLeader && (
+        <div className='shrink-0'>
+          <AcpRuntimeRestartButton
+            conversation_id={assistant.conversation_id}
+            team={{ team_id, slot_id: assistant.slot_id }}
+            availability={restartDisabled ? 'initializing' : 'ready'}
+            disabled={restartDisabled}
+            disabledReason={
+              restartDisabled ? t(contextResetAvailabilityMessageKey(runtimeActionAvailability)) : undefined
+            }
+          />
+        </div>
+      )}
+      {assistant.conversation_id && !isAionrs && isAcpLike && !isLeader && (
+        <div className='shrink-0'>
+          <TeamAgentActions
+            assistant={assistant}
+            team_id={team_id}
+            runtimeAvailability={runtimeActionAvailability}
+            contextResetAvailability={contextResetAvailability}
+            onRuntimeChanged={handleRuntimeChanged}
+          />
+        </div>
+      )}
+      {!isMobile && isAionrs && assistant.conversation_id && (
+        <div className='min-w-0 max-w-160px [&_button]:max-w-full [&_button_span]:truncate'>
+          <AionrsHeaderModelSelector
+            key={assistant.conversation_id}
+            conversation_id={assistant.conversation_id}
+            initialModel={conversation?.model as TProviderWithModel | undefined}
+          />
+        </div>
+      )}
+      {onToggleFullscreen && (
+        <Tooltip content={isFullscreen ? t('team.view.parallel') : t('team.view.single')} position='bottom'>
+          <div
+            className='shrink-0 flex items-center justify-center leading-none cursor-pointer hover:bg-[var(--fill-3)] p-4px rd-4px text-[color:var(--color-text-3)] hover:text-[color:var(--color-text-1)] transition-colors'
+            onClick={() => onToggleFullscreen()}
+          >
+            {isFullscreen ? <OffScreen size='16' fill='currentColor' /> : <FullScreen size='16' fill='currentColor' />}
           </div>
-        )}
-        {assistant.conversation_id && !isAionrs && isAcpLike && isLeader && (
-          <div className='shrink-0'>
-            <AcpRuntimeRestartButton
-              conversation_id={assistant.conversation_id}
-              team={{ team_id, slot_id: assistant.slot_id }}
-              availability={restartDisabled ? 'initializing' : 'ready'}
-              disabled={restartDisabled}
-              disabledReason={
-                restartDisabled ? t(contextResetAvailabilityMessageKey(runtimeActionAvailability)) : undefined
-              }
-            />
-          </div>
-        )}
-        {assistant.conversation_id && !isAionrs && isAcpLike && !isLeader && (
-          <div className='shrink-0'>
-            <TeamAgentActions
-              assistant={assistant}
-              team_id={team_id}
-              runtimeAvailability={runtimeActionAvailability}
-              contextResetAvailability={contextResetAvailability}
-              onRuntimeChanged={handleRuntimeChanged}
-            />
-          </div>
-        )}
-        {!isMobile && isAionrs && assistant.conversation_id && (
-          <div className='min-w-0 max-w-160px [&_button]:max-w-full [&_button_span]:truncate'>
-            <AionrsHeaderModelSelector
-              key={assistant.conversation_id}
-              conversation_id={assistant.conversation_id}
-              initialModel={conversation?.model as TProviderWithModel | undefined}
-            />
-          </div>
-        )}
-        {onToggleFullscreen && (
-          <Tooltip content={isFullscreen ? t('team.view.parallel') : t('team.view.single')} position='bottom'>
-            <div
-              className='shrink-0 flex items-center justify-center leading-none cursor-pointer hover:bg-[var(--fill-3)] p-4px rd-4px text-[color:var(--color-text-3)] hover:text-[color:var(--color-text-1)] transition-colors'
-              onClick={() => onToggleFullscreen()}
-            >
-              {isFullscreen ? <OffScreen size='16' fill='currentColor' /> : <FullScreen size='16' fill='currentColor' />}
-            </div>
-          </Tooltip>
-        )}
-      </div>
-    );
-  };
+        </Tooltip>
+      )}
+    </div>
+  );
+};
 
 /** Fetches conversation for a single assistant and renders TeamChatView */
 const AssistantChatSlot: React.FC<{
@@ -1006,8 +1006,8 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
                     content={
                       todaySpend.hasUnknown
                         ? t('costs.todayTooltipUnknown', {
-                          defaultValue: "Today's estimated spend for this team (*includes unknown CLI agent calls)",
-                        })
+                            defaultValue: "Today's estimated spend for this team (*includes unknown CLI agent calls)",
+                          })
                         : t('costs.todayTooltip', { defaultValue: "Today's total spend for this team" })
                     }
                     position='bottom'
@@ -1363,9 +1363,11 @@ const TeamPage: React.FC<Props> = ({ team }) => {
         title: t('team.removeAgent.confirmTitle', { defaultValue: 'Remove team member' }),
         content: isActive
           ? t('team.removeAgent.confirmContentActive', {
-            defaultValue: 'This member is working. Remove it anyway? Its current work will be interrupted.',
-          })
+              defaultValue: 'This member is working. Remove it anyway? Its current work will be interrupted.',
+            })
           : t('team.removeAgent.confirmContent', { defaultValue: 'Remove this member from the team?' }),
+        okText: t('common.remove', { defaultValue: 'Remove' }),
+        cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
         okButtonProps: { status: 'danger' },
         onOk: doRemoveAssistant,
       });

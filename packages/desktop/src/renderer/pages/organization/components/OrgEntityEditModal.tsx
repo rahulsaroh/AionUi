@@ -489,6 +489,8 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     Modal.confirm({
       title: t('common.delete', { defaultValue: 'Delete' }),
       content: t('team.sider.deleteConfirmContent', { defaultValue: 'This action cannot be undone.' }),
+      okText: t('common.delete', { defaultValue: 'Delete' }),
+      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
       okButtonProps: { status: 'danger' },
       onOk: () => {
         let deleted = false;

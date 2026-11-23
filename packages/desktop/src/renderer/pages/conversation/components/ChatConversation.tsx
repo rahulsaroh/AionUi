@@ -455,14 +455,14 @@ const ChatConversation: React.FC<{
   // If preset assistant info exists, use preset logo/name; while loading, avoid fallback; otherwise use backend logo
   const chatLayoutProps = presetAssistantInfo
     ? {
-      presetAssistant: { ...presetAssistantInfo, id: acpAssistantId },
-    }
+        presetAssistant: { ...presetAssistantInfo, id: acpAssistantId },
+      }
     : isLoadingPreset
       ? {} // Still loading custom agents — avoid showing backend logo prematurely
       : {
-        backend: resolvedConversationBackend,
-        agent_name: conversationAgentName,
-      };
+          backend: resolvedConversationBackend,
+          agent_name: conversationAgentName,
+        };
 
   const headerExtraNode = (
     <div className='flex items-center gap-8px'>

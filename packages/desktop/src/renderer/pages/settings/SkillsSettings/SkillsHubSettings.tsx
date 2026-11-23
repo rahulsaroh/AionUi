@@ -331,6 +331,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
       ),
       okButtonProps: { status: 'warning' },
       okText: t('common.delete', { defaultValue: 'Delete' }),
+      cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
       wrapClassName: 'modal-delete-skill',
       onOk: async () => {
         const names = Array.from(selectedSkillNames);
@@ -908,6 +909,7 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                         ),
                         okButtonProps: { status: 'danger' },
                         okText: t('common.delete', { defaultValue: 'Delete' }),
+                        cancelText: t('common.cancel', { defaultValue: 'Cancel' }),
                         onOk: () => void handleDelete(skill.name),
                         wrapClassName: 'modal-delete-skill',
                       });
