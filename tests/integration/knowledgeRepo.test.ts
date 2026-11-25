@@ -795,4 +795,149 @@ describe('Knowledge Repos Integration & Safety Tests', () => {
     }
     expect(errorCaught).toBe(true);
   });
+
+  it('auto-detects default branch when ref is omitted or auto (e.g. master)', async () => {
+    const masterBare = path.join(tempDir, 'master-remote.git');
+    const masterWork = path.join(tempDir, 'master-work');
+    await execFileAsync('git', ['init', '--bare', masterBare]);
+    await execFileAsync('git', ['clone', masterBare, masterWork]);
+    await fs.writeFile(path.join(masterWork, 'README.md'), '# Master Branch Repo\n');
+    await execFileAsync('git', ['-C', masterWork, 'config', 'user.name', 'Test Runner']);
+    await execFileAsync('git', ['-C', masterWork, 'config', 'user.email', 'test@example.com']);
+    await execFileAsync('git', ['-C', masterWork, 'add', '.']);
+    await execFileAsync('git', ['-C', masterWork, 'commit', '-m', 'init master']);
+    await execFileAsync('git', ['-C', masterWork, 'push', 'origin', 'HEAD:master']);
+    await execFileAsync('git', ['--git-dir', masterBare, 'symbolic-ref', 'HEAD', 'refs/heads/master']);
+
+    const detected = await knowledgeRepoGitService.resolveDefaultBranch(masterBare);
+    expect(detected).toBe('master');
+
+    const targetDir = path.join(tempDir, 'auto-cloned-master');
+    await knowledgeRepoGitService.shallowClone(masterBare, 'auto', targetDir);
+    const readme = await fs.readFile(path.join(targetDir, 'README.md'), 'utf-8');
+    expect(readme).toContain('Master Branch Repo');
+  });
+
+  it('scans nested skills, nested docs, ARCHITECTURE.md, and builds a repoMap for plain codebases', async () => {
+    const codeDir = path.join(tempDir, 'plain-codebase');
+    await fs.mkdir(path.join(codeDir, '.claude', 'skills', 'media', 'render'), { recursive: true });
+    await fs.mkdir(path.join(codeDir, 'docs', 'guides'), { recursive: true });
+    await fs.mkdir(path.join(codeDir, 'src', 'core'), { recursive: true });
+
+    await fs.writeFile(path.join(codeDir, 'ARCHITECTURE.md'), '# Architecture\nModular pipeline');
+    await fs.writeFile(
+      path.join(codeDir, '.claude', 'skills', 'media', 'render', 'SKILL.md'),
+      '---\nname: nested-render\ndescription: Nested skill\n---\n'
+    );
+    await fs.writeFile(path.join(codeDir, 'docs', 'guides', 'intro.md'), '# Intro Guide');
+    await fs.writeFile(path.join(codeDir, 'src', 'core', 'index.ts'), 'export const x = 1;');
+
+    const manifest = await knowledgeRepoScanner.scan(codeDir);
+    expect(manifest.alwaysOnRules.some((r) => r.name === 'ARCHITECTURE.md')).toBe(true);
+    expect(manifest.onDemandSkills.some((s) => s.name === 'nested-render')).toBe(true);
+    expect(manifest.onDemandSkills.some((s) => s.relativePath === 'docs/guides/intro.md')).toBe(true);
+    expect(manifest.repoMap).toContain('src/');
+    expect(manifest.repoMap).toContain('index.ts');
+  });
+
+  it('preserves AGENTS.md across multiple repos without conflict and includes repoMap', () => {
+    const mkRepo = (id: string, name: string, ruleText: string) => ({
+      id,
+      name,
+      gitUrl: `https://github.com/org/${id}`,
+      ref: 'main',
+      cachePath: tempDir,
+      currentCommitSha: `sha_${id}`,
+      syncStatus: 'idle' as const,
+      updatePolicy: 'auto' as const,
+      trustStatus: 'trusted' as const,
+      manifest: {
+        alwaysOnRules: [
+          {
+            id: `${id}_agents`,
+            name: 'AGENTS.md',
+            relativePath: 'AGENTS.md',
+            content: ruleText,
+            sizeBytes: ruleText.length,
+            priority: 10,
+          },
+        ],
+        onDemandSkills: [],
+        setupFiles: [],
+        repoMap: `src/\n  ${id}.ts`,
+        estimatedTokens: 20,
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const result = knowledgeRepoPromptBuilder.buildInstructions({
+      memberName: 'Engineer',
+      repos: [mkRepo('r1', 'RepoOne', 'Rule from RepoOne'), mkRepo('r2', 'RepoTwo', 'Rule from RepoTwo')],
+    });
+
+    expect(result.conflicts).toHaveLength(0);
+    expect(result.instructions).toContain('Rule from RepoOne');
+    expect(result.instructions).toContain('Rule from RepoTwo');
+    expect(result.instructions).toContain('r1.ts');
+    expect(result.instructions).toContain('r2.ts');
+  });
+
+  it('re-injects full playbook when assigned repo list changes mid-conversation', async () => {
+    const mkRepo = (id: string, name: string) => ({
+      id,
+      name,
+      gitUrl: `https://github.com/org/${id}`,
+      ref: 'main',
+      cachePath: path.join(tempDir, 'remote-work'),
+      currentCommitSha: `sha_${id}`,
+      syncStatus: 'idle' as const,
+      updatePolicy: 'auto' as const,
+      trustStatus: 'trusted' as const,
+      manifest: {
+        alwaysOnRules: [
+          {
+            id: `${id}_rule`,
+            name: 'AGENTS.md',
+            relativePath: 'AGENTS.md',
+            content: `Guidance for ${name}`,
+            sizeBytes: 30,
+            priority: 10,
+          },
+        ],
+        onDemandSkills: [],
+        setupFiles: [],
+        estimatedTokens: 20,
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const repoMap = (service as unknown as { repos: Map<string, ReturnType<typeof mkRepo>> }).repos;
+    repoMap.set('repo-dyn-1', mkRepo('repo-dyn-1', 'FirstRepo'));
+    repoMap.set('repo-dyn-2', mkRepo('repo-dyn-2', 'SecondRepo'));
+
+    const convId = 'conv-dynamic-repos';
+    const first = await service.buildEffectiveInstructions({
+      conversationId: convId,
+      memberName: 'Builder',
+      repoIds: ['repo-dyn-1'],
+    });
+    expect(first.instructions).toContain('Guidance for FirstRepo');
+
+    const secondSame = await service.buildEffectiveInstructions({
+      conversationId: convId,
+      memberName: 'Builder',
+      repoIds: ['repo-dyn-1'],
+    });
+    expect(secondSame.instructions).toContain('[Knowledge Reminder]');
+
+    const thirdAdded = await service.buildEffectiveInstructions({
+      conversationId: convId,
+      memberName: 'Builder',
+      repoIds: ['repo-dyn-1', 'repo-dyn-2'],
+    });
+    expect(thirdAdded.instructions).toContain('Guidance for SecondRepo');
+    expect(thirdAdded.instructions).not.toContain('[Knowledge Reminder]');
+  });
 });

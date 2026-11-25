@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "Projeye başarıyla taşındı",
     "moveToProjectFailed": "Sohbet projeye taşınamadı",
     "noFolderSelected": "Lütfen bir proje klasörü seçin veya girin",
-    "sameFolderWarning": "Hedef proje zaten geçerli çalışma alanı"
+    "sameFolderWarning": "Hedef proje zaten geçerli çalışma alanı",
+    "moveProjectToOrg": "Organizasyona Taşı"
   },
   "historySearch": {
     "tooltip": "Mesajları ara",

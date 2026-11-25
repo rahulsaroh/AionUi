@@ -7,3 +7,4 @@
 export * from './useMemberKnowledge';
 export * from './MemberKnowledgePanel';
 export * from './KnowledgeChip';
+export * from './resolveKnowledgeInstructions';

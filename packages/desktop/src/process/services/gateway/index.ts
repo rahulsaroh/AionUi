@@ -98,13 +98,27 @@ class GatewayServiceManager {
       }
 
       const models = Array.from(modelsSet);
+
+      const listRes = await fetch(`http://127.0.0.1:${port}/api/providers`);
+      if (!listRes.ok) {
+        return;
+      }
+
+      const providers = (await listRes.json()) as Array<{ id: string }>;
+      const exists = Array.isArray(providers) && providers.some((p) => p.id === 'aionui-native-gateway');
+
       if (models.length === 0) {
-        models.push('default-combo');
+        if (exists) {
+          await fetch(`http://127.0.0.1:${port}/api/providers/aionui-native-gateway`, {
+            method: 'DELETE',
+          });
+        }
+        return;
       }
 
       const providerPayload = {
         id: 'aionui-native-gateway',
-        name: 'Gateway & Combos (OmniRoute)',
+        name: 'Model Provider Hub (Gateway)',
         platform: 'custom',
         base_url: `http://127.0.0.1:${this.server.getPort()}/v1`,
         api_key: 'sk-aionui-gateway',
@@ -113,24 +127,18 @@ class GatewayServiceManager {
         capabilities: [{ type: 'text' }, { type: 'vision' }, { type: 'function_calling' }],
       };
 
-      const listRes = await fetch(`http://127.0.0.1:${port}/api/providers`);
-      if (listRes.ok) {
-        const providers = (await listRes.json()) as Array<{ id: string }>;
-        const exists = Array.isArray(providers) && providers.some((p) => p.id === 'aionui-native-gateway');
-
-        if (exists) {
-          await fetch(`http://127.0.0.1:${port}/api/providers/aionui-native-gateway`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(providerPayload),
-          });
-        } else {
-          await fetch(`http://127.0.0.1:${port}/api/providers`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(providerPayload),
-          });
-        }
+      if (exists) {
+        await fetch(`http://127.0.0.1:${port}/api/providers/aionui-native-gateway`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(providerPayload),
+        });
+      } else {
+        await fetch(`http://127.0.0.1:${port}/api/providers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(providerPayload),
+        });
       }
     } catch (err) {
       console.warn('[GatewayService] Failed to sync provider with aioncore:', err);

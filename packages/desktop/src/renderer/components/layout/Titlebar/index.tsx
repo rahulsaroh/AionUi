@@ -7,7 +7,6 @@ import {
   Briefcase,
   ExpandLeft,
   ExpandRight,
-  LinkCloudSucess,
   NetworkTree,
   Peoples,
   Remind,
@@ -30,6 +29,7 @@ import { resolveFeedbackModule } from '@/renderer/services/feedback/resolveFeedb
 import { isElectronDesktop, isMacOS } from '@/renderer/utils/platform';
 import { IS_DISCONTINUED_BUILD } from '@/renderer/utils/discontinuedBuild';
 import { useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
+import { preloadRouteForPath } from '@/renderer/utils/navigation';
 import MigrationInviteCapsule from './MigrationInviteCapsule';
 import './titlebar.css';
 
@@ -126,6 +126,19 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
 
   const { activeScope, setActiveScope } = useOrgStore();
   const isOrgActive = activeScope === 'organization' || location.pathname.startsWith('/organization');
+  const lastWorkplacePathRef = useRef('/guid');
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/settings') && !location.pathname.startsWith('/organization')) {
+      const path = `${location.pathname}${location.search}${location.hash}`;
+      lastWorkplacePathRef.current = path;
+      try {
+        sessionStorage.setItem('aion:last-workplace-path', path);
+      } catch {
+        // ignore
+      }
+    }
+  }, [location.pathname, location.search, location.hash]);
 
   const handleSelectScope = useCallback(
     (scope: 'workplace' | 'organization') => {
@@ -136,8 +149,17 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
         }
       } else {
         if (activeScope !== 'workplace') setActiveScope('workplace');
-        if (location.pathname.startsWith('/organization')) {
-          void navigate('/guid');
+        if (location.pathname.startsWith('/organization') || location.pathname.startsWith('/settings')) {
+          let target = lastWorkplacePathRef.current;
+          try {
+            const stored = sessionStorage.getItem('aion:last-workplace-path');
+            if (stored && !stored.startsWith('/organization') && !stored.startsWith('/settings')) {
+              target = stored;
+            }
+          } catch {
+            // ignore
+          }
+          void navigate(target || '/guid');
         }
       }
     },
@@ -394,6 +416,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
           <button
             type='button'
             onClick={() => handleSelectScope('workplace')}
+            onMouseEnter={() => preloadRouteForPath(lastWorkplacePathRef.current || '/guid')}
             className={classNames(
               'flex items-center gap-6px px-12px py-3px rounded-full text-12px font-medium transition-all duration-200 cursor-pointer border-none',
               !isOrgActive
@@ -411,6 +434,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
           <button
             type='button'
             onClick={() => handleSelectScope('organization')}
+            onMouseEnter={() => preloadRouteForPath('/organization')}
             className={classNames(
               'flex items-center gap-6px px-12px py-3px rounded-full text-12px font-medium transition-all duration-200 cursor-pointer border-none',
               isOrgActive
@@ -509,6 +533,7 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             type='button'
             className='app-titlebar__button relative'
             onClick={() => void navigate('/approvals')}
+            onMouseEnter={() => preloadRouteForPath('/approvals')}
             aria-label='Notifications'
           >
             <Remind theme='outline' size={iconSize} fill='currentColor' strokeWidth={desktopIconStroke} />
@@ -542,13 +567,6 @@ const Titlebar: React.FC<TitlebarProps> = ({ workspaceAvailable }) => {
             )}
           </button>
         )}
-        {/* Gateway Sync Status - Green icon and green text */}
-        <Tooltip content={t('titlebar.syncStatus', { defaultValue: 'Gateway Sync Status: Synced' })}>
-          <div className='app-titlebar__sync-indicator flex items-center gap-5px px-8px py-3px rounded-full bg-[#00e676]/10 border border-[#00e676]/30 cursor-default select-none'>
-            <LinkCloudSucess theme='outline' size={14} fill='#00e676' />
-            <span className='text-12px font-medium text-[#00e676] hidden sm:inline'>Synced</span>
-          </div>
-        </Tooltip>
         {showWindowControls && <WindowControls />}
       </div>
     </div>

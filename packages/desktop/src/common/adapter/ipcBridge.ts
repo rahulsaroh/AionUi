@@ -2353,6 +2353,7 @@ export const team = {
       department_role?: string;
       description?: string;
       sub_team_ids?: string[];
+      mode?: 'workplace' | 'organization';
     }
   >('team.update-team'),
   setSessionMode: httpPost<void, { team_id: string; session_mode: string }>(
@@ -2846,9 +2847,11 @@ export const knowledgeRepo = {
 };
 
 export const org = {
-  pickMasterRoot: async (): Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }> => {
+  pickMasterRoot: async (
+    defaultPath?: string
+  ): Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }> => {
     if (typeof window !== 'undefined' && window.electronAPI?.orgPickMasterRoot) {
-      return window.electronAPI.orgPickMasterRoot();
+      return window.electronAPI.orgPickMasterRoot(defaultPath ? { defaultPath } : undefined);
     }
     return {
       success: false,

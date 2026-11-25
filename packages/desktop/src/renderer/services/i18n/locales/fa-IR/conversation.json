@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "با موفقیت به پروژه منتقل شد",
     "moveToProjectFailed": "انتقال گفتگو به پروژه ناموفق بود",
     "noFolderSelected": "لطفاً پوشه پروژه را انتخاب یا وارد کنید",
-    "sameFolderWarning": "پروژه مقصد همان فضای کاری فعلی است"
+    "sameFolderWarning": "پروژه مقصد همان فضای کاری فعلی است",
+    "moveProjectToOrg": "انتقال به سازمان"
   },
   "historySearch": {
     "tooltip": "جستجوی پیام‌ها",

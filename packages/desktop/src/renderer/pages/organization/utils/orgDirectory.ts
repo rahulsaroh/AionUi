@@ -32,6 +32,8 @@ export interface BuildOrgDirectoryOptions {
   members?: OrgAgentMember[];
   /** Optional knowledge repo names keyed by agent id, injected into each member entry. */
   knowledgeReposByMemberId?: Record<string, string[]>;
+  /** Optional knowledge repo names keyed by project id, injected into each project entry. */
+  knowledgeReposByProjectId?: Record<string, string[]>;
   now?: number;
 }
 
@@ -118,7 +120,11 @@ function buildTeamEntry(
   };
 }
 
-function buildProjectEntry(project: OrgProject): OrgDirectoryProjectEntry {
+function buildProjectEntry(
+  project: OrgProject,
+  knowledgeReposByProjectId?: Record<string, string[]>
+): OrgDirectoryProjectEntry {
+  const repos = knowledgeReposByProjectId?.[project.id] || project.context?.repos;
   return {
     id: project.id,
     name: project.name,
@@ -127,14 +133,17 @@ function buildProjectEntry(project: OrgProject): OrgDirectoryProjectEntry {
     description: project.description,
     memberIds: project.memberIds && project.memberIds.length > 0 ? project.memberIds : undefined,
     backendTeamId: project.backendTeamId,
+    knowledgeRepos: repos && repos.length > 0 ? repos : undefined,
   };
 }
 
 export function buildOrgDirectory(options: BuildOrgDirectoryOptions): OrgDirectoryDoc {
-  const { hierarchy, projects, members, knowledgeReposByMemberId } = options;
+  const { hierarchy, projects, members, knowledgeReposByMemberId, knowledgeReposByProjectId } = options;
   const departments: OrgDirectoryDepartmentEntry[] = hierarchy.departments.map((dept: OrgDepartmentNode) => {
     const teams = (dept.teams || []).map((team) => buildTeamEntry(team, knowledgeReposByMemberId));
-    const deptProjects = projects.filter((p) => p.departmentId === dept.id).map(buildProjectEntry);
+    const deptProjects = projects
+      .filter((p) => p.departmentId === dept.id)
+      .map((p) => buildProjectEntry(p, knowledgeReposByProjectId));
 
     const memberIds = new Set<string>();
     for (const project of deptProjects) {
@@ -255,10 +264,14 @@ export function renderOrgDirectoryMarkdown(doc: OrgDirectoryDoc, generatedAt = n
       lines.push('- Projects:');
       for (const project of dept.projects) {
         const goal = project.goal || project.description;
+        const knowledge =
+          project.knowledgeRepos && project.knowledgeRepos.length > 0
+            ? ` | knowledge: ${project.knowledgeRepos.join(', ')}`
+            : '';
         lines.push(
           `  - ${project.name} (id: ${project.id}) | folder: ${project.workspacePath || '(none)'}${
             goal ? ` | goal: ${goal}` : ''
-          }${project.backendTeamId ? ' | team ready' : ' | no backend team yet'}`
+          }${knowledge}${project.backendTeamId ? ' | team ready' : ' | no backend team yet'}`
         );
       }
     } else {
@@ -322,7 +335,9 @@ export function buildOrgDirectoryPromptBlock(doc: OrgDirectoryDoc, maxChars = 60
     const folders = [dept.workspacePath, ...dept.teams.map((t) => t.workspacePath)].filter(Boolean);
     const projects = dept.projects.map(
       (p) =>
-        `${p.name} [id: ${p.id}${p.backendTeamId ? '' : ', no team yet'}]${p.workspacePath ? ` at ${p.workspacePath}` : ''}`
+        `${p.name} [id: ${p.id}${p.backendTeamId ? '' : ', no team yet'}]${p.workspacePath ? ` at ${p.workspacePath}` : ''}${
+          p.knowledgeRepos && p.knowledgeRepos.length > 0 ? ` (knowledge: ${p.knowledgeRepos.join(', ')})` : ''
+        }`
     );
     const teams = dept.teams.map((t) => `${t.name}${t.lead ? ` (lead: ${t.lead.name})` : ''}`);
     const contact = dept.head || dept.projectManager;

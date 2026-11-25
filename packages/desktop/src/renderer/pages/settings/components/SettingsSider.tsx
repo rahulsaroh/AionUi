@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Tooltip } from '@arco-design/web-react';
 import { getSiderTooltipProps } from '@/renderer/utils/ui/siderTooltip';
+import { preloadRouteForPath } from '@/renderer/utils/navigation';
 
 /** Builtin settings tab IDs in display order (must match router paths). */
 export const BUILTIN_TAB_IDS = [
@@ -250,6 +251,7 @@ const SettingsSider: React.FC<{ collapsed?: boolean; tooltipEnabled?: boolean }>
                     '!bg-fill-3': isSelected,
                   }
                 )}
+                onMouseEnter={() => preloadRouteForPath(`/settings/${item.path}`)}
                 onClick={() => {
                   Promise.resolve(navigate(`/settings/${item.path}`, { replace: true })).catch((error) => {
                     console.error('Navigation failed:', error);

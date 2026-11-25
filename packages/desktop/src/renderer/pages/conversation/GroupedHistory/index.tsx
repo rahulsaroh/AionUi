@@ -12,14 +12,17 @@ import { restrictToVerticalAxis } from '@/renderer/utils/ui/dndModifiers';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Button, Dropdown, Empty, Input, Menu, Modal, Tag, Tooltip } from '@arco-design/web-react';
-import { Delete, FolderClose, MoreOne, Plus, Right } from '@icon-park/react';
+import { Delete, FolderClose, MoreOne, NetworkTree, Plus, Right } from '@icon-park/react';
 import classNames from 'classnames';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import WorkspaceCollapse from '../components/WorkspaceCollapse';
 import { MoveToProjectModal } from '../components/MoveToProjectModal';
+import type { MoveToOrgTarget } from '@/renderer/pages/organization/move';
+
+const MoveToOrgModal = React.lazy(() => import('@/renderer/pages/organization/move/MoveToOrgModal'));
 import ConversationRow from './ConversationRow';
 import SortableConversationRow from './SortableConversationRow';
 import { useBatchSelection } from './hooks/useBatchSelection';
@@ -44,6 +47,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
   const { getJobStatus, markAsRead, setActiveConversation } = useCronJobsMap();
 
   const [activeTagFilter, setActiveTagFilter] = useState<'all' | 'work' | 'personal' | 'dev' | 'archive'>('all');
+  const [moveToOrgTarget, setMoveToOrgTarget] = useState<MoveToOrgTarget | null>(null);
 
   const {
     conversations,
@@ -495,6 +499,13 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
         onSuccess={handleMoveToProjectSuccess}
       />
 
+      {/* Move workplace project to Organization */}
+      {moveToOrgTarget && (
+        <Suspense fallback={null}>
+          <MoveToOrgModal visible={true} target={moveToOrgTarget} onClose={() => setMoveToOrgTarget(null)} />
+        </Suspense>
+      )}
+
       <div>
         {/* L1: Pinned section */}
         <DndContext
@@ -536,13 +547,26 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({
                 const projectMenu = (
                   <Menu
                     onClickMenuItem={(key) => {
-                      if (key === 'archive') {
+                      if (key === 'moveToOrg') {
+                        setMoveToOrgTarget({
+                          kind: 'project',
+                          projectName: group.displayName,
+                          sourceWorkspace: group.workspace,
+                          conversations: group.conversations,
+                        });
+                      } else if (key === 'archive') {
                         handleArchiveProject(group.displayName, group.conversations);
                       } else if (key === 'delete') {
                         handleDeleteProject(group.displayName, group.conversations);
                       }
                     }}
                   >
+                    <Menu.Item key='moveToOrg'>
+                      <span className='flex items-center gap-8px'>
+                        <NetworkTree theme='outline' size='14' />
+                        {t('conversation.history.moveProjectToOrg')}
+                      </span>
+                    </Menu.Item>
                     <Menu.Item key='archive'>
                       <span className='flex items-center gap-8px'>
                         <FolderClose theme='outline' size='14' />

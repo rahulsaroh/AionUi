@@ -27,7 +27,6 @@ import {
   isGeminiPlatform,
   isGoogleLoginPlatform,
   isNewApiPlatform,
-  isOmnirouteOption,
   type PlatformConfig,
 } from '@/renderer/utils/model/modelPlatforms';
 import { ProviderLogo } from '@/renderer/components/agent/ThemedLogo';
@@ -320,7 +319,6 @@ const AddPlatformModal = ModalHOC<{
   const isGemini = isGeminiPlatform(platform);
   const isNewApi = isNewApiPlatform(platform);
   const isGoogleLogin = isGoogleLoginPlatform(platform);
-  const isOmniroute = isOmnirouteOption(platformValue);
 
   // Google Auth state — read current auth status from the shared hook
   const { isGoogleAuth: isGoogleAuthenticated } = useGoogleAuthModels();
@@ -344,32 +342,15 @@ const AddPlatformModal = ModalHOC<{
     }
   }, [isGoogleLogin, isGoogleAuthenticated]);
 
-  // Pre-fill defaults for OmniRoute and Google Login
+  // Pre-fill defaults for Google Login
   useEffect(() => {
-    if (isOmniroute) {
-      if (!form.getFieldValue('api_key')) {
-        form.setFieldValue('api_key', 'sk-9465108bb15ed26b-1477ab-600eaeb5');
-      }
-      if (!form.getFieldValue('base_url')) {
-        form.setFieldValue('base_url', 'http://localhost:20128/v1');
-      }
-      const currentModels = form.getFieldValue('model');
-      if (!currentModels || (Array.isArray(currentModels) && currentModels.length === 0)) {
-        form.setFieldValue('model', [
-          'antigravity/claude-sonnet-4-6',
-          'antigravity/claude-opus-4-6-thinking',
-          'antigravity/gemini-3.8-flash-tiered',
-          'antigravity/gemini-3-flash',
-          'claude-web/claude-sonnet-4-6',
-        ]);
-      }
-    } else if (isGoogleLogin) {
+    if (isGoogleLogin) {
       const currentModels = form.getFieldValue('model');
       if (!currentModels || (Array.isArray(currentModels) && currentModels.length === 0)) {
         form.setFieldValue('model', ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash']);
       }
     }
-  }, [isOmniroute, isGoogleLogin, form]);
+  }, [isGoogleLogin, form]);
 
   // new-api 每模型协议选择状态 / new-api per-model protocol selection state
   const [modelProtocol, setModelProtocol] = useState<string>('openai');
@@ -407,10 +388,18 @@ const AddPlatformModal = ModalHOC<{
         message.success(t('settings.googleLoginSuccess'));
         void modelListState.mutate();
       } else {
-        message.warning('Google login is handled via OmniRoute. Please select OmniRoute from the platforms list.');
+        message.warning(
+          t('settings.googleLoginFailed', {
+            defaultValue: 'Google login failed. Please try again or use a Gemini API key instead.',
+          })
+        );
       }
     } catch {
-      message.warning('Google login is handled via OmniRoute. Please select OmniRoute from the platforms list.');
+      message.warning(
+        t('settings.googleLoginFailed', {
+          defaultValue: 'Google login failed. Please try again or use a Gemini API key instead.',
+        })
+      );
     } finally {
       setGoogleAuthLoading(false);
     }
@@ -443,20 +432,8 @@ const AddPlatformModal = ModalHOC<{
       }
       return defaultGoogleModels;
     }
-    if (isOmniroute) {
-      const defaultOmnirouteModels = [
-        { label: 'claude-3-7-sonnet', value: 'claude-3-7-sonnet' },
-        { label: 'claude-3-5-sonnet', value: 'claude-3-5-sonnet' },
-        { label: 'gemini-2.5-pro', value: 'gemini-2.5-pro' },
-        { label: 'antigravity-gemini-2.5-pro', value: 'antigravity-gemini-2.5-pro' },
-      ];
-      if (modelListState.data?.models && modelListState.data.models.length > 0) {
-        return modelListState.data.models;
-      }
-      return defaultOmnirouteModels;
-    }
     return modelListState.data?.models || [];
-  }, [isFullUrl, isGoogleLogin, isOmniroute, modelListState.data?.models]);
+  }, [isFullUrl, isGoogleLogin, modelListState.data?.models]);
 
   // 协议检测 Hook / Protocol detection hook
   // 启用检测的条件：
@@ -564,11 +541,6 @@ const AddPlatformModal = ModalHOC<{
       onSubmit(provider);
       modalCtrl.close();
       return;
-    }
-
-    // For OmniRoute platform, default api_key if empty
-    if (isOmniroute && !form.getFieldValue('api_key')) {
-      form.setFieldValue('api_key', 'omniroute');
     }
 
     form
@@ -697,14 +669,6 @@ const AddPlatformModal = ModalHOC<{
             </Select>
           </Form.Item>
 
-          {/* OmniRoute Tip */}
-          {isOmniroute && (
-            <div className='p-10px rounded-8px bg-fill-2 text-12px text-t-secondary mb-12px flex items-center gap-8px border border-solid border-[var(--color-border-2)]'>
-              <CheckOne theme='filled' size={16} fill='#10A37F' />
-              <span>{t('settings.omnirouteTip')}</span>
-            </div>
-          )}
-
           {/* Base URL - shown for every platform (except Bedrock and Google Login) so users can
               see and edit the endpoint. Preset platforms are prefilled with their
               default URL and offer a reset button to restore it. */}
@@ -782,8 +746,8 @@ const AddPlatformModal = ModalHOC<{
           <Form.Item
             hidden={isBedrock || isGoogleLogin}
             label={t('settings.apiKey')}
-            required={!isBedrock && !isGoogleLogin && !isOmniroute}
-            rules={[{ required: !isBedrock && !isGoogleLogin && !isOmniroute }]}
+            required={!isBedrock && !isGoogleLogin}
+            rules={[{ required: !isBedrock && !isGoogleLogin }]}
             field={'api_key'}
             extra={
               <div className='space-y-2px'>
@@ -959,8 +923,8 @@ const AddPlatformModal = ModalHOC<{
                         }
                         return;
                       }
-                      // For Gemini, Google Login, and OmniRoute, no api_key check needed
-                      if (!isGemini && !isGoogleLogin && !isOmniroute && !api_key) {
+                      // For Gemini and Google Login, no api_key check needed
+                      if (!isGemini && !isGoogleLogin && !api_key) {
                         message.warning(t('settings.pleaseEnterApiKey'));
                         return;
                       }

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { BackendHttpError } from '@/common/adapter/httpBridge';
 import AcpSendBox from '@/renderer/pages/conversation/platforms/acp/AcpSendBox';
@@ -348,6 +348,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@/common/chat/slash/antigravityCommands', () => ({
   extractTeamworkTask: vi.fn((msg: string) => msg),
   isTeamworkSlashCommand: vi.fn(() => false),
+  enforceTaskBreakdownPrompt: vi.fn((msg: string) => msg),
 }));
 
 vi.mock('@/renderer/components/chat/CrossSessionDisabledBanner', () => ({
@@ -397,6 +398,10 @@ describe('AcpSendBox', () => {
       reload: vi.fn(),
       setConfigOption: vi.fn(),
     });
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('resets ACP loading state when sendMessage fails before any stream error arrives', async () => {
@@ -894,6 +899,7 @@ describe('AcpSendBox', () => {
       runtimeViewMock.supportsMidturnDelivery = false;
       runtimeViewMock.isProcessing = false;
       runtimeViewMock.canSendMessage = true;
+      draftContentRef.current = 'hello world';
       sendMessageInvokeMock.mockResolvedValue({ turn_id: 'turn-1', runtime: null, msg_id: 'msg-1' });
 
       render(

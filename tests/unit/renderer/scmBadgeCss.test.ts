@@ -99,7 +99,7 @@ describe('every badge class actually produces a CSS rule', () => {
     expect(darkAt, 'dark theme selector must exist').toBeGreaterThan(-1);
     const light = scheme.slice(0, darkAt); // everything before the dark block = the :root/light scope
     const dark = scheme.slice(darkAt);
-    expect(light).toMatch(/--text-primary:\s*#000000/i); // light → black
+    expect(light).toMatch(/--text-primary:\s*(?:#000000|#0a140e)/i); // light → black / near-black
     expect(dark).toMatch(/--text-primary:\s*#ffffff/i); //  dark  → white
   });
 

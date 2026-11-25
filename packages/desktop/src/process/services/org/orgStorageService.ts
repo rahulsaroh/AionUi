@@ -127,6 +127,9 @@ function serializeProjectContext(project: OrgProject): string | null {
     ...(project.approvalPolicy ? { approvalPolicy: project.approvalPolicy } : {}),
     ...(project.allowlist?.length ? { allowlist: project.allowlist } : {}),
     ...(project.memberSources ? { memberSources: project.memberSources } : {}),
+    ...(project.backendTeamId ? { backendTeamId: project.backendTeamId } : {}),
+    ...(project.leadAssistantId ? { leadAssistantId: project.leadAssistantId } : {}),
+    ...(project.model ? { model: project.model } : {}),
   };
   return Object.keys(context).length > 0 ? JSON.stringify(context) : null;
 }
@@ -392,31 +395,41 @@ export class OrgStorageService {
       }>;
 
       return rows.map((r): OrgProject => {
-        const context = r.context ? (JSON.parse(r.context) as OrgProject['context']) : undefined;
+        const context = r.context
+          ? (JSON.parse(r.context) as OrgProject['context'] & {
+              backendTeamId?: string;
+              leadAssistantId?: string;
+              model?: OrgProject['model'];
+            })
+          : undefined;
         let parsedTeamIds: string[] = [];
         if (r.team_ids) {
           try {
             parsedTeamIds = JSON.parse(r.team_ids);
           } catch {}
         }
-        return {
-          id: r.id,
-          name: r.name,
-          departmentId: r.department_id,
-          teamIds: parsedTeamIds,
-          memberIds: r.member_ids ? JSON.parse(r.member_ids) : [],
-          goal: r.goal || undefined,
-          description: r.description || undefined,
-          status: (r.status as OrgProject['status']) || 'active',
-          context,
-          memberSources: context?.memberSources,
-          workspacePaths: context?.workspacePaths,
-          workspacePath: r.workspace_path || null,
-          approvalPolicy: context?.approvalPolicy,
-          allowlist: context?.allowlist,
-          mode: (r.mode as 'workplace' | 'organization') || 'organization',
-          updatedAt: r.updated_at,
-        };
+        return Object.assign(
+          {
+            id: r.id,
+            name: r.name,
+            departmentId: r.department_id,
+            teamIds: parsedTeamIds,
+            memberIds: r.member_ids ? JSON.parse(r.member_ids) : [],
+            goal: r.goal || undefined,
+            description: r.description || undefined,
+            status: (r.status as OrgProject[`status`]) || `active`,
+            context,
+            memberSources: context?.memberSources,
+            workspacePaths: context?.workspacePaths,
+            workspacePath: r.workspace_path || null,
+            approvalPolicy: context?.approvalPolicy,
+            allowlist: context?.allowlist,
+          },
+          context?.backendTeamId ? { backendTeamId: context.backendTeamId } : {},
+          context?.leadAssistantId ? { leadAssistantId: context.leadAssistantId } : {},
+          context?.model ? { model: context.model } : {},
+          { mode: (r.mode as `workplace` | `organization`) || `organization`, updatedAt: r.updated_at }
+        );
       });
     } catch (err) {
       console.error('[OrgStorageService] getProjects failed:', err);

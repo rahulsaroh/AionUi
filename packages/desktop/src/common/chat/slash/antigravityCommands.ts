@@ -249,15 +249,23 @@ export const extractTeamworkTask = (input: string): string => {
   return (match[2] ?? '').trim();
 };
 
+export const TASK_BREAKDOWN_MARKER = '<!-- AIONUI_TASK_BREAKDOWN -->';
+
+const LEGACY_TASK_BREAKDOWN_RE =
+  /\n*Instructions:\nBefore executing, break down your plan into discrete tasks using markdown checkboxes \(`- \[ \] task description`\), so progress can be tracked\. Update tasks as completed \(`- \[x\]`\) as you finish each one\.$/;
+
+const MARKED_TASK_BREAKDOWN_RE = new RegExp(`\\n*${TASK_BREAKDOWN_MARKER}[\\s\\S]*$`);
+
 /**
- * Ensures the prompt requests structured task planning (markdown checkboxes / plan protocol)
- * when Antigravity mode or multi-step execution is active.
+ * Ensures the prompt requests structured mini-task planning and sequential
+ * one-by-one execution (Antigravity / Claude Code style).
  */
 export const enforceTaskBreakdownPrompt = (input: string): string => {
   const trimmed = input.trim();
   if (!trimmed) return input;
   // If already wrapped with Antigravity mode prompt or contains task breakdown instructions
   if (
+    trimmed.includes(TASK_BREAKDOWN_MARKER) ||
     trimmed.includes('[Antigravity') ||
     trimmed.includes('- [ ]') ||
     trimmed.toLowerCase().includes('task breakdown')
@@ -268,7 +276,24 @@ export const enforceTaskBreakdownPrompt = (input: string): string => {
   return [
     input,
     '',
+    TASK_BREAKDOWN_MARKER,
     'Instructions:',
-    'Before executing, break down your plan into discrete tasks using markdown checkboxes (`- [ ] task description`), so progress can be tracked. Update tasks as completed (`- [x]`) as you finish each one.',
+    'When handling a multi-step or actionable request:',
+    '1. First break the prompt into discrete mini tasks using markdown checkboxes (`- [ ] task description`) or your plan/todo tool.',
+    '2. Work through each mini task one by one in order, updating progress as you complete each one (`- [/]` for in-progress, `- [x]` for completed).',
+    '3. Keep each step focused and clearly summarize the files created, edited, or modified.',
+    '(For simple greetings or single-fact questions, reply directly without unnecessary task lists.)',
   ].join('\n');
+};
+
+/**
+ * Strips the injected task-breakdown instructions from a user message before
+ * displaying it in the chat bubble.
+ */
+export const stripTaskBreakdownPrompt = (input: string): string => {
+  if (!input) return input;
+  if (input.includes(TASK_BREAKDOWN_MARKER)) {
+    return input.replace(MARKED_TASK_BREAKDOWN_RE, '').trimEnd();
+  }
+  return input.replace(LEGACY_TASK_BREAKDOWN_RE, '').trimEnd();
 };

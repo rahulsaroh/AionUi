@@ -26,6 +26,9 @@ describe('legacy handoff schema repair', () => {
       { table: 'conversations', column: 'pinned_at', definition: 'INTEGER' },
       { table: 'teams', column: 'session_mode', definition: 'TEXT' },
       { table: 'teams', column: 'agents_version', definition: "TEXT NOT NULL DEFAULT '1.0.0'" },
+      { table: 'teams', column: 'parent_id', definition: 'TEXT NULL' },
+      { table: 'teams', column: 'department_role', definition: 'TEXT NULL' },
+      { table: 'teams', column: 'description', definition: 'TEXT NULL' },
     ]);
   });
 
@@ -58,7 +61,7 @@ describe('legacy handoff schema repair', () => {
 
   it('skips tables that do not exist in the legacy DB', () => {
     const driver = makeDriver({
-      teams: ['id', 'session_mode', 'agents_version'],
+      teams: ['id', 'session_mode', 'agents_version', 'parent_id', 'department_role', 'description'],
     });
 
     const result = repairLegacyHandoffSchema(driver as any);
@@ -69,7 +72,7 @@ describe('legacy handoff schema repair', () => {
 
   it('is a no-op when every contract column already exists', () => {
     const driver = makeDriver({
-      teams: ['id', 'session_mode', 'agents_version'],
+      teams: ['id', 'session_mode', 'agents_version', 'parent_id', 'department_role', 'description'],
       conversations: ['id', 'pinned', 'pinned_at'],
       cron_jobs: ['id', 'skill_content', 'description'],
     });

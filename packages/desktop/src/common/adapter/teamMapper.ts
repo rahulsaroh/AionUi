@@ -172,6 +172,9 @@ export function fromBackendTeam(raw: unknown): TTeam {
       ? (customMeta.subTeamIds as string[])
       : [];
 
+  const rawMode = (r.mode as string | undefined) ?? (customMeta.mode as string | undefined);
+  const mode = rawMode === 'workplace' || rawMode === 'organization' ? rawMode : undefined;
+
   return {
     id: (r.id as string | undefined) ?? '',
     user_id: (r.user_id as string | undefined) ?? '',
@@ -189,6 +192,7 @@ export function fromBackendTeam(raw: unknown): TTeam {
     subTeamIds,
     departmentRole,
     description,
+    ...(mode ? { mode } : {}),
   };
 }
 

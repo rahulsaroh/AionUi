@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "Moved to project successfully",
     "moveToProjectFailed": "Failed to move conversation to project",
     "noFolderSelected": "Please select or enter a project folder",
-    "sameFolderWarning": "Target project is already the current workspace"
+    "sameFolderWarning": "Target project is already the current workspace",
+    "moveProjectToOrg": "Move to Organization"
   },
   "historySearch": {
     "tooltip": "Search messages",

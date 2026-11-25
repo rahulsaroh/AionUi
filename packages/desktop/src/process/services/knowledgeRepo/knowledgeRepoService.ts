@@ -26,6 +26,7 @@ import { knowledgeRepoScanner } from './knowledgeRepoScanner';
 import { knowledgeRepoDiffGenerator } from './knowledgeRepoDiffGenerator';
 import { knowledgeRepoPromptBuilder } from './knowledgeRepoPromptBuilder';
 import { secureCredentialStore } from './secureCredentialStore';
+import { registerKnowledgeReadOnlyRoot } from '../org/pathGuard';
 
 const execFileAsync = promisify(execFile);
 const MIN_INTERVAL_MS = 15 * 60 * 1000; // 15 mins minimum
@@ -54,6 +55,8 @@ export class KnowledgeRepoService {
   private initPaths(): void {
     this.defaultCacheDir = this.getDefaultCacheDir();
     this.worktreesDir = this.getWorktreesDir();
+    registerKnowledgeReadOnlyRoot(this.defaultCacheDir);
+    registerKnowledgeReadOnlyRoot(this.worktreesDir);
   }
 
   getDefaultCacheDir(): string {
@@ -115,6 +118,7 @@ export class KnowledgeRepoService {
       throw new Error('Cache directory cannot be empty');
     }
     this.customCacheDir = trimmed;
+    registerKnowledgeReadOnlyRoot(trimmed);
     await fs.mkdir(trimmed, { recursive: true });
     for (const repo of this.repos.values()) {
       repo.cachePath = this.getRepoCachePath(repo.id);
@@ -278,7 +282,7 @@ export class KnowledgeRepoService {
   }): Promise<KnowledgeRepo> {
     const id = `k_repo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const cachePath = this.getRepoCachePath(id);
-    const ref = params.ref || 'main';
+    const ref = params.ref?.trim() || 'auto';
 
     let hasAuthToken = false;
     if (params.authToken) {
@@ -360,9 +364,14 @@ export class KnowledgeRepoService {
     const token = this.getDecryptedToken(id);
 
     try {
+      let targetRef = (repo.ref || '').trim();
+      if (!targetRef || targetRef.toLowerCase() === 'auto') {
+        targetRef = await knowledgeRepoGitService.resolveDefaultBranch(repo.gitUrl, token);
+      }
+
       const currentCommitSha = await knowledgeRepoGitService.syncRepoWithRetry({
         gitUrl: repo.gitUrl,
-        ref: repo.ref || 'main',
+        ref: targetRef,
         targetDir: repo.cachePath,
         updatePolicy: repo.updatePolicy === 'pinned' ? 'pinned' : 'follow-latest',
         pinnedCommitSha: repo.pinnedCommitSha,
@@ -381,6 +390,13 @@ export class KnowledgeRepoService {
           }
         },
       });
+
+      if (!repo.ref || repo.ref.toLowerCase() === 'auto') {
+        repo.ref =
+          targetRef && targetRef.toLowerCase() !== 'auto'
+            ? targetRef
+            : await knowledgeRepoGitService.getCurrentBranch(repo.cachePath);
+      }
 
       // Scanning phase
       const scanProgress: KnowledgeRepoProgress = {
@@ -968,9 +984,10 @@ export class KnowledgeRepoService {
     if (convId && !params.forceFullPlaybook) {
       const recorded = this.conversationInjectedShas.get(convId);
       if (recorded) {
-        const allMatch = trustedRepos.every(
-          (repo) => repo.currentCommitSha && recorded[repo.id] === repo.currentCommitSha
-        );
+        const recordedKeys = Object.keys(recorded);
+        const allMatch =
+          recordedKeys.length === trustedRepos.length &&
+          trustedRepos.every((repo) => repo.currentCommitSha && recorded[repo.id] === repo.currentCommitSha);
         if (allMatch) {
           isReminder = true;
         }
@@ -1095,6 +1112,7 @@ export class KnowledgeRepoService {
         };
         if (parsed.cacheDir && parsed.cacheDir !== defaultDir) {
           this.customCacheDir = parsed.cacheDir;
+          registerKnowledgeReadOnlyRoot(parsed.cacheDir);
         }
         if (Array.isArray(parsed.repos)) {
           for (const r of parsed.repos) {

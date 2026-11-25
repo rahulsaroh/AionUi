@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "Réflexion approfondie, planification stratégique et vérification rigoureuse",
   "slash.antigravity.browser": "Navigation web, consultation de documentation et recherche en ligne",
   "slash.antigravity.schedule": "Planification récurrente ou exécution programmée",
-  "slash.antigravity.learn": "Conserver les apprentissages et directives pour les tâches futures"
+  "slash.antigravity.learn": "Conserver les apprentissages et directives pour les tâches futures",
+  "activity": {
+    "working": "En cours...",
+    "workedFor": "A travaillé pendant {{duration}}",
+    "exploredFiles": "fichiers explorés",
+    "ranCommands": "commandes exécutées",
+    "editedFiles": "fichiers modifiés",
+    "createdFiles": "fichiers créés",
+    "usedTools": "outils utilisés",
+    "ran": "Exécuté",
+    "analyzed": "Analysé",
+    "searched": "Recherché",
+    "listed": "Listé",
+    "edited": "Modifié",
+    "created": "Créé",
+    "modified": "Modifié",
+    "input": "Entrée",
+    "output": "Sortie",
+    "loading": "Chargement...",
+    "loadError": "Échec du chargement de la sortie complète"
+  }
 }

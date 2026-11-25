@@ -17,6 +17,13 @@ import { useOrgStore } from './store/useOrgStore';
 export const OrganizationPage: React.FC = () => {
   const { orgViewMode, hierarchy, projects, selectedProjectId, selectedTeamId, selectedConversationId } = useOrgStore();
   const [masterModalDismissed, setMasterModalDismissed] = useState(false);
+  const [hasMountedCanvas, setHasMountedCanvas] = useState(() => orgViewMode === 'canvas');
+
+  React.useEffect(() => {
+    if (orgViewMode === 'canvas' && !hasMountedCanvas) {
+      setHasMountedCanvas(true);
+    }
+  }, [orgViewMode, hasMountedCanvas]);
 
   const shouldShowMasterModal = !hierarchy.rootCeo.workspacePath && !masterModalDismissed;
 
@@ -41,19 +48,23 @@ export const OrganizationPage: React.FC = () => {
 
   return (
     <>
-      {orgViewMode === 'canvas' ? (
-        <OrganizationCanvasView />
-      ) : selectedConversationId ? (
-        <OrgChatView />
-      ) : activeBackendTeamId && backendTeam ? (
-        <TeamPage key={backendTeam.id} team={backendTeam} />
-      ) : activeBackendTeamId && isTeamLoading ? (
-        <div className='flex items-center justify-center h-full w-full'>
-          <Spin loading />
+      {hasMountedCanvas && (
+        <div className={orgViewMode === 'canvas' ? 'size-full' : 'hidden'}>
+          <OrganizationCanvasView />
         </div>
-      ) : (
-        <OrgChatView />
       )}
+      {orgViewMode !== 'canvas' &&
+        (selectedConversationId ? (
+          <OrgChatView />
+        ) : activeBackendTeamId && backendTeam ? (
+          <TeamPage key={backendTeam.id} team={backendTeam} />
+        ) : activeBackendTeamId && isTeamLoading ? (
+          <div className='flex items-center justify-center h-full w-full'>
+            <Spin loading />
+          </div>
+        ) : (
+          <OrgChatView />
+        ))}
       <OrgMasterFolderModal
         visible={shouldShowMasterModal}
         onClose={() => setMasterModalDismissed(true)}

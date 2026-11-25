@@ -1,37 +1,38 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppLoader from '@renderer/components/layout/AppLoader';
 import DocumentTitle from '@renderer/components/layout/DocumentTitle';
 import { useCrossSessionRateLimitNotice } from '@/renderer/hooks/system/useCrossSessionRateLimitNotice';
 import { useAuth } from '@renderer/hooks/context/AuthContext';
 import { TEAM_MODE_ENABLED } from '@/common/config/constants';
-const Conversation = React.lazy(() => import('@renderer/pages/conversation'));
-const Guid = React.lazy(() => import('@renderer/pages/guid'));
-const AgentSettings = React.lazy(() => import('@renderer/pages/settings/AgentSettings'));
-const AgentRepairPage = React.lazy(() => import('@renderer/pages/settings/AgentSettings/AgentRepairPage'));
-const AssistantSettings = React.lazy(() => import('@renderer/pages/settings/AssistantSettings'));
-const SkillsSettings = React.lazy(() => import('@renderer/pages/settings/SkillsSettings/SkillsHubSettings'));
-const SkillDetailPage = React.lazy(() => import('@renderer/pages/settings/SkillsSettings/SkillDetailPage'));
-const ToolsSettings = React.lazy(() => import('@renderer/pages/settings/ToolsSettings'));
-const AppearanceSettings = React.lazy(() => import('@renderer/pages/settings/AppearanceSettings'));
-const ModeSettings = React.lazy(() => import('@renderer/pages/settings/ModeSettings'));
-const GatewaySettings = React.lazy(() => import('@renderer/pages/settings/GatewaySettings'));
-const SystemSettings = React.lazy(() => import('@renderer/pages/settings/SystemSettings'));
-const WebuiSettings = React.lazy(() => import('@renderer/pages/settings/WebuiSettings'));
-const PetSettings = React.lazy(() => import('@renderer/pages/settings/PetSettings'));
-const ArchivedSettings = React.lazy(() => import('@renderer/pages/settings/ArchivedSettings'));
-const ExtensionSettingsPage = React.lazy(() => import('@renderer/pages/settings/ExtensionSettingsPage'));
+import { routeLoaders, scheduleIdleRoutePreloads } from '@/renderer/utils/navigation';
+const Conversation = React.lazy(routeLoaders.conversation);
+const Guid = React.lazy(routeLoaders.guid);
+const AgentSettings = React.lazy(routeLoaders.settingsAgent);
+const AgentRepairPage = React.lazy(routeLoaders.settingsAgentRepair);
+const AssistantSettings = React.lazy(routeLoaders.assistants);
+const SkillsSettings = React.lazy(routeLoaders.settingsSkills);
+const SkillDetailPage = React.lazy(routeLoaders.settingsSkillDetail);
+const ToolsSettings = React.lazy(routeLoaders.settingsTools);
+const AppearanceSettings = React.lazy(routeLoaders.settingsAppearance);
+const ModeSettings = React.lazy(routeLoaders.settingsModel);
+const GatewaySettings = React.lazy(routeLoaders.settingsGateway);
+const SystemSettings = React.lazy(routeLoaders.settingsSystem);
+const WebuiSettings = React.lazy(routeLoaders.settingsWebui);
+const PetSettings = React.lazy(routeLoaders.settingsPet);
+const ArchivedSettings = React.lazy(routeLoaders.settingsArchived);
+const ExtensionSettingsPage = React.lazy(routeLoaders.settingsExt);
 const LoginPage = React.lazy(() => import('@renderer/pages/login'));
 const ComponentsShowcase = React.lazy(() => import('@renderer/pages/TestShowcase'));
-const ScheduledTasksPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage'));
-const TaskDetailPage = React.lazy(() => import('@renderer/pages/cron/ScheduledTasksPage/TaskDetailPage'));
-const TeamIndex = React.lazy(() => import('@renderer/pages/team'));
-const OrganizationCanvasView = React.lazy(() => import('@renderer/pages/organization'));
-const ApprovalsInboxPage = React.lazy(() => import('@renderer/pages/approvals/ApprovalsInboxPage'));
-const PipelineTimelinePage = React.lazy(() => import('@renderer/pages/pipeline/PipelineTimelinePage'));
-const CostsPage = React.lazy(() => import('@renderer/pages/costs/CostsPage'));
-const TodayPage = React.lazy(() => import('@renderer/pages/today/TodayPage'));
-const RememberedRulesSettings = React.lazy(() => import('@renderer/pages/settings/RememberedRulesSettings'));
+const ScheduledTasksPage = React.lazy(routeLoaders.scheduled);
+const TaskDetailPage = React.lazy(routeLoaders.scheduledDetail);
+const TeamIndex = React.lazy(routeLoaders.team);
+const OrganizationCanvasView = React.lazy(routeLoaders.organization);
+const ApprovalsInboxPage = React.lazy(routeLoaders.approvals);
+const PipelineTimelinePage = React.lazy(routeLoaders.pipeline);
+const CostsPage = React.lazy(routeLoaders.costs);
+const TodayPage = React.lazy(routeLoaders.today);
+const RememberedRulesSettings = React.lazy(routeLoaders.settingsRules);
 
 import { Button } from '@arco-design/web-react';
 
@@ -100,6 +101,12 @@ const ProtectedLayout: React.FC<{ layout: React.ReactElement }> = ({ layout }) =
   // the user even when they are looking at a THIRD conversation, which is the
   // whole reason it is a broadcast rather than an in-conversation banner.
   useCrossSessionRateLimitNotice(user?.id);
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      scheduleIdleRoutePreloads();
+    }
+  }, [status]);
 
   if (status === 'checking') {
     return <AppLoader />;

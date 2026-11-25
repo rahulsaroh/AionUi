@@ -30,6 +30,7 @@ export type MemberKnowledgePanelProps = {
   visible: boolean;
   onClose: () => void;
   onSaved?: (assignedRepoIds: string[], whenToUseHint?: string) => void;
+  hideDocumentKnowledge?: boolean;
 };
 
 export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
@@ -38,6 +39,7 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
   visible,
   onClose,
   onSaved,
+  hideDocumentKnowledge = false,
 }) => {
   const { t } = useTranslation();
   const {
@@ -60,7 +62,8 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
   // "Add by GitHub link" form state
   const [isAddingGithub, setIsAddingGithub] = useState<boolean>(false);
   const [githubUrl, setGithubUrl] = useState<string>('');
-  const [githubRef, setGithubRef] = useState<string>('main');
+  const [githubRef, setGithubRef] = useState<string>('');
+  const [githubSubpath, setGithubSubpath] = useState<string>('');
   const [githubToken, setGithubToken] = useState<string>('');
   const [cloning, setCloning] = useState<boolean>(false);
 
@@ -80,7 +83,8 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
       setHint(whenToUseHint);
       setIsAddingGithub(false);
       setGithubUrl('');
-      setGithubRef('main');
+      setGithubRef('');
+      setGithubSubpath('');
       setGithubToken('');
       setIsAddingDoc(false);
 
@@ -262,13 +266,15 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
     try {
       const newRepo = await addAndAssignRepo({
         gitUrl: githubUrl.trim(),
-        ref: githubRef.trim() || 'main',
+        ref: githubRef.trim() || undefined,
+        subpath: githubSubpath.trim() || undefined,
         authToken: githubToken.trim() || undefined,
       });
       setSelectedRepoIds((prev) => Array.from(new Set([...prev, newRepo.id])));
       // Clear inputs so user can add another repository right away
       setGithubUrl('');
-      setGithubRef('main');
+      setGithubRef('');
+      setGithubSubpath('');
       setGithubToken('');
       Message.success(
         t('team.knowledgeRepos.backgroundSyncStarted', {
@@ -390,6 +396,9 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                         <span className='text-12px text-[color:var(--text-secondary)]'>
                           {repo.manifest?.alwaysOnRules?.length || 0} rules,{' '}
                           {repo.manifest?.onDemandSkills?.length || 0} skills ({repo.ref})
+                          {repo.manifest?.repoMap
+                            ? ` • ${t('team.knowledgeRepos.repoMapIndexed', { defaultValue: 'File map indexed' })}`
+                            : ''}
                           {repo.syncStatus === 'syncing' ? ' • Syncing in background...' : ''}
                           {repo.syncStatus === 'error' || repo.syncStatus === 'failed'
                             ? ` • Failed: ${repo.syncError || 'Sync failed'}`
@@ -457,7 +466,9 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                   <Input
                     value={githubRef}
                     onChange={setGithubRef}
-                    placeholder='Branch or tag (default: main)'
+                    placeholder={t('team.knowledgeRepos.refAutoPlaceholder', {
+                      defaultValue: 'Branch or tag (auto-detect default)',
+                    })}
                     size='small'
                     className='w-1/2'
                   />
@@ -469,6 +480,14 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
                     className='w-1/2'
                   />
                 </div>
+                <Input
+                  value={githubSubpath}
+                  onChange={setGithubSubpath}
+                  placeholder={t('team.knowledgeRepos.subpathPlaceholder', {
+                    defaultValue: 'Subpath (optional, e.g. docs/playbook)',
+                  })}
+                  size='small'
+                />
                 <div className='flex justify-end pt-4px'>
                   <Button size='small' type='primary' loading={cloning} onClick={handleCloneAndAssign}>
                     {t('team.knowledgeRepos.cloneAndAttach', { defaultValue: 'Clone & Attach' })}
@@ -479,103 +498,105 @@ export const MemberKnowledgePanel: React.FC<MemberKnowledgePanelProps> = ({
           </div>
 
           {/* Add Document Knowledge Section */}
-          <div className='mt-10px border border-solid border-[color:var(--border-base)] rounded-6px p-10px bg-[color:var(--bg-2)]'>
-            <div className='flex items-center justify-between'>
-              <span className='text-12px font-semibold text-t-primary flex items-center gap-6px'>
-                <FileText theme='outline' size='14' />
-                {t('team.knowledgeRepos.documentKnowledge', {
-                  defaultValue: 'Document Knowledge (Files, Notes & SOPs)',
-                })}
-              </span>
-              <div className='flex items-center gap-6px'>
-                <input
-                  type='file'
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  style={{ display: 'none' }}
-                  accept='.md,.txt,.json,.yaml,.yml,.py,.ts,.js,.doc,.docx,.pdf,.csv'
-                />
-                <Button
-                  size='mini'
-                  type='outline'
-                  icon={<UploadOne theme='outline' size='12' />}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {t('common.upload', { defaultValue: 'Upload File' })}
-                </Button>
-                <Button
-                  size='mini'
-                  type={isAddingDoc ? 'secondary' : 'outline'}
-                  icon={<Plus theme='outline' size='12' />}
-                  onClick={() => setIsAddingDoc(!isAddingDoc)}
-                >
-                  {isAddingDoc ? 'Cancel' : existingDoc ? 'Edit Document' : 'Add Text Document'}
-                </Button>
-              </div>
-            </div>
-
-            {/* Existing document info card */}
-            {existingDoc && !isAddingDoc && (
-              <div className='mt-8px p-8px rounded bg-[var(--color-bg-3)] border border-[var(--color-border-2)] flex items-center justify-between'>
-                <div className='flex flex-col min-w-0'>
-                  <span className='font-medium text-12px text-t-primary truncate'>📄 {existingDoc.fileName}</span>
-                  <span className='text-10px text-t-tertiary'>
-                    Attached (~{existingDoc.estimatedTokens} tokens) · Injected into teammate handbook
-                  </span>
-                </div>
-                <div className='flex items-center gap-4px'>
+          {!hideDocumentKnowledge && (
+            <div className='mt-10px border border-solid border-[color:var(--border-base)] rounded-6px p-10px bg-[color:var(--bg-2)]'>
+              <div className='flex items-center justify-between'>
+                <span className='text-12px font-semibold text-t-primary flex items-center gap-6px'>
+                  <FileText theme='outline' size='14' />
+                  {t('team.knowledgeRepos.documentKnowledge', {
+                    defaultValue: 'Document Knowledge (Files, Notes & SOPs)',
+                  })}
+                </span>
+                <div className='flex items-center gap-6px'>
+                  <input
+                    type='file'
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    style={{ display: 'none' }}
+                    accept='.md,.txt,.json,.yaml,.yml,.py,.ts,.js,.doc,.docx,.pdf,.csv'
+                  />
                   <Button
                     size='mini'
-                    type='text'
-                    onClick={() => {
-                      setDocContent(existingDoc.content);
-                      setDocName(existingDoc.fileName);
-                      setIsAddingDoc(true);
-                    }}
+                    type='outline'
+                    icon={<UploadOne theme='outline' size='12' />}
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    Edit
+                    {t('common.upload', { defaultValue: 'Upload File' })}
                   </Button>
                   <Button
                     size='mini'
-                    type='text'
-                    status='danger'
-                    icon={<Delete size={12} />}
-                    onClick={handleRemoveDocKnowledge}
-                  />
+                    type={isAddingDoc ? 'secondary' : 'outline'}
+                    icon={<Plus theme='outline' size='12' />}
+                    onClick={() => setIsAddingDoc(!isAddingDoc)}
+                  >
+                    {isAddingDoc ? 'Cancel' : existingDoc ? 'Edit Document' : 'Add Text Document'}
+                  </Button>
                 </div>
               </div>
-            )}
 
-            {isAddingDoc && (
-              <div className='mt-10px flex flex-col gap-8px'>
-                <Input
-                  value={docName}
-                  onChange={setDocName}
-                  placeholder='Document Name (e.g. guidelines.md or coding_standards.txt)'
-                  size='small'
-                />
-                <Input.TextArea
-                  value={docContent}
-                  onChange={setDocContent}
-                  placeholder='Paste or type document text, guidelines, instructions, or rules here...'
-                  rows={6}
-                />
-                <div className='flex items-center justify-between pt-4px'>
-                  <span className='text-11px text-t-tertiary'>
-                    ~{Math.ceil(docContent.length / 4)} estimated tokens
-                  </span>
-                  <div className='flex items-center gap-6px'>
-                    <Button size='small' onClick={() => setIsAddingDoc(false)}>
-                      Cancel
+              {/* Existing document info card */}
+              {existingDoc && !isAddingDoc && (
+                <div className='mt-8px p-8px rounded bg-[var(--color-bg-3)] border border-[var(--color-border-2)] flex items-center justify-between'>
+                  <div className='flex flex-col min-w-0'>
+                    <span className='font-medium text-12px text-t-primary truncate'>📄 {existingDoc.fileName}</span>
+                    <span className='text-10px text-t-tertiary'>
+                      Attached (~{existingDoc.estimatedTokens} tokens) · Injected into teammate handbook
+                    </span>
+                  </div>
+                  <div className='flex items-center gap-4px'>
+                    <Button
+                      size='mini'
+                      type='text'
+                      onClick={() => {
+                        setDocContent(existingDoc.content);
+                        setDocName(existingDoc.fileName);
+                        setIsAddingDoc(true);
+                      }}
+                    >
+                      Edit
                     </Button>
-                    <Button size='small' type='primary' loading={savingDoc} onClick={handleSaveDocKnowledge}>
-                      Save Document Knowledge
-                    </Button>
+                    <Button
+                      size='mini'
+                      type='text'
+                      status='danger'
+                      icon={<Delete size={12} />}
+                      onClick={handleRemoveDocKnowledge}
+                    />
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+
+              {isAddingDoc && (
+                <div className='mt-10px flex flex-col gap-8px'>
+                  <Input
+                    value={docName}
+                    onChange={setDocName}
+                    placeholder='Document Name (e.g. guidelines.md or coding_standards.txt)'
+                    size='small'
+                  />
+                  <Input.TextArea
+                    value={docContent}
+                    onChange={setDocContent}
+                    placeholder='Paste or type document text, guidelines, instructions, or rules here...'
+                    rows={6}
+                  />
+                  <div className='flex items-center justify-between pt-4px'>
+                    <span className='text-11px text-t-tertiary'>
+                      ~{Math.ceil(docContent.length / 4)} estimated tokens
+                    </span>
+                    <div className='flex items-center gap-6px'>
+                      <Button size='small' onClick={() => setIsAddingDoc(false)}>
+                        Cancel
+                      </Button>
+                      <Button size='small' type='primary' loading={savingDoc} onClick={handleSaveDocKnowledge}>
+                        Save Document Knowledge
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className='flex justify-end pt-12px'>
             <Button

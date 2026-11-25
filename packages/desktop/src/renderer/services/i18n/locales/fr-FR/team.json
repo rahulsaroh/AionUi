@@ -20,7 +20,9 @@
     "archiveSuccess": "Team archived",
     "archiveFailed": "Failed to archive team",
     "editTeam": "Modifier l'Ã©quipe",
-    "deleteFailed": "Ã‰chec de la suppression de l'Ã©quipe"
+    "deleteFailed": "Ã‰chec de la suppression de l'Ã©quipe",
+    "moveToOrg": "Déplacer vers l’organisation",
+    "moveToOrgShort": "Vers Org"
   },
   "activeMembers": {
     "title": "Membres actifs",
@@ -383,7 +385,39 @@
     "newChat": "New chat",
     "noSearchResults": "No departments, teams, or projects match your search.",
     "noDepartments": "No departments found.",
-    "searchPlaceholder": "Search departments, teams, projects..."
+    "searchPlaceholder": "Search departments, teams, projects...",
+    "moveToOrg": {
+      "titleTeam": "Move Team to Organization",
+      "titleProject": "Move Project to Organization",
+      "confirm": "Move to Organization",
+      "membersCount": "{{count}} members",
+      "subTeamsCount": "+{{count}} sub-teams",
+      "chatsCount": "{{count}} chats",
+      "targetDepartment": "Target Department",
+      "existingDepartment": "Existing Department",
+      "newDepartment": "New Department",
+      "selectDepartmentPlaceholder": "Select a department",
+      "newDepartmentPlaceholder": "Enter new department name",
+      "nameLabel": "Name in Organization",
+      "namePlaceholder": "Enter name",
+      "descriptionPlaceholder": "Optional notes or goal for this department item",
+      "noMasterRootWarning": "Set an Organization Master Folder to bind workspace files inside the department.",
+      "setMasterFolder": "Set Master Folder",
+      "masterRootSet": "Organization Master Folder updated",
+      "masterRootFailed": "Failed to set Organization Master Folder",
+      "orgFolderLabel": "Organization Workspace Folder",
+      "alreadyInOrgRoot": "Folder is already inside the target department root and will be linked directly.",
+      "copyFiles": "Copy files into Organization folder (keep original files)",
+      "moveFiles": "Move files into Organization folder",
+      "skipFiles": "Create empty folder (do not transfer files)",
+      "pathOutsideRoot": "Target folder must be inside the department or Organization master root.",
+      "createLinkedProject": "Also register as a Project in this department",
+      "includeSubTeams": "Include {{count}} sub-team(s)",
+      "removeFromWorkplace": "Move out of Workplace sidebar (uncheck to keep a copy in Workplace)",
+      "openAfterMove": "Switch to Organization and open after moving",
+      "success": "Moved to Organization",
+      "failed": "Failed to move to Organization"
+    }
   },
   "knowledgeRepos": {
     "title": "Connaissances",
@@ -432,7 +466,10 @@
     "setupInstructions": "Instructions et prérequis de configuration",
     "runSetup": "Lancer la configuration",
     "envVars": "Variables d'environnement",
-    "conflictsWarning": "Conflits de règles détectés : priorité donnée au dépôt prioritaire."
+    "conflictsWarning": "Conflits de règles détectés : priorité donnée au dépôt prioritaire.",
+    "refAutoPlaceholder": "Branche ou tag (détection automatique par défaut)",
+    "subpathPlaceholder": "Sous-chemin (optionnel, ex. docs/playbook)",
+    "repoMapIndexed": "Carte des fichiers indexée"
   },
   "handbook": {
     "title": "Employee Handbook",

@@ -34,6 +34,10 @@ export const BUILTIN_ORG_MCP_ID = 'builtin-org';
 export const BUILTIN_ORG_MCP_NAME = 'aionui-org';
 export const BUILTIN_ORG_SCRIPT = 'builtin-mcp-org';
 
+export const BUILTIN_DESKTOP_CONTROL_ID = 'builtin-desktop-control';
+export const BUILTIN_DESKTOP_CONTROL_NAME = 'aionui-desktop-control';
+export const BUILTIN_DESKTOP_CONTROL_SCRIPT = 'builtin-mcp-desktop-control';
+
 export function isBuiltinOrgName(name?: string | null): boolean {
   if (!name) return false;
   return name === BUILTIN_ORG_MCP_NAME || name === BUILTIN_ORG_MCP_ID;

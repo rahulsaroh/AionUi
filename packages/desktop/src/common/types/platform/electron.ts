@@ -349,23 +349,6 @@ export interface ElectronBridgeAPI {
   gatewayClearLogs?: () => Promise<{ success: boolean; error?: string }>;
   gatewayResetCooldown?: (accountId: string) => Promise<{ success: boolean; error?: string }>;
   gatewaySyncBackend?: () => Promise<{ success: boolean; error?: string }>;
-  gatewaySyncLocalOmniRoute?: () => Promise<{
-    success: boolean;
-    data?: {
-      importedAccounts: number;
-      importedCombos: number;
-      serverRunning: boolean;
-      serverPort: number;
-      message?: string;
-    };
-    error?: string;
-  }>;
-  gatewayCheckOmniRouteStatus?: () => Promise<{
-    success: boolean;
-    isRunning?: boolean;
-    port?: number;
-    error?: string;
-  }>;
   gatewayGoogleOAuthLogin?: () => Promise<{
     success: boolean;
     email?: string;
@@ -377,7 +360,9 @@ export interface ElectronBridgeAPI {
   onGatewayLogAdded?: (callback: (log: import('../gateway/gatewayTypes').GatewayTelemetryLog) => void) => () => void;
   onGatewayQuotaUpdated?: (callback: (account: import('../gateway/gatewayTypes').GatewayAccount) => void) => () => void;
   // Org Mode APIs
-  orgPickMasterRoot?: () => Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }>;
+  orgPickMasterRoot?: (params?: {
+    defaultPath?: string;
+  }) => Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }>;
   orgSetMasterRoot?: (params: {
     masterRoot: string;
   }) => Promise<{ success: boolean; error?: string; masterRoot?: string }>;
@@ -532,6 +517,51 @@ export interface ElectronBridgeAPI {
   ) => Promise<import('../pipeline/pipelineTypes').IPublishRecord>;
   publishListRecords?: (projectId?: string) => Promise<import('../pipeline/pipelineTypes').IPublishRecord[]>;
   publishGetRecord?: (idempotencyKey: string) => Promise<import('../pipeline/pipelineTypes').IPublishRecord | null>;
+  // OS-level Desktop Control APIs
+  desktopControlGetStatus?: () => Promise<{
+    success: boolean;
+    data?: import('../../desktopControl').DesktopControlStatus;
+    error?: string;
+  }>;
+  desktopControlUpdateConfig?: (patch: Partial<import('../../desktopControl').DesktopControlConfig>) => Promise<{
+    success: boolean;
+    data?: import('../../desktopControl').DesktopControlStatus;
+    error?: string;
+  }>;
+  desktopControlEmergencyStop?: () => Promise<{
+    success: boolean;
+    data?: import('../../desktopControl').DesktopControlStatus;
+    error?: string;
+  }>;
+  desktopControlResume?: () => Promise<{
+    success: boolean;
+    data?: import('../../desktopControl').DesktopControlStatus;
+    error?: string;
+  }>;
+  desktopControlGetAuditLogs?: (limit?: number) => Promise<{
+    success: boolean;
+    data?: import('../../desktopControl').DesktopAuditEntry[];
+    error?: string;
+  }>;
+  desktopControlClearAuditLogs?: () => Promise<{ success: boolean; error?: string }>;
+  desktopControlCapturePreview?: (displayIndex?: number) => Promise<{
+    success: boolean;
+    data?: import('../../desktopControl').DesktopScreenshotResult;
+    error?: string;
+  }>;
+  desktopControlRespondApproval?: (payload: {
+    id: string;
+    approved: boolean;
+  }) => Promise<{ success: boolean; data?: boolean; error?: string }>;
+  onDesktopControlStatusChanged?: (
+    callback: (status: import('../../desktopControl').DesktopControlStatus) => void
+  ) => () => void;
+  onDesktopControlEmergencyStopped?: (
+    callback: (event: { source: string; status: import('../../desktopControl').DesktopControlStatus }) => void
+  ) => () => void;
+  onDesktopControlApprovalRequested?: (
+    callback: (request: import('../../desktopControl').DesktopApprovalRequest) => void
+  ) => () => void;
 }
 
 export type BackendStartupFailureReason =

@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
+import { loadKnowledgeRepoMaps, resolveEntityKnowledgeInstructions } from '@/renderer/components/knowledge';
 import { buildOrgDirectory, getOrgDirectoryPrompt } from './orgDirectory';
 import {
   MAX_DELEGATION_DEPTH,
@@ -814,6 +815,7 @@ export class OrgDelegationEngine {
     let unsubscribe: (() => void) | undefined;
     let unsubLiveStep: (() => void) | undefined;
     let runError: string | null = null;
+    let activeKnowledgeRepoIds: string[] = [];
 
     const pushNotice = (notice: string) => {
       if (!notice || notice === lastNoticeChunk) return;
@@ -1399,31 +1401,43 @@ export class OrgDelegationEngine {
         console.warn('[OrgDelegationEngine] Failed to build handbook for agent:', err);
       }
 
+      const knowledgeMaps = await loadKnowledgeRepoMaps();
       const directoryPrefix = `${getOrgDirectoryPrompt(
-        buildOrgDirectory({ hierarchy: this.hierarchy, projects: this.projects }),
+        buildOrgDirectory({
+          hierarchy: this.hierarchy,
+          projects: this.projects,
+          knowledgeReposByMemberId: knowledgeMaps.byMemberId,
+          knowledgeReposByProjectId: knowledgeMaps.byProjectId,
+        }),
         { conversationId: convId }
       )}\n\n`;
 
+      const boundProject = opts.projectId
+        ? this.projects.find((p) => p.id === opts.projectId)
+        : this.projects.find((p) => p.workspacePath && p.workspacePath === opts.workspacePath);
+
       let knowledgePrefix = '';
-      if (!opts.userDirective.includes('### Authoritative Knowledge Playbook')) {
-        try {
-          const memberKey = `org:${opts.agent.id}`;
-          const assign = await knowledgeRepo.getAssignment(memberKey);
-          if (assign && assign.repoIds.length > 0) {
-            const inst = await knowledgeRepo.buildInstructions({
-              memberKey,
-              conversationId: convId,
-              memberName: opts.agent.name,
-              repoIds: assign.repoIds,
-              whenToUseHint: assign.whenToUseHint,
-            });
-            if (inst?.instructions) {
-              knowledgePrefix = `${inst.instructions}\n\n`;
-            }
-          }
-        } catch (err) {
-          console.warn('[OrgDelegationEngine] Failed to build knowledge for agent:', err);
+      const alreadyHasKnowledge =
+        opts.userDirective.includes('### Authoritative Knowledge Playbook') ||
+        opts.userDirective.includes('[Knowledge Reminder]');
+      if (!alreadyHasKnowledge) {
+        const knowledgeRes = await resolveEntityKnowledgeInstructions({
+          memberKey: `org:${opts.agent.id}`,
+          memberName: opts.agent.name,
+          projectId: boundProject?.id,
+          projectRepoIds: boundProject?.context?.repos,
+          conversationId: convId,
+        });
+        activeKnowledgeRepoIds = knowledgeRes.repoIds;
+        if (knowledgeRes.instructions) {
+          knowledgePrefix = `${knowledgeRes.instructions}\n\n`;
         }
+      }
+
+      if (activeKnowledgeRepoIds.length > 0) {
+        await knowledgeRepo
+          .setTaskRunning({ repoIds: activeKnowledgeRepoIds, isRunning: true })
+          .catch((): void => undefined);
       }
 
       const promptToSend = opts.conversationId
@@ -1463,7 +1477,7 @@ export class OrgDelegationEngine {
           if (freshConv?.id) {
             convId = freshConv.id;
             this.lastBackendConversationId = convId;
-            const fullPrompt = `${directoryPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+            const fullPrompt = `${directoryPrefix}${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
             await ipcBridge.conversation.sendMessage.invoke({
               conversation_id: convId,
               input: fullPrompt,
@@ -1542,6 +1556,11 @@ export class OrgDelegationEngine {
     } finally {
       unsubLiveStep?.();
       unsubscribe?.();
+      if (activeKnowledgeRepoIds.length > 0) {
+        await knowledgeRepo
+          .setTaskRunning({ repoIds: activeKnowledgeRepoIds, isRunning: false })
+          .catch((): void => undefined);
+      }
     }
 
     if (contentCount === 0 && this.lastBackendConversationId) {
@@ -1623,7 +1642,8 @@ export class OrgDelegationEngine {
     workspacePath?: string,
     useRealExecution = true,
     systemPromptOverride?: string,
-    conversationId?: string
+    conversationId?: string,
+    projectId?: string
   ): Promise<string> {
     if (agent.status === 'error' || agent.status === 'dormant') {
       throw new Error(`Cannot send direct message to agent "${agent.name}": agent has ${agent.status} status.`);
@@ -1647,6 +1667,7 @@ export class OrgDelegationEngine {
         onStreamUpdate: (text) => this.onAgentStream?.(text),
         conversationId,
         workspaceExplicit: explicitWorkspace,
+        projectId,
       });
       return response;
     } finally {
@@ -2827,9 +2848,19 @@ export class OrgDelegationEngine {
       this.updateNodeStatus?.(targetTeam?.id || targetDept.id, 'working');
 
       try {
+        const orgProj = foundProject && 'context' in foundProject ? (foundProject as OrgProject) : undefined;
+        const projKnowledge = await resolveEntityKnowledgeInstructions({
+          memberKey: targetTeam?.teamLeadAgent?.id ? `org:${targetTeam.teamLeadAgent.id}` : undefined,
+          memberName: teamDisplayName,
+          projectId: orgProj?.id || foundProject?.id,
+          projectRepoIds: orgProj?.context?.repos,
+        });
+        const teamDirective = projKnowledge.instructions
+          ? `${projKnowledge.instructions}\n\n---\n${userPrompt}`
+          : userPrompt;
         await ipcBridge.team.sendMessage.invoke({
           team_id: backendTeamId,
-          input: userPrompt,
+          input: teamDirective,
         });
 
         this.updateNodeStatus?.(targetTeam?.id || targetDept.id, 'recently_finished');

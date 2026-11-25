@@ -13,6 +13,8 @@ import {
   isTeamworkSlashCommand,
   extractTeamworkTask,
   enforceTaskBreakdownPrompt,
+  stripTaskBreakdownPrompt,
+  TASK_BREAKDOWN_MARKER,
 } from '@/common/chat/slash/antigravityCommands';
 
 describe('antigravityCommands', () => {
@@ -165,11 +167,13 @@ describe('antigravityCommands', () => {
   });
 
   describe('enforceTaskBreakdownPrompt', () => {
-    it('appends structured task breakdown instructions to plain prompt', () => {
+    it('appends structured task breakdown and sequential one-by-one instructions to plain prompt', () => {
       const result = enforceTaskBreakdownPrompt('Implement user login system');
       expect(result).toContain('Implement user login system');
+      expect(result).toContain(TASK_BREAKDOWN_MARKER);
       expect(result).toContain('Instructions:');
       expect(result).toContain('- [ ] task description');
+      expect(result).toContain('one by one');
     });
 
     it('does not duplicate instructions if Antigravity mode format already present', () => {
@@ -185,6 +189,24 @@ describe('antigravityCommands', () => {
     it('returns empty/whitespace input unchanged', () => {
       expect(enforceTaskBreakdownPrompt('')).toBe('');
       expect(enforceTaskBreakdownPrompt('   ')).toBe('   ');
+    });
+  });
+
+  describe('stripTaskBreakdownPrompt', () => {
+    it('strips injected task breakdown instructions while keeping the user prompt intact', () => {
+      const wrapped = enforceTaskBreakdownPrompt('Fix login bug and add tests');
+      expect(stripTaskBreakdownPrompt(wrapped)).toBe('Fix login bug and add tests');
+    });
+
+    it('strips legacy unmarked task breakdown instructions', () => {
+      const legacy =
+        'Build dashboard\n\nInstructions:\nBefore executing, break down your plan into discrete tasks using markdown checkboxes (`- [ ] task description`), so progress can be tracked. Update tasks as completed (`- [x]`) as you finish each one.';
+      expect(stripTaskBreakdownPrompt(legacy)).toBe('Build dashboard');
+    });
+
+    it('leaves normal user text unchanged', () => {
+      expect(stripTaskBreakdownPrompt('Plain question')).toBe('Plain question');
+      expect(stripTaskBreakdownPrompt('')).toBe('');
     });
   });
 });

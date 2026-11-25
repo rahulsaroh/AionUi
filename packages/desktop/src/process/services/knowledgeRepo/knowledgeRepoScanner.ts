@@ -14,16 +14,39 @@ import type {
 } from '@/common/types/knowledgeRepo';
 
 const MAX_RULE_FILE_SIZE = 128 * 1024; // 128 KB max per always-on rule file
+const MAX_README_FALLBACK_CHARS = 8000;
+const MAX_REPO_MAP_CHARS = 2500;
+const MAX_REPO_MAP_ENTRIES = 150;
+const MAX_SKILL_SCAN_DEPTH = 4;
+const MAX_SKILLS_COUNT = 200;
+const MAX_WORKFLOW_SCAN_DEPTH = 3;
+const MAX_WORKFLOW_COUNT = 100;
 
-// Common rule filename patterns
-const ALWAYS_ON_RULE_FILES = [
-  'AGENTS.md',
-  'AGENT_GUIDE.md',
-  'CLAUDE.md',
-  'GEMINI.md',
-  '.cursorrules',
-  '.windsurfrules',
-  '.github/copilot-instructions.md',
+const IGNORED_MAP_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  '.venv',
+  'venv',
+  '__pycache__',
+  'target',
+  '.next',
+  '.cache',
+]);
+
+// Common rule filename patterns (ordered by precedence)
+const ALWAYS_ON_RULE_FILES: Array<{ path: string; priority: number }> = [
+  { path: 'AGENTS.md', priority: 10 },
+  { path: 'AGENT_GUIDE.md', priority: 10 },
+  { path: 'CLAUDE.md', priority: 10 },
+  { path: 'GEMINI.md', priority: 10 },
+  { path: '.cursorrules', priority: 10 },
+  { path: '.windsurfrules', priority: 10 },
+  { path: '.github/copilot-instructions.md', priority: 10 },
+  { path: 'COPILOT_INSTRUCTIONS.md', priority: 9 },
+  { path: 'ARCHITECTURE.md', priority: 6 },
+  { path: 'CONTRIBUTING.md', priority: 6 },
 ];
 
 // Folders containing rule files
@@ -34,6 +57,9 @@ const SKILL_DIRECTORIES = ['.claude/skills', 'skills', '.agents', '.agent'];
 
 // Workflows / pipelines directories
 const WORKFLOW_DIRECTORIES = ['pipelines', 'pipeline_defs', 'workflows', 'docs'];
+
+// Documentation & workflow file extensions
+const WORKFLOW_EXTENSIONS = new Set(['.md', '.mdx', '.yaml', '.yml', '.json', '.txt', '.rst']);
 
 // Setup and environment files that may alter runtime or execute code
 const SETUP_FILE_PATTERNS: Array<{
@@ -63,7 +89,8 @@ export class KnowledgeRepoScanner {
     const envExampleVars: string[] = [];
 
     // 1. Scan always-on instruction files in root
-    for (const ruleRel of ALWAYS_ON_RULE_FILES) {
+    for (const ruleSpec of ALWAYS_ON_RULE_FILES) {
+      const ruleRel = ruleSpec.path;
       const fullPath = path.join(root, ruleRel);
       try {
         const stat = await fs.stat(fullPath);
@@ -81,7 +108,7 @@ export class KnowledgeRepoScanner {
             relativePath: ruleRel,
             content,
             sizeBytes,
-            priority: 10,
+            priority: ruleSpec.priority,
           });
         }
       } catch {
@@ -115,77 +142,38 @@ export class KnowledgeRepoScanner {
       }
     }
 
-    // 3. Scan on-demand skills
+    // 3. Recursively scan on-demand skills for SKILL.md
     for (const skillDirRel of SKILL_DIRECTORIES) {
       const fullSkillDir = path.join(root, skillDirRel);
-      try {
-        const entries = await fs.readdir(fullSkillDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const skillMdPath = path.join(fullSkillDir, entry.name, 'SKILL.md');
-            try {
-              const content = await fs.readFile(skillMdPath, 'utf8');
-              const { name, description } = this.parseSkillFrontmatter(content, entry.name);
-              onDemandSkills.push({
-                id: `${skillDirRel}_${entry.name}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
-                name,
-                description,
-                relativePath: path.join(skillDirRel, entry.name, 'SKILL.md').replace(/\\/g, '/'),
-                category: skillDirRel,
-              });
-            } catch {
-              // No SKILL.md found in folder
-            }
-          }
-        }
-      } catch {
-        // Directory does not exist
-      }
+      await this.scanSkillsRecursive(root, fullSkillDir, skillDirRel, 0, onDemandSkills);
     }
 
-    // 4. Scan workflow / pipeline directories
+    // 4. Recursively scan workflow / pipeline / docs directories
     for (const wfDir of WORKFLOW_DIRECTORIES) {
       const fullWfDir = path.join(root, wfDir);
-      try {
-        const entries = await fs.readdir(fullWfDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (
-            entry.isFile() &&
-            (entry.name.endsWith('.md') || entry.name.endsWith('.yaml') || entry.name.endsWith('.json'))
-          ) {
-            const relPath = path.join(wfDir, entry.name).replace(/\\/g, '/');
-            onDemandSkills.push({
-              id: relPath.replace(/[^a-zA-Z0-9_-]/g, '_'),
-              name: entry.name,
-              description: `Workflow definition in ${relPath}`,
-              relativePath: relPath,
-              category: wfDir,
-            });
-          }
-        }
-      } catch {
-        // Directory does not exist
-      }
+      await this.scanWorkflowsRecursive(root, fullWfDir, wfDir, 0, onDemandSkills);
     }
 
-    // 5. Fallback: If no rules or skills found, check README.md
+    // 5. Fallback: If no rules or skills found, check README files (case-insensitive)
     if (alwaysOnRules.length === 0 && onDemandSkills.length === 0) {
-      const readmePath = path.join(root, 'README.md');
-      try {
-        const stat = await fs.stat(readmePath);
-        if (stat.isFile()) {
-          const raw = await fs.readFile(readmePath, 'utf8');
-          alwaysOnRules.push({
-            id: 'readme_fallback',
-            name: 'README.md',
-            relativePath: 'README.md',
-            content: raw.slice(0, 4000), // Bounded excerpt
-            sizeBytes: Math.min(stat.size, 4000),
-            priority: 1,
-          });
+      const readmeCandidate = await this.findReadmeFile(root);
+      if (readmeCandidate) {
+        try {
+          const stat = await fs.stat(readmeCandidate.fullPath);
+          if (stat.isFile()) {
+            const raw = await fs.readFile(readmeCandidate.fullPath, 'utf8');
+            alwaysOnRules.push({
+              id: 'readme_fallback',
+              name: readmeCandidate.name,
+              relativePath: readmeCandidate.name,
+              content: raw.slice(0, MAX_README_FALLBACK_CHARS),
+              sizeBytes: Math.min(stat.size, MAX_README_FALLBACK_CHARS),
+              priority: 1,
+            });
+          }
+        } catch {
+          // Ignore unreadable README
         }
-      } catch {
-        // No README
       }
     }
 
@@ -225,8 +213,11 @@ export class KnowledgeRepoScanner {
       // Ignore root entry scan failure
     }
 
+    // 7. Build compact directory tree map for general code/docs repos
+    const repoMap = await this.buildRepoMap(root);
+
     // Calculate approximate token estimate (1 token ~= 4 chars)
-    let totalChars = 0;
+    let totalChars = repoMap ? repoMap.length : 0;
     for (const rule of alwaysOnRules) {
       totalChars += rule.content.length;
     }
@@ -240,9 +231,136 @@ export class KnowledgeRepoScanner {
       onDemandSkills,
       setupFiles,
       envExampleVars: Array.from(new Set(envExampleVars)),
+      repoMap: repoMap || undefined,
       summary: `Discovered ${alwaysOnRules.length} rules, ${onDemandSkills.length} skills/workflows, ${setupFiles.length} setup files.`,
       estimatedTokens,
     };
+  }
+
+  private async scanSkillsRecursive(
+    repoRoot: string,
+    currentDir: string,
+    category: string,
+    depth: number,
+    results: KnowledgeSkillItem[]
+  ): Promise<void> {
+    if (depth > MAX_SKILL_SCAN_DEPTH || results.length >= MAX_SKILLS_COUNT) return;
+    let entries;
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of entries) {
+      if (results.length >= MAX_SKILLS_COUNT) break;
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+
+      const subDir = path.join(currentDir, entry.name);
+      const skillMdPath = path.join(subDir, 'SKILL.md');
+      try {
+        const content = await fs.readFile(skillMdPath, 'utf8');
+        const { name, description } = this.parseSkillFrontmatter(content, entry.name);
+        const relPath = path.relative(repoRoot, skillMdPath).replace(/\\/g, '/');
+        results.push({
+          id: relPath.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          name,
+          description,
+          relativePath: relPath,
+          category,
+        });
+      } catch {
+        // Recurse into nested subdirectories to locate SKILL.md
+        await this.scanSkillsRecursive(repoRoot, subDir, category, depth + 1, results);
+      }
+    }
+  }
+
+  private async scanWorkflowsRecursive(
+    repoRoot: string,
+    currentDir: string,
+    category: string,
+    depth: number,
+    results: KnowledgeSkillItem[]
+  ): Promise<void> {
+    if (depth > MAX_WORKFLOW_SCAN_DEPTH || results.length >= MAX_SKILLS_COUNT + MAX_WORKFLOW_COUNT) return;
+    let entries;
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of entries) {
+      if (results.length >= MAX_SKILLS_COUNT + MAX_WORKFLOW_COUNT) break;
+      if (entry.isSymbolicLink()) continue;
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        await this.scanWorkflowsRecursive(repoRoot, fullPath, category, depth + 1, results);
+      } else if (entry.isFile() && WORKFLOW_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        const relPath = path.relative(repoRoot, fullPath).replace(/\\/g, '/');
+        results.push({
+          id: relPath.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          name: entry.name,
+          description: `Documentation / workflow file in ${relPath}`,
+          relativePath: relPath,
+          category,
+        });
+      }
+    }
+  }
+
+  private async findReadmeFile(root: string): Promise<{ name: string; fullPath: string } | null> {
+    try {
+      const entries = await fs.readdir(root, { withFileTypes: true });
+      const preferred = ['readme.md', 'readme.mdx', 'readme.rst', 'readme.txt', 'readme'];
+      for (const target of preferred) {
+        const match = entries.find((e) => e.isFile() && e.name.toLowerCase() === target);
+        if (match) {
+          return { name: match.name, fullPath: path.join(root, match.name) };
+        }
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  }
+
+  private async buildRepoMap(root: string): Promise<string> {
+    const lines: string[] = [];
+    let totalChars = 0;
+
+    const walk = async (dir: string, depth: number, prefix: string): Promise<void> => {
+      if (depth > 3 || lines.length >= MAX_REPO_MAP_ENTRIES || totalChars >= MAX_REPO_MAP_CHARS) return;
+      let entries;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      entries.sort((a, b) => {
+        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      for (const entry of entries) {
+        if (lines.length >= MAX_REPO_MAP_ENTRIES || totalChars >= MAX_REPO_MAP_CHARS) break;
+        if (entry.isSymbolicLink() || IGNORED_MAP_DIRS.has(entry.name)) continue;
+        const isDir = entry.isDirectory();
+        const line = `${prefix}${entry.name}${isDir ? '/' : ''}`;
+        if (totalChars + line.length + 1 > MAX_REPO_MAP_CHARS) break;
+        lines.push(line);
+        totalChars += line.length + 1;
+        if (isDir) {
+          await walk(path.join(dir, entry.name), depth + 1, `${prefix}  `);
+        }
+      }
+    };
+
+    await walk(root, 1, '');
+    return lines.join('\n');
   }
 
   /**

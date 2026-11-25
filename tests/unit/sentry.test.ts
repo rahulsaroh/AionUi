@@ -302,8 +302,8 @@ describe('captureBackendStartupFailure', () => {
 });
 
 describe('initSentry beforeSend', () => {
-  it('drops native GPU unusable crashes reported only through crashpad context', () => {
-    initSentry();
+  it('drops native GPU unusable crashes reported only through crashpad context', async () => {
+    await initSentry();
 
     const event = {
       contexts: {
@@ -316,8 +316,8 @@ describe('initSentry beforeSend', () => {
     expect(sentryInitOptions?.beforeSend?.(event)).toBeNull();
   });
 
-  it('keeps native shutdown fatal crashes while filtering GPU crashpad noise', () => {
-    initSentry();
+  it('keeps native shutdown fatal crashes while filtering GPU crashpad noise', async () => {
+    await initSentry();
 
     const event = {
       contexts: {
@@ -330,8 +330,8 @@ describe('initSentry beforeSend', () => {
     expect(sentryInitOptions?.beforeSend?.(event)).toBe(event);
   });
 
-  it('drops a native GPU-process illegal-instruction minidump identified only by crashpad process type (ELECTRON-3WS)', () => {
-    initSentry();
+  it('drops a native GPU-process illegal-instruction minidump identified only by crashpad process type (ELECTRON-3WS)', async () => {
+    await initSentry();
 
     const event = {
       exception: {
@@ -350,8 +350,8 @@ describe('initSentry beforeSend', () => {
     expect(sentryInitOptions?.beforeSend?.(event)).toBeNull();
   });
 
-  it('drops a GPU-process crash identified only by the event.process tag', () => {
-    initSentry();
+  it('drops a GPU-process crash identified only by the event.process tag', async () => {
+    await initSentry();
 
     const event = {
       tags: { 'event.process': 'gpu' },
@@ -361,8 +361,8 @@ describe('initSentry beforeSend', () => {
     expect(sentryInitOptions?.beforeSend?.(event)).toBeNull();
   });
 
-  it('keeps a renderer-process crash (only GPU-process crashes are dropped)', () => {
-    initSentry();
+  it('keeps a renderer-process crash (only GPU-process crashes are dropped)', async () => {
+    await initSentry();
 
     const event = {
       exception: { values: [{ value: 'EXCEPTION_ACCESS_VIOLATION_0x0' }] },
@@ -375,8 +375,8 @@ describe('initSentry beforeSend', () => {
     expect(sentryInitOptions?.beforeSend?.(event)).toBe(event);
   });
 
-  it('drops backend-port secondary errors after backend startup already failed', () => {
-    initSentry();
+  it('drops backend-port secondary errors after backend startup already failed', async () => {
+    await initSentry();
     (globalThis as { __backendStartupFailed?: boolean }).__backendStartupFailed = true;
 
     const event = {
@@ -394,8 +394,8 @@ describe('initSentry beforeSend', () => {
     delete (globalThis as { __backendStartupFailed?: boolean }).__backendStartupFailed;
   });
 
-  it('keeps the primary backend startup failure even when its details contain secondary text', () => {
-    initSentry();
+  it('keeps the primary backend startup failure even when its details contain secondary text', async () => {
+    await initSentry();
     (globalThis as { __backendStartupFailed?: boolean }).__backendStartupFailed = true;
 
     const event = {
@@ -416,8 +416,8 @@ describe('initSentry beforeSend', () => {
     delete (globalThis as { __backendStartupFailed?: boolean }).__backendStartupFailed;
   });
 
-  it('keeps user feedback reports even when diagnostics contain backend secondary text', () => {
-    initSentry();
+  it('keeps user feedback reports even when diagnostics contain backend secondary text', async () => {
+    await initSentry();
     (globalThis as { __backendStartupFailed?: boolean }).__backendStartupFailed = true;
 
     const event = {

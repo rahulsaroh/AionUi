@@ -16,7 +16,12 @@ import {
   type ImageGenerationMcpEnvResolveResult,
 } from '@/common/config/imageGenerationMcpEnv';
 import { BUILTIN_IMAGE_GEN_NAME, type IMcpServer, type IProvider } from '@/common/config/storage';
-import { BUILTIN_ORG_MCP_NAME, BUILTIN_ORG_SCRIPT } from '../resources/builtinMcp/constants';
+import {
+  BUILTIN_DESKTOP_CONTROL_NAME,
+  BUILTIN_DESKTOP_CONTROL_SCRIPT,
+  BUILTIN_ORG_MCP_NAME,
+  BUILTIN_ORG_SCRIPT,
+} from '../resources/builtinMcp/constants';
 import { getBuiltinMcpScriptPath, type ProcessConfig as ProcessConfigType } from './initStorage';
 import { migrateAssistantsToBackend } from './migrateAssistants';
 
@@ -222,6 +227,28 @@ function buildBuiltinOrgServer(): McpImportServer {
   };
 }
 
+function buildBuiltinDesktopControlServer(): McpImportServer {
+  const scriptPath = getBuiltinMcpScriptPath(BUILTIN_DESKTOP_CONTROL_SCRIPT);
+  const serverConfig = {
+    command: 'node',
+    args: [scriptPath],
+  };
+
+  return {
+    name: BUILTIN_DESKTOP_CONTROL_NAME,
+    description:
+      'OS-level desktop GUI control (screenshots, windows, UI Automation tree, mouse & keyboard) gated by Settings > Tools > Desktop Control.',
+    enabled: true,
+    builtin: true,
+    transport: {
+      type: 'stdio',
+      command: serverConfig.command,
+      args: serverConfig.args,
+    },
+    original_json: JSON.stringify({ mcpServers: { [BUILTIN_DESKTOP_CONTROL_NAME]: serverConfig } }, null, 2),
+  };
+}
+
 function buildDefaultMcpServers(): McpImportServer[] {
   const chromeConfig = {
     command: 'npx',
@@ -243,6 +270,7 @@ function buildDefaultMcpServers(): McpImportServer[] {
     },
     buildBuiltinBrowserServer(),
     buildBuiltinOrgServer(),
+    buildBuiltinDesktopControlServer(),
   ];
 }
 
@@ -478,6 +506,25 @@ async function ensureBootstrapMcpServersInDb(configFile: ConfigFile): Promise<vo
         },
       });
       orgServerUpdated = true;
+    }
+  }
+
+  const existingDesktopServer = existing.find((server) => server.name === BUILTIN_DESKTOP_CONTROL_NAME);
+  if (existingDesktopServer) {
+    const desiredDesktopServer = buildBuiltinDesktopControlServer();
+    const desktopTransportChanged = !isSameStdioTransport(
+      existingDesktopServer.transport,
+      desiredDesktopServer.transport
+    );
+    const desktopJsonChanged = existingDesktopServer.original_json !== desiredDesktopServer.original_json;
+    if (desktopTransportChanged || desktopJsonChanged) {
+      await mcpService.updateServer.invoke({
+        id: existingDesktopServer.id,
+        data: {
+          transport: desiredDesktopServer.transport,
+          original_json: desiredDesktopServer.original_json,
+        },
+      });
     }
   }
 

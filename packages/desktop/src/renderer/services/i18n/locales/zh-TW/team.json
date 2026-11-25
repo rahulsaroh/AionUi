@@ -20,7 +20,9 @@
     "archiveSuccess": "å·²å°å­˜åœ˜éšŠ",
     "archiveFailed": "å°å­˜åœ˜éšŠå¤±æ•—",
     "editTeam": "ç·¨è¼¯åœ˜éšŠ",
-    "deleteFailed": "åˆªé™¤åœ˜éšŠå¤±æ•—"
+    "deleteFailed": "åˆªé™¤åœ˜éšŠå¤±æ•—",
+    "moveToOrg": "移至組織",
+    "moveToOrgShort": "移至組織"
   },
   "activeMembers": {
     "title": "å·¥ä½œä¸­æˆå“¡",
@@ -383,7 +385,39 @@
     "newChat": "New chat",
     "noSearchResults": "No departments, teams, or projects match your search.",
     "noDepartments": "No departments found.",
-    "searchPlaceholder": "Search departments, teams, projects..."
+    "searchPlaceholder": "Search departments, teams, projects...",
+    "moveToOrg": {
+      "titleTeam": "將團隊移至組織",
+      "titleProject": "將專案移至組織",
+      "confirm": "移至組織",
+      "membersCount": "{{count}} 位成員",
+      "subTeamsCount": "+{{count}} 個子團隊",
+      "chatsCount": "{{count}} 個對話",
+      "targetDepartment": "目標部門",
+      "existingDepartment": "現有部門",
+      "newDepartment": "新增部門",
+      "selectDepartmentPlaceholder": "選擇部門",
+      "newDepartmentPlaceholder": "輸入新部門名稱",
+      "nameLabel": "在組織中的名稱",
+      "namePlaceholder": "輸入名稱",
+      "descriptionPlaceholder": "選填備註或目標說明",
+      "noMasterRootWarning": "請設定組織主資料夾，以便將工作區檔案綁定至部門。",
+      "setMasterFolder": "設定主資料夾",
+      "masterRootSet": "組織主資料夾已更新",
+      "masterRootFailed": "設定組織主資料夾失敗",
+      "orgFolderLabel": "組織工作區資料夾",
+      "alreadyInOrgRoot": "資料夾已位於目標部門根目錄內，將直接連結。",
+      "copyFiles": "複製檔案至組織資料夾（保留原始檔案）",
+      "moveFiles": "移動檔案至組織資料夾",
+      "skipFiles": "建立空資料夾（不傳輸檔案）",
+      "pathOutsideRoot": "目標資料夾必須位於部門或組織主根目錄內。",
+      "createLinkedProject": "同時在此部門中註冊為專案",
+      "includeSubTeams": "包含 {{count}} 個子團隊",
+      "removeFromWorkplace": "從工作區側邊欄移出（取消勾選則保留工作區副本）",
+      "openAfterMove": "移動後切換至組織並開啟",
+      "success": "已移至組織",
+      "failed": "移至組織失敗"
+    }
   },
   "knowledgeRepos": {
     "title": "知識庫",
@@ -432,7 +466,10 @@
     "setupInstructions": "環境設定說明",
     "runSetup": "執行設定腳本",
     "envVars": "環境變數",
-    "conflictsWarning": "檢測到規則衝突：高優先級知識庫優先生效。"
+    "conflictsWarning": "檢測到規則衝突：高優先級知識庫優先生效。",
+    "refAutoPlaceholder": "分支或標籤（預設自動偵測）",
+    "subpathPlaceholder": "子路徑（選填，例如 docs/playbook）",
+    "repoMapIndexed": "已索引檔案目錄"
   },
   "handbook": {
     "title": "员工手册",

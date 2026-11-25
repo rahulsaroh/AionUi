@@ -56,6 +56,7 @@ export const registerTeamworkHandlers = (): (() => void) => {
           conversationId: params.conversationId,
           userRequest: params.userRequest,
           workspace: params.workspace,
+          knowledgeRepoIds: params.knowledgeRepoIds,
         });
         return { success: true, session };
       } catch (error) {

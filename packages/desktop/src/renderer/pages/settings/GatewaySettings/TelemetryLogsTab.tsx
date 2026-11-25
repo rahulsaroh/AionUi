@@ -181,8 +181,8 @@ export const TelemetryLogsTab: React.FC = () => {
         <div>
           <div className='text-16px font-600 text-t-primary'>Token Observability & Execution Logs</div>
           <div className='text-12px text-t-secondary'>
-            Real-time per-request telemetry just like OmniRoute, displaying exact input, output, prompt cache, reasoning
-            tokens, and fallback waterfall traces.
+            Real-time per-request telemetry displaying exact input, output, prompt cache, reasoning tokens, and fallback
+            waterfall traces.
           </div>
         </div>
         <div className='flex items-center gap-8px'>

@@ -369,53 +369,78 @@ export class TeamworkOrchestrator {
           session.agentStatuses.explorer.activeToolCall = 'ast_map';
           this.notify(session);
 
-          const explorerResult = await this.runner.runSubagent({
-            role: 'explorer',
-            milestone,
-            workspace: session.workspace,
-          });
-
-          this.addTokens(session, 'explorer', explorerResult.tokensUsed);
-          session.agentStatuses.explorer.isExecuting = false;
-          session.agentStatuses.explorer.activeToolCall = undefined;
-          session.agentStatuses.explorer.lastMessage = explorerResult.output;
-          this.notify(session);
-
-          if (!explorerResult.success) {
-            session.phase = 'failed';
-            session.error = `Explorer failed on ${milestone.title}: ${explorerResult.error}`;
-            milestone.status = 'failed';
-            this.notify(session);
-            return;
+          const repoIds = session.knowledgeRepoIds || [];
+          if (repoIds.length > 0) {
+            knowledgeRepoService.setAgentTaskRunning(repoIds, true);
           }
 
-          // 2. Dispatch Worker: Implementation per Milestone (Targeted Edits)
-          session.activeRole = 'worker';
-          session.agentStatuses.worker.isExecuting = true;
-          session.agentStatuses.worker.activeToolCall = 'write_file';
-          this.notify(session);
-
-          // Build effective instructions for worker teammate if knowledge repos are active
-          const repoIds = session.knowledgeRepoIds || [];
-          let effectiveInstructions: string | undefined;
+          let explorerInstructions: string | undefined;
           if (repoIds.length > 0) {
-            const instrResult = await knowledgeRepoService.buildEffectiveInstructions({
-              memberName: 'Worker',
-              rolePrompt: 'Targeted file generation, editing, refactoring, and feature implementation per milestone.',
+            const explorerInstrResult = await knowledgeRepoService.buildEffectiveInstructions({
+              conversationId: session.conversationId,
+              memberName: 'Explorer',
+              rolePrompt: 'Read-only codebase indexing and knowledge repository inspection.',
               repoIds,
             });
-            effectiveInstructions = instrResult.instructions;
+            explorerInstructions = explorerInstrResult.instructions;
           }
 
-          const workerResult = await this.runner.runSubagent({
-            role: 'worker',
-            milestone,
-            contextBrief: explorerResult.output,
-            feedback: lastFeedback || undefined,
-            workspace: session.workspace,
-            effectiveInstructions,
-            knowledgeRepoIds: repoIds,
-          });
+          let workerResult: SubagentExecutionResult;
+          try {
+            const explorerResult = await this.runner.runSubagent({
+              role: 'explorer',
+              milestone,
+              workspace: session.workspace,
+              effectiveInstructions: explorerInstructions,
+              knowledgeRepoIds: repoIds,
+            });
+
+            this.addTokens(session, 'explorer', explorerResult.tokensUsed);
+            session.agentStatuses.explorer.isExecuting = false;
+            session.agentStatuses.explorer.activeToolCall = undefined;
+            session.agentStatuses.explorer.lastMessage = explorerResult.output;
+            this.notify(session);
+
+            if (!explorerResult.success) {
+              session.phase = 'failed';
+              session.error = `Explorer failed on ${milestone.title}: ${explorerResult.error}`;
+              milestone.status = 'failed';
+              this.notify(session);
+              return;
+            }
+
+            // 2. Dispatch Worker: Implementation per Milestone (Targeted Edits)
+            session.activeRole = 'worker';
+            session.agentStatuses.worker.isExecuting = true;
+            session.agentStatuses.worker.activeToolCall = 'write_file';
+            this.notify(session);
+
+            // Build effective instructions for worker teammate if knowledge repos are active
+            let effectiveInstructions: string | undefined;
+            if (repoIds.length > 0) {
+              const instrResult = await knowledgeRepoService.buildEffectiveInstructions({
+                conversationId: session.conversationId,
+                memberName: 'Worker',
+                rolePrompt: 'Targeted file generation, editing, refactoring, and feature implementation per milestone.',
+                repoIds,
+              });
+              effectiveInstructions = instrResult.instructions;
+            }
+
+            workerResult = await this.runner.runSubagent({
+              role: 'worker',
+              milestone,
+              contextBrief: explorerResult.output,
+              feedback: lastFeedback || undefined,
+              workspace: session.workspace,
+              effectiveInstructions,
+              knowledgeRepoIds: repoIds,
+            });
+          } finally {
+            if (repoIds.length > 0) {
+              knowledgeRepoService.setAgentTaskRunning(repoIds, false);
+            }
+          }
 
           this.addTokens(session, 'worker', workerResult.tokensUsed);
           session.agentStatuses.worker.isExecuting = false;

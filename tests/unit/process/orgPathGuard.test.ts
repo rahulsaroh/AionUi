@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { assertWithinScope } from '../../../packages/desktop/src/process/services/org/pathGuard';
+import {
+  assertWithinScope,
+  clearRegisteredKnowledgeRoots,
+  registerKnowledgeReadOnlyRoot,
+} from '../../../packages/desktop/src/process/services/org/pathGuard';
 
 const tempRoots: string[] = [];
 
@@ -13,6 +17,7 @@ function mkTempRoot(): string {
 }
 
 afterEach(() => {
+  clearRegisteredKnowledgeRoots();
   for (const dir of tempRoots.splice(0)) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -102,5 +107,20 @@ describe('assertWithinScope', () => {
     }
     const r = await assertWithinScope(path.join(linkPath, 'nonexistent', 'secret.txt'), root);
     expect(r.allowed).toBe(false);
+  });
+
+  it('allows read-only knowledge paths (worktrees, hyphenated cache, custom root) only when allowReadOnlyKnowledge is set', async () => {
+    const root = mkTempRoot();
+    const outsideBase = mkTempRoot();
+    const customCache = mkTempRoot();
+    registerKnowledgeReadOnlyRoot(customCache);
+
+    const hyphenRepoFile = path.join(outsideBase, 'knowledge-repos', 'repo-1', 'README.md');
+    const customFile = path.join(customCache, 'repo-2', 'SKILL.md');
+
+    expect((await assertWithinScope(hyphenRepoFile, root)).allowed).toBe(false);
+    expect((await assertWithinScope(hyphenRepoFile, root, { allowReadOnlyKnowledge: true })).allowed).toBe(true);
+    expect((await assertWithinScope(customFile, root)).allowed).toBe(false);
+    expect((await assertWithinScope(customFile, root, { allowReadOnlyKnowledge: true })).allowed).toBe(true);
   });
 });

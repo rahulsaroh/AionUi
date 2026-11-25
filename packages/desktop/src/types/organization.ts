@@ -285,6 +285,7 @@ export interface OrgDirectoryProjectEntry {
   description?: string;
   memberIds?: string[];
   backendTeamId?: string;
+  knowledgeRepos?: string[];
 }
 
 export interface OrgDirectoryDepartmentEntry {

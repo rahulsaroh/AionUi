@@ -245,6 +245,51 @@ describe('common desktop UI shortcuts', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('toggles settings with Cmd/Ctrl+, and returns to last non-settings path', () => {
+    sessionStorage.setItem('aion:last-non-settings-path', '/conversation/conv-42');
+    const { navigate, rerender } = renderConversationShortcuts();
+
+    const openEvent = dispatchShortcut(window, { key: ',', metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/settings/agent');
+    expect(openEvent.defaultPrevented).toBe(true);
+
+    testState.pathname = '/settings/agent';
+    rerender();
+    const closeEvent = dispatchShortcut(window, { key: ',', metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/conversation/conv-42');
+    expect(closeEvent.defaultPrevented).toBe(true);
+  });
+
+  it('toggles between Workplace and Organization with Cmd/Ctrl+Shift+W', () => {
+    sessionStorage.setItem('aion:last-workplace-path', '/team/team-7');
+    const { navigate, rerender } = renderConversationShortcuts();
+
+    const toOrgEvent = dispatchShortcut(window, { key: 'w', shiftKey: true, metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/organization');
+    expect(toOrgEvent.defaultPrevented).toBe(true);
+
+    testState.pathname = '/organization';
+    rerender();
+    const toWorkplaceEvent = dispatchShortcut(window, { key: 'w', shiftKey: true, metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/team/team-7');
+    expect(toWorkplaceEvent.defaultPrevented).toBe(true);
+  });
+
+  it('jumps to last active team, workplace, and approvals with Cmd/Ctrl+1/3/5', () => {
+    localStorage.setItem('team:last-active-id', 'team-99');
+    sessionStorage.setItem('aion:last-workplace-path', '/conversation/conv-99');
+    const { navigate } = renderConversationShortcuts();
+
+    dispatchShortcut(window, { key: '1', metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/team/team-99');
+
+    dispatchShortcut(window, { key: '3', metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/conversation/conv-99');
+
+    dispatchShortcut(window, { key: '5', metaKey: true });
+    expect(navigate).toHaveBeenCalledWith('/approvals');
+  });
+
   it('leaves workspace shortcuts to embedded code editors', () => {
     const editor = document.createElement('div');
     editor.className = 'cm-editor';

@@ -1,7 +1,7 @@
 import { Button, Dropdown, Menu, Message, Modal, Spin, Tag, Tooltip } from '@arco-design/web-react';
-import { FullScreen, Left, MoreOne, OffScreen, Peoples, Plus, Right, Finance } from '@icon-park/react';
+import { FullScreen, Left, MoreOne, NetworkTree, OffScreen, Peoples, Plus, Right, Finance } from '@icon-park/react';
 import { getSpendToday, formatCost } from '@/common/costs';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
@@ -63,6 +63,10 @@ import { setCurrentProject } from '@/renderer/pages/conversation/explorer/curren
 import { setCurrentConversation } from '@/renderer/pages/conversation/explorer/currentConversationStore';
 import { getSnapshotConversationProjectId } from '@/renderer/pages/conversation/GroupedHistory/hooks/useConversationListSync';
 import { isBackendHttpError } from '@/common/adapter/httpBridge';
+import { getOrganizationBackendTeamIds, useOrgStore } from '@/renderer/pages/organization/store/useOrgStore';
+import { getDescendantTeamIds } from './utils/teamStorage';
+
+const MoveToOrgModal = React.lazy(() => import('@/renderer/pages/organization/move/MoveToOrgModal'));
 
 type Props = {
   team: TTeam;
@@ -631,8 +635,20 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { teams: allTeams } = useTeamList();
+  const { teams: allTeams, mutate: mutateTeams } = useTeamList();
+  const { activeScope: orgActiveScope, hierarchy: orgHierarchy, projects: orgStoreProjects } = useOrgStore();
   const [isCreateSubTeamVisible, setIsCreateSubTeamVisible] = useState(false);
+  const [isMoveToOrgVisible, setIsMoveToOrgVisible] = useState(false);
+  const isWorkplaceTeam = useMemo(() => {
+    if (orgActiveScope === 'organization') return false;
+    if (team.mode === 'organization') return false;
+    return !getOrganizationBackendTeamIds().has(team.id);
+  }, [orgActiveScope, team.id, team.mode, orgHierarchy, orgStoreProjects]);
+  const descendantSubTeams = useMemo(() => {
+    if (!allTeams?.length) return [];
+    const ids = new Set(getDescendantTeamIds(allTeams, team.id));
+    return allTeams.filter((item) => ids.has(item.id));
+  }, [allTeams, team.id]);
   const parentTeam = useMemo(
     () => (team.parentId ? allTeams?.find((t) => t.id === team.parentId) : undefined),
     [allTeams, team.parentId]
@@ -1064,6 +1080,21 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
                   {t('team.subTeam.btn', { defaultValue: 'Sub-Team' })}
                 </Button>
               </Tooltip>
+              {isWorkplaceTeam && (
+                <Tooltip
+                  content={t('team.sider.moveToOrg', { defaultValue: 'Move to Organization' })}
+                  position='bottom'
+                >
+                  <Button
+                    size='small'
+                    icon={<NetworkTree theme='outline' size='14' />}
+                    onClick={() => setIsMoveToOrgVisible(true)}
+                    data-testid='team-header-move-to-org-btn'
+                  >
+                    {t('team.sider.moveToOrgShort', { defaultValue: 'Move to Org' })}
+                  </Button>
+                </Tooltip>
+              )}
               <TeamNewTaskButton
                 team={team}
                 teamRunView={teamRun.state}
@@ -1330,6 +1361,18 @@ const TeamPageContent: React.FC<TeamPageContentProps> = ({
               navigate(`/team/${newSubTeam.id}`);
             }}
           />
+        )}
+        {isMoveToOrgVisible && (
+          <Suspense fallback={null}>
+            <MoveToOrgModal
+              visible={true}
+              target={{ kind: 'team', team, subTeams: descendantSubTeams }}
+              onClose={() => setIsMoveToOrgVisible(false)}
+              onSuccess={() => {
+                void mutateTeams();
+              }}
+            />
+          </Suspense>
         )}
       </TeamIdentityProvider>
     </TeamPermissionProvider>

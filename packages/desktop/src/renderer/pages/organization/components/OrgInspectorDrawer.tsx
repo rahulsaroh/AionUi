@@ -764,13 +764,17 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
                 />
               </div>
             )}
-            {targetAgentMember && (
+            {((selectedNodeType === 'project' && selectedNodeId) || targetAgentMember) && (
               <div className='flex items-center justify-between pt-6px border-t border-[var(--color-border-2)]/60'>
                 <span className='text-10px text-t-tertiary font-medium'>Knowledge:</span>
                 <div className='flex items-center gap-6px'>
                   <KnowledgeChip
-                    memberKey={`org:${targetAgentMember.id}`}
-                    memberName={targetAgentMember.name}
+                    memberKey={
+                      selectedNodeType === 'project' && selectedNodeId
+                        ? `project:${selectedNodeId}`
+                        : `org:${targetAgentMember!.id}`
+                    }
+                    memberName={selectedNodeType === 'project' ? nodeTitle : targetAgentMember!.name}
                     onClick={() => setIsKnowledgePanelOpen(true)}
                     showWhenEmpty
                   />
@@ -1068,12 +1072,28 @@ export const OrgInspectorDrawer: React.FC<OrgInspectorDrawerProps> = ({
           </Tabs>
         </div>
       </Drawer>
-      {targetAgentMember && (
+      {((selectedNodeType === 'project' && selectedNodeId) || targetAgentMember) && (
         <MemberKnowledgePanel
-          memberKey={`org:${targetAgentMember.id}`}
-          memberName={targetAgentMember.name}
+          memberKey={
+            selectedNodeType === 'project' && selectedNodeId
+              ? `project:${selectedNodeId}`
+              : `org:${targetAgentMember!.id}`
+          }
+          memberName={selectedNodeType === 'project' ? nodeTitle : targetAgentMember!.name}
           visible={isKnowledgePanelOpen}
+          hideDocumentKnowledge={selectedNodeType === 'project'}
           onClose={() => setIsKnowledgePanelOpen(false)}
+          onSaved={(assignedRepoIds) => {
+            if (selectedNodeType === 'project' && selectedNodeId) {
+              const proj = projects.find((p) => p.id === selectedNodeId);
+              if (proj) {
+                upsertOrgProject({
+                  ...proj,
+                  context: { ...proj.context, repos: assignedRepoIds },
+                });
+              }
+            }
+          }}
         />
       )}
     </>

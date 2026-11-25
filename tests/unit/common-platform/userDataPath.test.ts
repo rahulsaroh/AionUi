@@ -28,10 +28,16 @@ import {
 
 describe('userDataPath (Portable storage)', () => {
   const tempTestDir = path.join(process.cwd(), 'temp', 'userDataPath-test-' + Date.now());
+  const originalAppData = process.env.APPDATA;
+  const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
   beforeEach(() => {
     resetConfiguredUserDataDirForTesting();
     fs.mkdirSync(tempTestDir, { recursive: true });
+    const isolatedAppData = path.join(tempTestDir, 'os-appdata');
+    fs.mkdirSync(isolatedAppData, { recursive: true });
+    process.env.APPDATA = isolatedAppData;
+    process.env.XDG_CONFIG_HOME = isolatedAppData;
     delete process.env.AIONUI_DATA_DIR;
     delete process.env.AIONUI_APP_ROOT;
     delete process.env.AIONUI_MULTI_INSTANCE;
@@ -43,6 +49,16 @@ describe('userDataPath (Portable storage)', () => {
 
   afterEach(() => {
     resetConfiguredUserDataDirForTesting();
+    if (originalAppData === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalAppData;
+    }
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     try {
       if (fs.existsSync(tempTestDir)) {
         fs.rmSync(tempTestDir, { recursive: true, force: true });

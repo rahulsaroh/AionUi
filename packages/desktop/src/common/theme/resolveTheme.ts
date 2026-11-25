@@ -8,7 +8,7 @@ import type { Theme } from './types';
 import { LIGHT_THEME_ID, DARK_THEME_ID, SYSTEM_THEME_ID } from './constants';
 
 /**
- * Pure: caller supplies the full theme list (builtins + user). Falls back to Light, then first.
+ * Pure: caller supplies the full theme list (builtins + user). Falls back to Dark, then first.
  * `system` resolves to the built-in Dark/Light theme via `prefersDark` (callers pass the
  * `prefers-color-scheme` media query result; this module must stay DOM-free).
  */

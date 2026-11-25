@@ -1,5 +1,5 @@
 import type { IMcpServer } from '@/common/config/storage';
-import { Button, Dropdown, Menu, Popover, Tooltip } from '@arco-design/web-react';
+import { Button, Dropdown, Menu, Popover, Tag, Tooltip } from '@arco-design/web-react';
 import { Check, CloseSmall, Info, LoadingOne, Refresh, Write, DeleteFour, SettingOne, Login } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -73,6 +73,14 @@ const getStatusPopoverContent = (
         <div className='font-medium text-t-primary'>
           {t?.('settings.mcpCheckPassedSummary') || 'Manual check passed'}
         </div>
+        {typeof server.last_latency_ms === 'number' ? (
+          <div className='text-12px leading-18px text-t-secondary'>
+            {t?.('settings.mcpLatencyLabel', {
+              ms: server.last_latency_ms,
+              defaultValue: `Latency: ${server.last_latency_ms} ms`,
+            })}
+          </div>
+        ) : null}
         {checkedAt ? (
           <div className='text-12px leading-18px text-t-secondary'>{`${t?.('settings.mcpCheckedAtLabel') || 'Checked at:'} ${checkedAt}`}</div>
         ) : null}
@@ -87,11 +95,12 @@ const getStatusPopoverContent = (
   const checkedAt = formatStatusTimestamp(server.updated_at, locale);
 
   const reasonText =
-    server.builtin && server.name === 'chrome-devtools' && server.transport.type === 'stdio'
+    server.last_error ||
+    (server.builtin && server.name === 'chrome-devtools' && server.transport.type === 'stdio'
       ? t?.('settings.mcpInlineCommandHint', {
           command: server.transport.command,
         }) || `Missing ${server.transport.command}. Install it and test again.`
-      : t?.('settings.mcpInlineConfigHint') || 'Configuration may be incorrect. Review the MCP JSON and test again.';
+      : t?.('settings.mcpInlineConfigHint') || 'Configuration may be incorrect. Review the MCP JSON and test again.');
 
   return (
     <div className='max-w-300px space-y-2 text-13px leading-20px'>
@@ -177,6 +186,14 @@ const McpServerHeader: React.FC<McpServerHeaderProps> = ({
           <Tooltip content={statusText} position='top'>
             <span className='flex items-center cursor-default'>{statusIcon}</span>
           </Tooltip>
+        )}
+        {server.last_test_status === 'connected' && typeof server.last_latency_ms === 'number' && (
+          <Tag
+            size='small'
+            color={server.last_latency_ms < 500 ? 'green' : server.last_latency_ms < 2000 ? 'arcoblue' : 'orange'}
+          >
+            {server.last_latency_ms} ms
+          </Tag>
         )}
         {isError && <FeedbackButton module='mcp-tools' />}
         {!isReadOnly && needsLogin && onOAuthLogin && (

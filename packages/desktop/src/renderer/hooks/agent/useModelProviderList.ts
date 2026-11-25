@@ -140,7 +140,7 @@ export const useModelProviderList = (): ModelProviderListResult => {
     if (!hasGateway && gatewayModels && gatewayModels.length > 0) {
       const gatewayProvider: IProvider = {
         id: GATEWAY_PROVIDER_ID,
-        name: 'Gateway & Combos (OmniRoute)',
+        name: 'Model Provider Hub (Gateway)',
         platform: 'custom',
         base_url: 'http://127.0.0.1:13408/v1',
         api_key: 'sk-aionui-gateway',

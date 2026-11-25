@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { render, screen, cleanup } from '@testing-library/react';
+import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { TChatConversation } from '@/common/config/storage';
@@ -26,6 +26,7 @@ describe('ChatSlider (post-teardown: project Explorer only, legacy tree removed)
     render(
       <ChatSlider conversation={conv({ id: 'c1', type: 'acp', project_id: 'proj-9', extra: { workspace: '/ws' } })} />
     );
+    fireEvent.click(screen.getByText('Files'));
     expect(screen.getByTestId('explorer')).toHaveTextContent('proj-9');
   });
 
@@ -40,6 +41,7 @@ describe('ChatSlider (post-teardown: project Explorer only, legacy tree removed)
     render(
       <ChatSlider conversation={conv({ id: 'c1', type: 'codex', project_id: 'proj-x', extra: { workspace: '/ws' } })} />
     );
+    fireEvent.click(screen.getByText('Files'));
     expect(screen.getByTestId('explorer')).toHaveTextContent('proj-x');
   });
 

@@ -6,7 +6,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Button, Card, Input, Message, Popconfirm, Switch, Tag, Tooltip } from '@arco-design/web-react';
-import { CheckOne, Delete, Edit, Lightning, Plus, Refresh, Search, Time } from '@icon-park/react';
+import { CheckOne, Delete, Edit, Plus, Refresh, Search, Time } from '@icon-park/react';
 import { ProviderLogo } from '@/renderer/components/agent/ThemedLogo';
 import { buildLogoAssetUrl } from '@/renderer/utils/model/modelPlatforms';
 import { AccountModal } from './AccountModal';
@@ -17,8 +17,6 @@ type AccountsTabProps = {
   onRefresh: () => void;
   onSaveAccount: (account: GatewayAccount) => void;
   onDeleteAccount: (id: string) => void;
-  onSyncLocal?: () => void;
-  isSyncing?: boolean;
 };
 
 type QuickProviderCard = {
@@ -32,12 +30,11 @@ type QuickProviderCard = {
 
 const QUICK_PROVIDERS: QuickProviderCard[] = [
   {
-    id: 'antigravity',
-    name: 'Google Antigravity',
-    platform: 'omniroute',
-    desc: 'Google OAuth · Claude Sonnet & Opus · Gemini 3.8',
+    id: 'gemini',
+    name: 'Google Gemini',
+    platform: 'gemini',
+    desc: 'Gemini 2.5 Pro & Flash · Google AI API Key',
     logo: buildLogoAssetUrl('ai-major/gemini.svg'),
-    badge: '9 Local Accounts',
   },
   {
     id: 'claude',
@@ -52,13 +49,6 @@ const QUICK_PROVIDERS: QuickProviderCard[] = [
     platform: 'openai',
     desc: 'GPT-4o · o1 · o3-mini · OpenAI API',
     logo: buildLogoAssetUrl('ai-major/openai.svg'),
-  },
-  {
-    id: 'cursor',
-    name: 'Cursor AI',
-    platform: 'omniroute',
-    desc: 'Cursor Multi-Session Bridge & Proxy',
-    logo: buildLogoAssetUrl('ai-cloud/newapi.svg'),
   },
   {
     id: 'deepseek',
@@ -90,17 +80,10 @@ const QUICK_PROVIDERS: QuickProviderCard[] = [
   },
 ];
 
-export const AccountsTab: React.FC<AccountsTabProps> = ({
-  accounts,
-  onRefresh,
-  onSaveAccount,
-  onDeleteAccount,
-  onSyncLocal,
-  isSyncing = false,
-}) => {
+export const AccountsTab: React.FC<AccountsTabProps> = ({ accounts, onRefresh, onSaveAccount, onDeleteAccount }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingAccount, setEditingAccount] = useState<GatewayAccount | null>(null);
-  const [selectedPlatform, setSelectedPlatform] = useState<GatewayPlatform>('omniroute');
+  const [selectedPlatform, setSelectedPlatform] = useState<GatewayPlatform>('gemini');
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleEdit = (acc: GatewayAccount) => {
@@ -139,11 +122,6 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
     );
   }, [accounts, searchQuery]);
 
-  // Count accounts by platform
-  const antigravityCount = accounts.filter(
-    (a) => a.platform === 'omniroute' || a.name.toLowerCase().includes('antigravity')
-  ).length;
-
   return (
     <div className='flex flex-col gap-20px'>
       {/* Provider Quick-Connect Section */}
@@ -152,30 +130,14 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
           <div>
             <div className='text-15px font-600 text-t-primary'>Supported Providers</div>
             <div className='text-12px text-t-secondary'>
-              Connect provider accounts directly or click ⚡ Sync Local Accounts to automatically import all your local
-              Google Antigravity &amp; Claude sessions.
+              Connect provider API key accounts to use directly or combine in failover chains.
             </div>
           </div>
-          {onSyncLocal && (
-            <Button
-              type='primary'
-              size='small'
-              loading={isSyncing}
-              icon={<Lightning />}
-              onClick={onSyncLocal}
-              className='bg-primary font-500'
-            >
-              ⚡ Sync Local Accounts
-            </Button>
-          )}
         </div>
 
         <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-12px'>
           {QUICK_PROVIDERS.map((prov) => {
-            const isAntigravity = prov.id === 'antigravity';
-            const count = isAntigravity
-              ? antigravityCount
-              : accounts.filter((a) => a.platform === prov.platform).length;
+            const count = accounts.filter((a) => a.platform === prov.platform).length;
 
             return (
               <div
@@ -232,7 +194,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
             <Button type='secondary' size='small' icon={<Refresh />} onClick={onRefresh}>
               Refresh
             </Button>
-            <Button type='outline' size='small' icon={<Plus />} onClick={() => handleCreateForPlatform('omniroute')}>
+            <Button type='outline' size='small' icon={<Plus />} onClick={() => handleCreateForPlatform('gemini')}>
               Add Account
             </Button>
           </div>
@@ -242,18 +204,11 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
           <Card className='text-center py-40px bg-fill-1 rd-12px border border-border-1'>
             <div className='text-14px font-medium text-t-primary mb-6px'>No accounts connected yet</div>
             <div className='text-12px text-t-secondary mb-16px max-w-480px mx-auto'>
-              Click <strong>&quot;⚡ Sync Local Accounts&quot;</strong> to automatically load your existing Google
-              Antigravity and Claude sessions, or click any provider card above to connect a new account.
+              Click any provider card above or the button below to connect an API key account.
             </div>
-            {onSyncLocal ? (
-              <Button type='primary' loading={isSyncing} icon={<Lightning />} onClick={onSyncLocal}>
-                ⚡ Sync Local Accounts Now
-              </Button>
-            ) : (
-              <Button type='primary' icon={<Plus />} onClick={() => handleCreateForPlatform('omniroute')}>
-                Connect First Account
-              </Button>
-            )}
+            <Button type='primary' icon={<Plus />} onClick={() => handleCreateForPlatform('gemini')}>
+              Connect First Account
+            </Button>
           </Card>
         ) : filteredAccounts.length === 0 ? (
           <div className='text-center py-32px text-t-secondary text-13px'>

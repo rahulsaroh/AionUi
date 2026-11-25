@@ -121,10 +121,14 @@ export class GatewayServer {
                 let totalCompletionTokens = 0;
                 let totalCachedTokens = 0;
                 let thoughtTokens = 0;
+                let streamedChars = 0;
 
                 const { response, targetAccount, targetModel, isAnthropic } = await this.router.executeChat(
                   reqBody,
-                  (chunk) => res.write(chunk)
+                  (chunk) => {
+                    streamedChars += chunk.length;
+                    res.write(chunk);
+                  }
                 );
 
                 if (response.body) {
@@ -153,7 +157,10 @@ export class GatewayServer {
                         buffer = lines.pop() || '';
 
                         for (const line of lines) {
-                          transformAnthropicSseLine(line, anthropicState, (chunk) => res.write(chunk));
+                          transformAnthropicSseLine(line, anthropicState, (chunk) => {
+                            streamedChars += chunk.length;
+                            res.write(chunk);
+                          });
                         }
                       }
                       totalPromptTokens = anthropicState.inputTokens;
@@ -168,6 +175,7 @@ export class GatewayServer {
                         if (done) break;
 
                         const textChunk = decoder.decode(value, { stream: true });
+                        streamedChars += textChunk.length;
                         res.write(textChunk);
 
                         const lines = textChunk.split('\n');
@@ -200,7 +208,7 @@ export class GatewayServer {
                   if (totalPromptTokens === 0 && totalCompletionTokens === 0) {
                     const promptStr = JSON.stringify(reqBody.messages || '');
                     totalPromptTokens = Math.max(1, Math.round(promptStr.length / 4));
-                    totalCompletionTokens = Math.max(1, Math.round(textChunkLengthEstimate / 4));
+                    totalCompletionTokens = Math.max(1, Math.round(streamedChars / 4));
                   }
 
                   this.router.logExecution({
@@ -318,6 +326,3 @@ export class GatewayServer {
     });
   }
 }
-
-// Helper for estimate fallback
-let textChunkLengthEstimate = 0;

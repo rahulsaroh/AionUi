@@ -1,8 +1,9 @@
 import { ipcBridge } from '@/common';
 import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
+import { KnowledgeChip } from '@/renderer/components/knowledge';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import type { IConversationMcpStatus, IProvider, TChatConversation, TProviderWithModel } from '@/common/config/storage';
-import { Message, Spin, Tag } from '@arco-design/web-react';
+import { Message, Spin } from '@arco-design/web-react';
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAionrsModelSelection } from '@/renderer/pages/conversation/platforms/aionrs/useAionrsModelSelection';
@@ -234,7 +235,7 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
                 return `- Teammate "${c.memberName}" (Slot: ${c.memberSlotId}):\n${repoDetails}`;
               })
               .join('\n');
-            capabilityCardsBlock = `### Team Knowledge & Routing Capabilities\nYou are the team leader. When delegating or routing tasks, consult your teammates' specialized knowledge:\n${cardsText}`;
+            capabilityCardsBlock = `### Team Knowledge & Routing Capabilities\nYou are the team leader. When delegating or routing tasks, consult your teammates' specialized knowledge and explicitly tell the delegated teammate which repository rules/skills to follow:\n${cardsText}`;
           }
         } catch (err) {
           console.warn('[TeamChatView] Failed to build team capability cards:', err);
@@ -443,25 +444,15 @@ const TeamChatView: React.FC<TeamChatViewProps> = ({
   return (
     <div className='relative flex flex-col flex-1 h-full min-h-0 w-full min-w-0'>
       {/* Active Knowledge Repo chip if member has assigned repos */}
-      {(() => {
-        const currentMember =
-          assistants?.find((a) => a.slot_id === slot_id) ||
-          (isLeader ? assistants?.find((a) => a.role === 'leader') : undefined);
-        if (currentMember?.knowledgeRepoIds && currentMember.knowledgeRepoIds.length > 0) {
-          return (
-            <div className='px-3 py-1 flex items-center gap-6px bg-[var(--color-bg-2)] border-b border-[var(--color-border-2)] text-12px'>
-              <Tag color='arcoblue' size='small'>
-                {t('team.knowledgeRepos.usingChip', {
-                  repo: currentMember.knowledgeRepoIds[0],
-                  skill: currentMember.whenToUseHint || 'pipelines & rules',
-                  defaultValue: `Using: ${currentMember.knowledgeRepoIds[0]} → ${currentMember.whenToUseHint || 'pipeline'}`,
-                })}
-              </Tag>
-            </div>
-          );
-        }
-        return null;
-      })()}
+      {team_id && slot_id && (
+        <div className='px-3 empty:hidden'>
+          <KnowledgeChip
+            memberKey={`team:${team_id}:${slot_id}`}
+            memberName={resolvedAssistantName}
+            className='my-1 inline-flex'
+          />
+        </div>
+      )}
       <Suspense fallback={<Spin loading className='flex flex-1 items-center justify-center' />}>{content}</Suspense>
     </div>
   );

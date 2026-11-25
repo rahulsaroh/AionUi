@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "プロジェクトへ移動しました",
     "moveToProjectFailed": "プロジェクトへの移動に失敗しました",
     "noFolderSelected": "プロジェクトフォルダを選択または入力してください",
-    "sameFolderWarning": "移動先プロジェクトは現在のワークスペースと同じです"
+    "sameFolderWarning": "移動先プロジェクトは現在のワークスペースと同じです",
+    "moveProjectToOrg": "組織へ移動"
   },
   "historySearch": {
     "tooltip": "メッセージを検索",

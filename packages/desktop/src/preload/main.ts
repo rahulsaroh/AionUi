@@ -247,8 +247,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gatewayClearLogs: () => ipcRenderer.invoke('gateway:clearLogs'),
   gatewayResetCooldown: (accountId: string) => ipcRenderer.invoke('gateway:resetCooldown', accountId),
   gatewaySyncBackend: () => ipcRenderer.invoke('gateway:syncBackend'),
-  gatewaySyncLocalOmniRoute: () => ipcRenderer.invoke('gateway:syncLocalOmniRoute'),
-  gatewayCheckOmniRouteStatus: () => ipcRenderer.invoke('gateway:checkOmniRouteStatus'),
   gatewayGoogleOAuthLogin: () => ipcRenderer.invoke('gateway:googleOAuthLogin'),
   onGatewayLogAdded: (callback: (log: unknown) => void) => {
     const handler = (_event: unknown, data: unknown) => callback(data);
@@ -265,7 +263,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   // Org Mode APIs
-  orgPickMasterRoot: () => ipcRenderer.invoke('org:pickMasterRoot'),
+  orgPickMasterRoot: (params?: { defaultPath?: string }) => ipcRenderer.invoke('org:pickMasterRoot', params),
   orgSetMasterRoot: (params: { masterRoot: string }) => ipcRenderer.invoke('org:setMasterRoot', params),
   orgGetMasterRoot: () => ipcRenderer.invoke('org:getMasterRoot'),
   orgAssertWithinScope: (params: { targetPath: string; allowedRoot?: string }) =>
@@ -401,6 +399,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('publish:reject', { idempotencyKey, reason }),
   publishListRecords: (projectId?: string) => ipcRenderer.invoke('publish:listRecords', projectId),
   publishGetRecord: (idempotencyKey: string) => ipcRenderer.invoke('publish:getRecord', idempotencyKey),
+  // OS-level Desktop Control APIs
+  desktopControlGetStatus: () => ipcRenderer.invoke('desktopControl:getStatus'),
+  desktopControlUpdateConfig: (patch: unknown) => ipcRenderer.invoke('desktopControl:updateConfig', patch),
+  desktopControlEmergencyStop: () => ipcRenderer.invoke('desktopControl:emergencyStop'),
+  desktopControlResume: () => ipcRenderer.invoke('desktopControl:resume'),
+  desktopControlGetAuditLogs: (limit?: number) => ipcRenderer.invoke('desktopControl:getAuditLogs', limit),
+  desktopControlClearAuditLogs: () => ipcRenderer.invoke('desktopControl:clearAuditLogs'),
+  desktopControlCapturePreview: (displayIndex?: number) =>
+    ipcRenderer.invoke('desktopControl:capturePreview', displayIndex),
+  desktopControlRespondApproval: (payload: { id: string; approved: boolean }) =>
+    ipcRenderer.invoke('desktopControl:respondApproval', payload),
+  onDesktopControlStatusChanged: (callback: (status: unknown) => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on('desktopControl:statusChanged', handler);
+    return () => {
+      ipcRenderer.off('desktopControl:statusChanged', handler);
+    };
+  },
+  onDesktopControlEmergencyStopped: (callback: (event: unknown) => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on('desktopControl:emergencyStopped', handler);
+    return () => {
+      ipcRenderer.off('desktopControl:emergencyStopped', handler);
+    };
+  },
+  onDesktopControlApprovalRequested: (callback: (request: unknown) => void) => {
+    const handler = (_event: unknown, data: unknown) => callback(data);
+    ipcRenderer.on('desktopControl:approvalRequested', handler);
+    return () => {
+      ipcRenderer.off('desktopControl:approvalRequested', handler);
+    };
+  },
 });
 
 // Synchronously fetch aioncore port and expose to renderer via

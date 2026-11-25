@@ -31,22 +31,22 @@ describe('resolveActiveTheme', () => {
   it('returns a user theme by id', () => {
     expect(resolveActiveTheme('u1', themes).id).toBe('u1');
   });
-  it('falls back to Light when id is unknown', () => {
-    expect(resolveActiveTheme('nope', themes).id).toBe(LIGHT_THEME_ID);
+  it('falls back to Dark when id is unknown', () => {
+    expect(resolveActiveTheme('nope', themes).id).toBe(DARK_THEME_ID);
   });
-  it('falls back to Light when id is empty', () => {
-    expect(resolveActiveTheme('', themes).id).toBe(LIGHT_THEME_ID);
+  it('falls back to Dark when id is empty', () => {
+    expect(resolveActiveTheme('', themes).id).toBe(DARK_THEME_ID);
   });
-  it('falls back to Light when activeId points at a removed community theme', () => {
+  it('falls back to Dark when activeId points at a removed community theme', () => {
     // Decorative community skins (e.g. hello-kitty, retro-windows) were deprecated and
     // removed; only Light/Dark remain built in. A persisted activeId still pointing at
-    // one is unknown to the resolver and safely resolves to Light — no crash, no blank UI.
+    // one is unknown to the resolver and safely resolves to Dark — no crash, no blank UI.
     const remainingBuiltins = [light, dark];
-    expect(resolveActiveTheme('hello-kitty', remainingBuiltins).id).toBe(LIGHT_THEME_ID);
-    expect(resolveActiveTheme('retro-windows', remainingBuiltins).id).toBe(LIGHT_THEME_ID);
+    expect(resolveActiveTheme('hello-kitty', remainingBuiltins).id).toBe(DARK_THEME_ID);
+    expect(resolveActiveTheme('retro-windows', remainingBuiltins).id).toBe(DARK_THEME_ID);
   });
-  it('falls back to first theme when no Light present', () => {
-    expect(resolveActiveTheme('nope', [dark, userTheme]).id).toBe(DARK_THEME_ID);
+  it('falls back to first theme when no Dark present', () => {
+    expect(resolveActiveTheme('nope', [light, userTheme]).id).toBe(LIGHT_THEME_ID);
   });
   it('resolves system to Dark when prefersDark is true', () => {
     expect(resolveActiveTheme(SYSTEM_THEME_ID, themes, true).id).toBe(DARK_THEME_ID);
@@ -61,7 +61,7 @@ describe('resolveActiveTheme', () => {
     expect(resolveActiveTheme('u1', themes, true).id).toBe('u1');
     expect(resolveActiveTheme(LIGHT_THEME_ID, themes, true).id).toBe(LIGHT_THEME_ID);
   });
-  it('falls back to Light when system resolves to a missing Dark theme', () => {
-    expect(resolveActiveTheme(SYSTEM_THEME_ID, [light, userTheme], true).id).toBe(LIGHT_THEME_ID);
+  it('falls back to Dark when system resolves to a missing Light theme', () => {
+    expect(resolveActiveTheme(SYSTEM_THEME_ID, [dark, userTheme], false).id).toBe(DARK_THEME_ID);
   });
 });

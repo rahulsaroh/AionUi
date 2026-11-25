@@ -3,10 +3,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { discoverProjectsInFolder } from '../../../packages/desktop/src/process/services/org/projectDiscovery';
+import { setMasterRootForTesting, resetMasterRoot } from '../../../packages/desktop/src/process/services/org/orgScope';
 
 describe('discoverProjectsInFolder', () => {
   it('discovers projects with package.json or subfolders in target directory', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aionui-disc-test-'));
+    setMasterRootForTesting(tmpDir);
 
     try {
       const proj1 = path.join(tmpDir, 'webapp');
@@ -30,6 +32,7 @@ describe('discoverProjectsInFolder', () => {
       expect(names).toContain('my-cool-webapp');
       expect(names).toContain('cli-tool');
     } finally {
+      resetMasterRoot();
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -37,11 +40,13 @@ describe('discoverProjectsInFolder', () => {
   it('returns empty array when target path is outside allowed root', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aionui-disc-root-'));
     const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aionui-disc-other-'));
+    setMasterRootForTesting(tmpDir);
 
     try {
       const results = await discoverProjectsInFolder(otherDir, tmpDir);
       expect(results).toEqual([]);
     } finally {
+      resetMasterRoot();
       fs.rmSync(tmpDir, { recursive: true, force: true });
       fs.rmSync(otherDir, { recursive: true, force: true });
     }

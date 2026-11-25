@@ -21,7 +21,9 @@
     "archiveFailed": "Failed to archive team",
     "editTeam": "Edit Team",
     "deleteFailed": "Failed to delete team",
-    "teamsTab": "Teams"
+    "teamsTab": "Teams",
+    "moveToOrg": "Move to Organization",
+    "moveToOrgShort": "Move to Org"
   },
   "organization": {
     "tab": "Organization",
@@ -178,7 +180,39 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "simulateWorking": "Simulate Working",
-    "stopSimulation": "Stop Simulation"
+    "stopSimulation": "Stop Simulation",
+    "moveToOrg": {
+      "titleTeam": "Move Team to Organization",
+      "titleProject": "Move Project to Organization",
+      "confirm": "Move to Organization",
+      "membersCount": "{{count}} members",
+      "subTeamsCount": "+{{count}} sub-teams",
+      "chatsCount": "{{count}} chats",
+      "targetDepartment": "Target Department",
+      "existingDepartment": "Existing Department",
+      "newDepartment": "New Department",
+      "selectDepartmentPlaceholder": "Select a department",
+      "newDepartmentPlaceholder": "Enter new department name",
+      "nameLabel": "Name in Organization",
+      "namePlaceholder": "Enter name",
+      "descriptionPlaceholder": "Optional notes or goal for this department item",
+      "noMasterRootWarning": "Set an Organization Master Folder to bind workspace files inside the department.",
+      "setMasterFolder": "Set Master Folder",
+      "masterRootSet": "Organization Master Folder updated",
+      "masterRootFailed": "Failed to set Organization Master Folder",
+      "orgFolderLabel": "Organization Workspace Folder",
+      "alreadyInOrgRoot": "Folder is already inside the target department root and will be linked directly.",
+      "copyFiles": "Copy files into Organization folder (keep original files)",
+      "moveFiles": "Move files into Organization folder",
+      "skipFiles": "Create empty folder (do not transfer files)",
+      "pathOutsideRoot": "Target folder must be inside the department or Organization master root.",
+      "createLinkedProject": "Also register as a Project in this department",
+      "includeSubTeams": "Include {{count}} sub-team(s)",
+      "removeFromWorkplace": "Move out of Workplace sidebar (uncheck to keep a copy in Workplace)",
+      "openAfterMove": "Switch to Organization and open after moving",
+      "success": "Moved to Organization",
+      "failed": "Failed to move to Organization"
+    }
   },
   "activeMembers": {
     "title": "Active Members",
@@ -534,7 +568,10 @@
     "setupInstructions": "Setup Instructions & Requirements",
     "runSetup": "Run Setup",
     "envVars": "Environment Variables",
-    "conflictsWarning": "Rule conflicts detected: higher-priority repo took precedence."
+    "conflictsWarning": "Rule conflicts detected: higher-priority repo took precedence.",
+    "refAutoPlaceholder": "Branch or tag (auto-detect default)",
+    "subpathPlaceholder": "Subpath (optional, e.g. docs/playbook)",
+    "repoMapIndexed": "File map indexed"
   },
   "watchdog": {
     "title": "Auto-Watchdog",

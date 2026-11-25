@@ -188,4 +188,28 @@ describe('orgExecution: jailed shell/file tools with policy + audit', () => {
     const cmd = entries.find((e) => e.kind === 'command');
     expect(cmd?.command).not.toContain('ghp_x');
   });
+
+  it('allows read-only read_file and list_dir on knowledge_worktrees while blocking writes and shell cwd', async () => {
+    const masterRoot = path.join(tempRoot, 'org');
+    const worktreeDir = path.join(tempRoot, 'knowledge_worktrees', 'k_repo_1_org_m1', '.claude', 'skills', 'demo');
+    fs.mkdirSync(worktreeDir, { recursive: true });
+    const skillPath = path.join(worktreeDir, 'SKILL.md');
+    fs.writeFileSync(skillPath, '# Demo Skill\nFollow these steps.');
+
+    const readRes = await executeReadFile({ path: skillPath }, ctxRead(), { masterRoot });
+    expect(readRes.success).toBe(true);
+    expect(readRes.content).toContain('# Demo Skill');
+
+    const listRes = await executeListDir({ path: worktreeDir }, ctxRead(), { masterRoot });
+    expect(listRes.success).toBe(true);
+    expect(listRes.content).toContain('SKILL.md');
+
+    const writeRes = await executeWriteFile({ path: skillPath, content: 'overwrite' }, ctxFull(), { masterRoot });
+    expect(writeRes.success).toBe(false);
+    expect(writeRes.error).toMatch(/outside the project folder/);
+
+    const shellRes = await executeRunShell({ command: 'echo hi', cwd: worktreeDir }, ctxFull(), { masterRoot });
+    expect(shellRes.success).toBe(false);
+    expect(shellRes.error).toMatch(/outside the project folder/);
+  });
 });

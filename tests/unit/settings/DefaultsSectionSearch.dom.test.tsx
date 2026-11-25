@@ -59,6 +59,23 @@ vi.mock('@arco-design/web-react', () => {
   return {
     Button: ({ children }: { children?: React.ReactNode }) => <button type='button'>{children}</button>,
     Select,
+    Switch: ({
+      checked,
+      disabled,
+      onChange,
+    }: {
+      checked?: boolean;
+      disabled?: boolean;
+      onChange?: (checked: boolean) => void;
+    }) => (
+      <input
+        type='checkbox'
+        role='switch'
+        checked={Boolean(checked)}
+        disabled={disabled}
+        onChange={(e) => onChange?.(e.target.checked)}
+      />
+    ),
     Tooltip: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   };
 });

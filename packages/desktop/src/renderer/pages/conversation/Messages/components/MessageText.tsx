@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { stripTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
 import type { IMessageText } from '@/common/chat/chatLib';
 import { parseFileMarker, resolveMessageFilePath } from './fileMarker';
 import SessionMentionAction from './SessionMentionAction';
@@ -148,9 +149,13 @@ const MessageText: React.FC<{
     () => (isUserMessage ? parseSessionsBlock(text) : { text, sessions: [] }),
     [isUserMessage, text]
   );
-  const { text: visibleText, source: deliverySource } = useMemo(
+  const { text: textWithoutTaskGuide, source: deliverySource } = useMemo(
     () => (isUserMessage ? parseSessionMessageBlock(textWithoutMentions) : { text: textWithoutMentions, source: null }),
     [isUserMessage, textWithoutMentions]
+  );
+  const visibleText = useMemo(
+    () => (isUserMessage ? stripTaskBreakdownPrompt(textWithoutTaskGuide) : textWithoutTaskGuide),
+    [isUserMessage, textWithoutTaskGuide]
   );
   const contextResetNotice = useMemo(
     () => (isTeammateMessage && senderName === 'team_system' ? parseTeamContextResetNotice(text) : null),

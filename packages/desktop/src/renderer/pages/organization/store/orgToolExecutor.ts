@@ -17,6 +17,7 @@ import { validateOrgFolder } from '../utils/orgPathUtils';
 import { buildOrgDirectory, findOrgOwners } from '../utils/orgDirectory';
 import { addProjectMemberSource, createTeamShell, removeProjectMemberSource } from '../utils/orgCoherence';
 import { createProjectBackendTeam } from './orgBackendTeam';
+import { resolveEntityKnowledgeInstructions } from '@/renderer/components/knowledge';
 import type {
   ITeamRunStateResponse,
   ITeamMailboxMessage,
@@ -1075,9 +1076,17 @@ export async function executeOrgToolInStore(
 
       if (backendTeamId) {
         try {
+          const projKnowledge = await resolveEntityKnowledgeInstructions({
+            memberName: targetName,
+            projectId: resolvedProjectId,
+            projectRepoIds: matchedProj?.context?.repos,
+          });
+          const teamInput = projKnowledge.instructions
+            ? `${projKnowledge.instructions}\n\n---\n${enrichedText}`
+            : enrichedText;
           await ipcBridge.team.sendMessage.invoke({
             team_id: backendTeamId,
-            input: enrichedText,
+            input: teamInput,
           });
         } catch (err) {
           return {

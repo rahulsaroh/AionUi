@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "Déplacé avec succès vers le projet",
     "moveToProjectFailed": "Échec du déplacement de la conversation vers le projet",
     "noFolderSelected": "Veuillez sélectionner ou entrer un dossier de projet",
-    "sameFolderWarning": "Le projet cible est déjà l’espace de travail actuel"
+    "sameFolderWarning": "Le projet cible est déjà l’espace de travail actuel",
+    "moveProjectToOrg": "Déplacer vers l’organisation"
   },
   "historySearch": {
     "tooltip": "Rechercher des messages",

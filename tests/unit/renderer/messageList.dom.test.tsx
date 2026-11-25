@@ -137,8 +137,16 @@ vi.mock('@/renderer/pages/conversation/Messages/components/MessageSkillSuggest',
 }));
 
 vi.mock('@/renderer/pages/conversation/Messages/components/MessageToolGroupSummary', () => ({
-  default: ({ messages }: { messages: Array<IMessageToolGroup | IMessageAcpToolCall> }) => (
-    <div data-testid='tool-summary'>{messages.map((message) => message.id).join(',')}</div>
+  default: ({
+    messages,
+    durationMs,
+  }: {
+    messages: Array<IMessageToolGroup | IMessageAcpToolCall>;
+    durationMs?: number;
+  }) => (
+    <div data-testid='tool-summary' data-duration-ms={durationMs !== undefined ? String(durationMs) : ''}>
+      {messages.map((message) => message.id).join(',')}
+    </div>
   ),
 }));
 
@@ -435,7 +443,7 @@ describe('MessageList', () => {
     expect(screen.queryByText('empty state')).not.toBeInTheDocument();
   });
 
-  it('renders complete ACP diffs through the specialized file-change message', () => {
+  it('keeps ACP diffs inside the unified activity summary so files edited appear inline with surrounding steps', () => {
     const message = createAcpToolCall({
       content: [
         { type: 'content', content: { type: 'text', text: 'updated both files' } },
@@ -448,150 +456,35 @@ describe('MessageList', () => {
       wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
     });
 
-    expect(screen.getByTestId('acp-tool-call')).toHaveAttribute('data-diff-count', '2');
-    expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
-  });
-
-  it('renders a newly created file when only new text is present', () => {
-    const message = createAcpToolCall({
-      content: [{ type: 'diff', path: '/workspace/new-file.ts', new_text: 'export const created = true;' }],
-    });
-
-    render(<MessageList />, {
-      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
-    });
-
-    expect(screen.getByTestId('acp-tool-call')).toHaveAttribute('data-diff-count', '1');
-    expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
-  });
-
-  it('keeps ACP calls without diffs in View Steps', () => {
-    const message = createAcpToolCall({
-      id: 'acp-read-1',
-      content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
-    });
-
-    render(<MessageList />, {
-      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
-    });
-
-    expect(screen.getByTestId('tool-summary')).toHaveTextContent('acp-read-1');
-    expect(screen.queryByTestId('acp-tool-call')).not.toBeInTheDocument();
-  });
-
-  it('keeps malformed ACP diffs in View Steps instead of showing misleading stats', () => {
-    const message = createAcpToolCall({
-      content: [
-        { type: 'diff', path: '/workspace/valid.ts', old_text: 'old', new_text: 'new' },
-        null,
-        { type: 'diff', new_text: 'missing path' },
-      ] as unknown as IMessageAcpToolCall['content']['update']['content'],
-    });
-
-    render(<MessageList />, {
-      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
-    });
-
     expect(screen.getByTestId('tool-summary')).toHaveTextContent(message.id);
     expect(screen.queryByTestId('acp-tool-call')).not.toBeInTheDocument();
   });
 
-  it('keeps an ACP message without an update in View Steps', () => {
-    const message = {
-      ...createAcpToolCall({ id: 'acp-missing-update' }),
-      content: { session_id: 'session-1' },
-    } as unknown as IMessageAcpToolCall;
-
-    render(<MessageList />, {
-      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
-    });
-
-    expect(screen.getByTestId('tool-summary')).toHaveTextContent(message.id);
-    expect(screen.queryByTestId('acp-tool-call')).not.toBeInTheDocument();
-  });
-
-  it('keeps truncated ACP diffs in View Steps instead of calculating stats from the preview', () => {
-    const message = createAcpToolCall({
-      truncated: true,
-      content: [{ type: 'diff', path: '/workspace/file.ts', old_text: 'partial old', new_text: 'partial new' }],
-    });
-
-    render(<MessageList />, {
-      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
-    });
-
-    expect(screen.getByTestId('tool-summary')).toHaveTextContent(message.id);
-    expect(screen.queryByTestId('acp-tool-call')).not.toBeInTheDocument();
-  });
-
-  it('switches a running tool from View Steps when its completed update adds a diff', () => {
-    const runningMessage = createAcpToolCall({ status: 'in_progress' });
-    const completedMessage = createAcpToolCall({
-      content: [{ type: 'diff', path: '/workspace/file.ts', old_text: 'old', new_text: 'new' }],
-    });
-    render(
-      <Wrapper messages={[runningMessage]}>
-        <MessageList />
-        <ReplaceMessagesButton messages={[completedMessage]} />
-      </Wrapper>
-    );
-
-    expect(screen.getByTestId('tool-summary')).toHaveTextContent(runningMessage.id);
-
-    fireEvent.click(screen.getByText('replace messages'));
-
-    expect(screen.getByTestId('acp-tool-call')).toHaveAttribute('data-message-id', completedMessage.id);
-    expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
-  });
-
-  it('preserves surrounding tool summaries when an ACP edit contains multiple diffs', () => {
-    const readMessage = createAcpToolCall({ id: 'acp-read-1' });
-    const editMessage = createAcpToolCall({
-      id: 'acp-edit-1',
-      content: [
-        { type: 'diff', path: '/workspace/a.ts', old_text: 'old a', new_text: 'new a' },
-        { type: 'diff', path: '/workspace/b.ts', old_text: 'old b', new_text: 'new b' },
-      ],
-    });
-    const executeMessage = createAcpToolCall({ id: 'acp-execute-1' });
+  it('merges read, edit, and execute ACP tool calls into one unified activity summary and computes duration', () => {
+    const readMessage = { ...createAcpToolCall({ id: 'acp-read-1' }), created_at: 1_000 };
+    const editMessage = {
+      ...createAcpToolCall({
+        id: 'acp-edit-1',
+        content: [
+          { type: 'diff', path: '/workspace/a.ts', old_text: 'old a', new_text: 'new a' },
+          { type: 'diff', path: '/workspace/b.ts', old_text: 'old b', new_text: 'new b' },
+        ],
+      }),
+      created_at: 10_000,
+    };
+    const executeMessage = { ...createAcpToolCall({ id: 'acp-execute-1' }), created_at: 39_000 };
 
     render(<MessageList />, {
       wrapper: ({ children }) => <Wrapper messages={[readMessage, editMessage, executeMessage]}>{children}</Wrapper>,
     });
 
-    expect(screen.getByTestId('acp-tool-call')).toHaveAttribute('data-diff-count', '2');
-    expect(screen.getAllByTestId('tool-summary')).toHaveLength(2);
-    expect(screen.getAllByTestId('tool-summary').map((item) => item.textContent)).toEqual([
-      'acp-read-1',
-      'acp-execute-1',
-    ]);
+    const summaries = screen.getAllByTestId('tool-summary');
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toHaveTextContent('acp-read-1,acp-edit-1,acp-execute-1');
+    expect(summaries[0]).toHaveAttribute('data-duration-ms', '38000');
   });
 
-  it('preserves the legacy single WriteFile summary path', () => {
-    const message = createToolGroup([
-      {
-        call_id: 'write-1',
-        description: 'Write file',
-        name: 'WriteFile',
-        render_output_as_markdown: false,
-        result_display: {
-          file_diff: 'diff --git a/file.ts b/file.ts\n-old\n+new',
-          file_name: '/workspace/file.ts',
-        },
-        status: 'Success',
-      },
-    ]);
-
-    render(<MessageList />, {
-      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
-    });
-
-    expect(screen.getByTestId('file-changes')).toHaveAttribute('data-file-count', '1');
-    expect(parseDiffMock).toHaveBeenCalledWith('diff --git a/file.ts b/file.ts\n-old\n+new', '/workspace/file.ts');
-    expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
-  });
-
-  it('aggregates legacy groups containing only structured WriteFile results', () => {
+  it('groups WriteFile tool groups into the unified activity summary', () => {
     const message = createToolGroup([
       {
         call_id: 'write-1',
@@ -621,12 +514,36 @@ describe('MessageList', () => {
       wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
     });
 
-    expect(screen.getByTestId('file-changes')).toHaveAttribute('data-file-count', '2');
-    expect(parseDiffMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('tool-summary')).toHaveTextContent(message.id);
+    expect(screen.queryByTestId('file-changes')).not.toBeInTheDocument();
+  });
+
+  it('keeps interactive confirming tool groups standalone for user confirmation UI', () => {
+    const message = createToolGroup([
+      {
+        call_id: 'edit-confirm-1',
+        description: 'Confirm edit',
+        name: 'Edit',
+        render_output_as_markdown: false,
+        status: 'Confirming',
+        confirmationDetails: {
+          type: 'edit',
+          title: 'Apply edit',
+          file_name: '/workspace/file.ts',
+          file_diff: '-old\n+new',
+        },
+      },
+    ]);
+
+    render(<MessageList />, {
+      wrapper: ({ children }) => <Wrapper messages={[message]}>{children}</Wrapper>,
+    });
+
+    expect(screen.getByTestId('tool-group')).toHaveAttribute('data-message-id', message.id);
     expect(screen.queryByTestId('tool-summary')).not.toBeInTheDocument();
   });
 
-  it('keeps mixed legacy tool groups in View Steps without dropping non-file tools', () => {
+  it('keeps mixed legacy tool groups in the unified activity summary without dropping non-file tools', () => {
     const message = createToolGroup([
       {
         call_id: 'write-1',

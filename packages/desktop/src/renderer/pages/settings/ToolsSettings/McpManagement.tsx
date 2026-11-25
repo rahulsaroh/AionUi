@@ -1,10 +1,11 @@
 import { Button, Collapse, Dropdown, Menu, Modal } from '@arco-design/web-react';
-import { Down, Plus } from '@icon-park/react';
+import { Down, LinkCloud, Plus } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { BUILTIN_IMAGE_GEN_ID, BUILTIN_IMAGE_GEN_NAME, type IMcpServer } from '@/common/config/storage';
 import { useMcpConnection, useMcpModal, useMcpOAuth, useMcpServerCRUD, useMcpServers } from '@/renderer/hooks/mcp';
 import AddMcpServerModal from '../components/AddMcpServerModal';
+import McpRegistryModal from './McpRegistryModal';
 import McpServerItem from './McpServerItem';
 
 interface McpManagementProps {
@@ -108,6 +109,7 @@ const McpManagement: React.FC<McpManagementProps> = ({ message }) => {
   );
 
   const [importMode, setImportMode] = React.useState<'json' | 'oneclick'>('json');
+  const [registryVisible, setRegistryVisible] = React.useState(false);
 
   React.useEffect(() => {
     mcpServers.filter(isOAuthCapableServer).forEach((server) => {
@@ -131,37 +133,47 @@ const McpManagement: React.FC<McpManagementProps> = ({ message }) => {
         header={
           <div className='flex items-center justify-between'>
             {t('settings.mcpSettings')}
-            <Dropdown
-              trigger='click'
-              droplist={
-                <Menu>
-                  <Menu.Item
-                    key='json'
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setImportMode('json');
-                      showAddMcpModal();
-                    }}
-                  >
-                    {t('settings.mcpImportFromJSON')}
-                  </Menu.Item>
-                  <Menu.Item
-                    key='oneclick'
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setImportMode('oneclick');
-                      showAddMcpModal();
-                    }}
-                  >
-                    {t('settings.mcpOneKeyImport')}
-                  </Menu.Item>
-                </Menu>
-              }
-            >
-              <Button type='outline' icon={<Plus size='14' />} shape='round' onClick={(e) => e.stopPropagation()}>
-                {t('settings.mcpAddServer')} <Down size='12' />
+            <div className='flex items-center gap-8px' onClick={(e) => e.stopPropagation()}>
+              <Button
+                type='secondary'
+                icon={<LinkCloud size='14' />}
+                shape='round'
+                onClick={() => setRegistryVisible(true)}
+              >
+                {t('settings.mcpBrowseRegistry', { defaultValue: 'Browse Registry' })}
               </Button>
-            </Dropdown>
+              <Dropdown
+                trigger='click'
+                droplist={
+                  <Menu>
+                    <Menu.Item
+                      key='json'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImportMode('json');
+                        showAddMcpModal();
+                      }}
+                    >
+                      {t('settings.mcpImportFromJSON')}
+                    </Menu.Item>
+                    <Menu.Item
+                      key='oneclick'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImportMode('oneclick');
+                        showAddMcpModal();
+                      }}
+                    >
+                      {t('settings.mcpOneKeyImport')}
+                    </Menu.Item>
+                  </Menu>
+                }
+              >
+                <Button type='outline' icon={<Plus size='14' />} shape='round' onClick={(e) => e.stopPropagation()}>
+                  {t('settings.mcpAddServer')} <Down size='12' />
+                </Button>
+              </Dropdown>
+            </div>
           </div>
         }
         name='mcp-servers'
@@ -214,6 +226,13 @@ const McpManagement: React.FC<McpManagementProps> = ({ message }) => {
         }
         onBatchImport={wrappedHandleBatchImportMcpServers}
         importMode={importMode}
+      />
+
+      <McpRegistryModal
+        visible={registryVisible}
+        existingServerNames={mcpServers.map((server) => server.name)}
+        onCancel={() => setRegistryVisible(false)}
+        onInstall={wrappedHandleAddMcpServer}
       />
 
       <Modal

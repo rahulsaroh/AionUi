@@ -11,6 +11,7 @@ import { ArrowCircleLeft, CloseOne, Moon, SettingTwo, SunOne } from '@icon-park/
 import classNames from 'classnames';
 import { iconColors } from '@renderer/styles/colors';
 import type { SiderTooltipProps } from '@renderer/utils/ui/siderTooltip';
+import { preloadRouteForPath } from '@renderer/utils/navigation';
 
 interface SiderFooterProps {
   isMobile: boolean;
@@ -63,6 +64,11 @@ const SiderFooter: React.FC<SiderFooterProps> = ({
         <Tooltip {...siderTooltipProps} content={isSettings ? t('common.back') : t('common.settings')} position='right'>
           <div
             onClick={onSettingsClick}
+            onMouseEnter={() => {
+              if (!isSettings) {
+                preloadRouteForPath('/settings/agent');
+              }
+            }}
             className={classNames(
               'group h-34px flex items-center rd-0.5rem cursor-pointer transition-colors',
               collapsed ? 'w-full justify-center' : 'flex-1 min-w-0 justify-start gap-8px ps-10px pe-8px',

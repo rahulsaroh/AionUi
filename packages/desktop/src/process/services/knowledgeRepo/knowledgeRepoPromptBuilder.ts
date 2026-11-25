@@ -9,6 +9,26 @@ import type { KnowledgeRepo, EffectiveInstructionResult, TeammateCapabilityCard 
 
 const DEFAULT_TOKEN_BUDGET = 8000; // max budget for injected knowledge repo content
 
+// Standard multi-repo entrypoint files that should coexist across distinct repositories
+// rather than shadowing one another as rule conflicts.
+const SHARED_ENTRYPOINT_FILENAMES = new Set([
+  'agents.md',
+  'agent_guide.md',
+  'claude.md',
+  'gemini.md',
+  '.cursorrules',
+  '.windsurfrules',
+  'copilot-instructions.md',
+  'copilot_instructions.md',
+  'architecture.md',
+  'contributing.md',
+  'readme.md',
+  'readme.mdx',
+  'readme.rst',
+  'readme.txt',
+  'readme',
+]);
+
 export class KnowledgeRepoPromptBuilder {
   /**
    * Build the injected instruction block per teammate with strict precedence:
@@ -71,6 +91,7 @@ export class KnowledgeRepoPromptBuilder {
       `### Authoritative Knowledge Playbook for ${memberName}`,
       `You are operating with these repositories as your authoritative playbook ${hintText}. Follow their documented pipelines and rules step by step. Do not invent a different workflow. If a step cannot be performed, say so and ask the user instead of improvising.`,
       `Read the skill file from the given path before doing the task. Do not modify these files.`,
+      `You have read-only access to inspect files under each repository's root path via read_file / list_dir / scan_folder.`,
       '',
     ].join('\n');
 
@@ -84,22 +105,26 @@ export class KnowledgeRepoPromptBuilder {
 
     for (const repo of validRepos) {
       const workingDir = workingCopyPaths[repo.id] || repo.cachePath;
-      const repoHeader = `#### Rules from Repository: ${repo.name} (ref: ${repo.ref}, root: ${workingDir})`;
+      const effectiveRoot = repo.subpath ? path.resolve(workingDir, repo.subpath) : workingDir;
+      const repoHeader = `#### Rules from Repository: ${repo.name} (ref: ${repo.ref}, root: ${effectiveRoot})`;
       const repoRulesText: string[] = [repoHeader];
 
       for (const rule of repo.manifest.alwaysOnRules) {
-        if (seenRuleNames.has(rule.name)) {
-          const priorRepo = seenRuleNames.get(rule.name)!;
-          conflicts.push({
-            ruleA: `${priorRepo}:${rule.name}`,
-            ruleB: `${repo.name}:${rule.name}`,
-            resolvedInFavorOf: `${priorRepo}:${rule.name}`,
-          });
-          continue; // Prior repo wins
+        const isSharedEntrypoint = SHARED_ENTRYPOINT_FILENAMES.has(rule.name.toLowerCase());
+        if (!isSharedEntrypoint) {
+          if (seenRuleNames.has(rule.name)) {
+            const priorRepo = seenRuleNames.get(rule.name)!;
+            conflicts.push({
+              ruleA: `${priorRepo}:${rule.name}`,
+              ruleB: `${repo.name}:${rule.name}`,
+              resolvedInFavorOf: `${priorRepo}:${rule.name}`,
+            });
+            continue; // Prior repo wins
+          }
+          seenRuleNames.set(rule.name, repo.name);
         }
-        seenRuleNames.set(rule.name, repo.name);
 
-        const absPath = path.resolve(workingDir, rule.relativePath);
+        const absPath = path.resolve(effectiveRoot, rule.relativePath);
         const ruleText = `<!-- Rule: ${rule.relativePath} (Path: ${absPath}) -->\n${rule.content}\n`;
         const ruleTokens = Math.ceil(ruleText.length / 4);
 
@@ -131,8 +156,9 @@ export class KnowledgeRepoPromptBuilder {
     for (const repo of validRepos) {
       if (!repo.manifest?.onDemandSkills?.length) continue;
       const workingDir = workingCopyPaths[repo.id] || repo.cachePath;
+      const effectiveRoot = repo.subpath ? path.resolve(workingDir, repo.subpath) : workingDir;
       const skillsLines = repo.manifest.onDemandSkills.map((s) => {
-        const absSkillPath = path.resolve(workingDir, s.relativePath);
+        const absSkillPath = path.resolve(effectiveRoot, s.relativePath);
         return `- \`${repo.name}/${s.name}\`: ${s.description} (File: ${absSkillPath})`;
       });
       skillIndexBlocks.push(`#### Available On-Demand Skills & Pipelines (${repo.name}):\n${skillsLines.join('\n')}`);
@@ -143,11 +169,33 @@ export class KnowledgeRepoPromptBuilder {
         ? `### Available Skills & Pipelines (Read the skill file from the given path before doing the task. Do not modify these files):\n${skillIndexBlocks.join('\n\n')}\n\n`
         : '';
 
+    // 5. Repository Structure Maps (for general code & docs exploration within remaining budget)
+    const repoMapBlocks: string[] = [];
+    if (!budgetExceeded) {
+      for (const repo of validRepos) {
+        const repoMap = repo.manifest?.repoMap;
+        if (!repoMap) continue;
+        const workingDir = workingCopyPaths[repo.id] || repo.cachePath;
+        const effectiveRoot = repo.subpath ? path.resolve(workingDir, repo.subpath) : workingDir;
+        const block = `#### Repository Map: ${repo.name} (read-only root: ${effectiveRoot})\n\`\`\`\n${repoMap}\n\`\`\``;
+        const blockTokens = Math.ceil(block.length / 4);
+        if (estimatedTokens + blockTokens <= tokenBudget) {
+          estimatedTokens += blockTokens;
+          repoMapBlocks.push(block);
+        }
+      }
+    }
+    const repoMapSection =
+      repoMapBlocks.length > 0
+        ? `### Repository File Maps (Use read_file / list_dir on the read-only root to inspect specific files):\n${repoMapBlocks.join('\n\n')}\n\n`
+        : '';
+
     const instructions = [
       preamble,
       roleSection,
       ruleBlocks.length > 0 ? `### Active Repository Rules:\n${ruleBlocks.join('\n\n')}\n\n` : '',
       onDemandSection,
+      repoMapSection,
     ]
       .filter(Boolean)
       .join('\n');

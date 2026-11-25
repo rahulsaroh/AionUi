@@ -46,6 +46,7 @@ vi.mock('@arco-design/web-react', () => {
   return {
     Button: ({ children }: { children?: React.ReactNode }) => <button type='button'>{children}</button>,
     Select,
+    Switch: () => <input type='checkbox' />,
     Tooltip: ({ children, content }: { children?: React.ReactNode; content?: React.ReactNode }) => (
       <span data-tooltip-content={typeof content === 'string' ? content : undefined}>{children}</span>
     ),

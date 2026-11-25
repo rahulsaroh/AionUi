@@ -64,8 +64,8 @@ describe('MessageToolGroupSummary', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('View Steps · 1'));
-    fireEvent.click(screen.getByText('rg'));
+    fireEvent.click(screen.getByText('Explored files'));
+    fireEvent.click(screen.getByText('"needle" in .'));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith({

@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "深度思考、战略规划与严密验证",
   "slash.antigravity.browser": "网络浏览、文档检索与在线研究",
   "slash.antigravity.schedule": "定时任务或周期性计划执行",
-  "slash.antigravity.learn": "沉淀经验、规则与规范以供后续任务复用"
+  "slash.antigravity.learn": "沉淀经验、规则与规范以供后续任务复用",
+  "activity": {
+    "working": "正在执行...",
+    "workedFor": "已工作 {{duration}}",
+    "exploredFiles": "浏览文件",
+    "ranCommands": "运行命令",
+    "editedFiles": "编辑文件",
+    "createdFiles": "创建文件",
+    "usedTools": "调用工具",
+    "ran": "运行",
+    "analyzed": "分析",
+    "searched": "搜索",
+    "listed": "列出",
+    "edited": "已编辑",
+    "created": "已创建",
+    "modified": "已修改",
+    "input": "输入",
+    "output": "输出",
+    "loading": "加载中...",
+    "loadError": "加载完整输出失败"
+  }
 }

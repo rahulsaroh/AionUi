@@ -19,7 +19,12 @@ function getBaseUrl(): string {
 }
 
 async function fetchJson<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const url = `${getBaseUrl()}${path}`;
+  const base = getBaseUrl();
+  const url = base
+    ? `${base}${path}`
+    : typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null'
+      ? `${window.location.origin}${path}`
+      : path;
   const headers: Record<string, string> = {};
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';

@@ -14,6 +14,7 @@ import { initWebuiBridge } from './webuiBridge';
 import { initThemeBridge } from './themeBridge';
 import { registerBrowserService } from '../services/browserService';
 import { registerBrowserBridge } from './browserBridge';
+import { registerDesktopControlBridge } from './desktopControlBridge';
 import { registerTeamworkHandlers } from '../services/teamwork/teamworkHandler';
 import { registerTeamScopingHandlers } from '../services/teamwork/teamScopingHandler';
 import { registerKnowledgeRepoBridge } from './knowledgeRepoBridge';
@@ -36,6 +37,7 @@ export function initAllBridges(_deps: BridgeDependencies = {}): void {
   initThemeBridge();
   registerBrowserService();
   registerBrowserBridge();
+  registerDesktopControlBridge();
   registerTeamworkHandlers();
   registerTeamScopingHandlers();
   registerKnowledgeRepoBridge();

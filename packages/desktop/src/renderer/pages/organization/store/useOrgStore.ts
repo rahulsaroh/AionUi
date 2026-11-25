@@ -39,7 +39,7 @@ import { memberHandbook } from '@/common/adapter/ipcBridge';
 import { resolveOrgChatTarget } from '../utils/openOrgChat';
 import { validateOrgFolder } from '../utils/orgPathUtils';
 import type { OrgChatTarget } from '../utils/agentTurn';
-import i18n from '@/renderer/services/i18n';
+import i18next from 'i18next';
 
 const STORAGE_KEYS = {
   SCOPE: 'aionui:active-scope',
@@ -1187,6 +1187,24 @@ async function syncFromPersistentStore(): Promise<void> {
     projectsByScope[mode] = nextProjects;
     conversationsByScope[mode] = nextConversations;
 
+    if (mode !== 'organization') {
+      try {
+        const orgProjRaw = await ipcBridge.org.getProjects({ mode: 'organization' });
+        if (orgProjRaw && Array.isArray(orgProjRaw)) {
+          const backendOrgProjects = (orgProjRaw as OrgProject[]).filter((project) =>
+            belongsToScope(project, 'organization')
+          );
+          const { merged, hasChanges } = mergeProjects(projectsByScope.organization, backendOrgProjects);
+          if (hasChanges) {
+            projectsByScope.organization = merged;
+            notify();
+          }
+        }
+      } catch {
+        // Non-fatal: organization project hydration in workplace mode is best-effort
+      }
+    }
+
     if (changed) {
       const persistedSelection = loadStored<string | null>(STORAGE_KEYS.SELECTED_CONVERSATION, () => null);
       const selectedConversationId = nextConversations.some((conversation) => conversation.id === persistedSelection)
@@ -2321,7 +2339,9 @@ export function useOrgStore() {
 
   const openChat = useCallback((target: OrgChatTarget): { ok: boolean; error?: string } => {
     const t = (key: string, opts?: Record<string, unknown>) =>
-      (opts?.defaultValue as string) || (i18n.t(key, opts as Record<string, string>) as string) || key;
+      (opts?.defaultValue as string) ||
+      (i18next.isInitialized ? (i18next.t(key, opts as Record<string, string>) as string) : key) ||
+      key;
 
     const result = resolveOrgChatTarget(
       target,
@@ -2457,6 +2477,7 @@ export function useOrgStore() {
   return {
     ...state,
     setActiveFilter,
+    commitOrganizationImport,
     recordApprovedLineup,
     setAutoApprovePermissions,
     setActiveScope,
@@ -2506,12 +2527,173 @@ export function useOrgStore() {
   };
 }
 
+export type OrganizationImportPayload = {
+  newDepartment?: OrgDepartmentNode;
+  addedTeams?: Array<{ departmentId: string; team: OrgTeamNode }>;
+  addedProjects?: OrgProject[];
+  addedConversations?: OrgConversation[];
+  addedMembers?: OrgAgentMember[];
+};
+
+/**
+ * Returns all AionCore backend team IDs currently owned by Organization
+ * (referenced either by an OrgTeamNode or an Organization OrgProject).
+ */
+export function getOrganizationBackendTeamIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const dept of globalState.hierarchy.departments) {
+    for (const team of dept.teams) {
+      if (team.backendTeamId) ids.add(team.backendTeamId);
+    }
+  }
+  const orgProjects =
+    globalState.activeScope === 'organization' ? globalState.projects : projectsByScope.organization || [];
+  for (const proj of orgProjects) {
+    if (proj.backendTeamId) ids.add(proj.backendTeamId);
+  }
+  return ids;
+}
+
+/**
+ * Atomically imports departments, teams, projects, members, and conversations
+ * into the Organization namespace regardless of the currently active scope.
+ */
+export async function commitOrganizationImport(payload: OrganizationImportPayload): Promise<{
+  hierarchy: OrgHierarchy;
+  projects: OrgProject[];
+}> {
+  return enqueueOrgMutation(async () => {
+    const now = Date.now();
+    let nextHierarchy: OrgHierarchy = {
+      ...globalState.hierarchy,
+      departments: [...globalState.hierarchy.departments],
+      lastUpdated: now,
+    };
+
+    if (payload.newDepartment) {
+      const exists = nextHierarchy.departments.some((d) => d.id === payload.newDepartment!.id);
+      if (!exists) {
+        nextHierarchy.departments.push({
+          ...payload.newDepartment,
+          linkedProjects: payload.newDepartment.linkedProjects ?? [],
+        });
+      }
+    }
+
+    if (payload.addedTeams?.length) {
+      for (const entry of payload.addedTeams) {
+        nextHierarchy.departments = nextHierarchy.departments.map((dept) => {
+          if (dept.id !== entry.departmentId) return dept;
+          const alreadyExists = dept.teams.some(
+            (t) => t.id === entry.team.id || (entry.team.backendTeamId && t.backendTeamId === entry.team.backendTeamId)
+          );
+          if (alreadyExists) return dept;
+          return {
+            ...dept,
+            teams: [...dept.teams, entry.team],
+            lastActiveAt: now,
+            updatedAt: now,
+          };
+        });
+      }
+    }
+
+    const storedProjects = loadStored<OrgProject[]>(STORAGE_KEYS.PROJECTS, () => []);
+    const existingOrgProjects =
+      projectsByScope.organization.length > 0
+        ? projectsByScope.organization
+        : storedProjects.filter((p) => belongsToScope(p, 'organization'));
+
+    let nextOrgProjects = [...existingOrgProjects];
+    for (const rawProj of payload.addedProjects ?? []) {
+      const normalized = normalizeOrgProject({
+        ...rawProj,
+        mode: 'organization',
+        createdAt: rawProj.createdAt ?? now,
+        updatedAt: now,
+      });
+      const idx = nextOrgProjects.findIndex((p) => p.id === normalized.id);
+      if (idx === -1) {
+        nextOrgProjects.push(normalized);
+      } else {
+        nextOrgProjects[idx] = { ...nextOrgProjects[idx], ...normalized };
+      }
+    }
+
+    nextHierarchy = syncHierarchyProjectReferences(nextHierarchy, nextOrgProjects);
+
+    const existingOrgConvs =
+      conversationsByScope.organization.length > 0
+        ? conversationsByScope.organization
+        : loadStored<OrgConversation[]>(STORAGE_KEYS.CONVERSATIONS, () => []).filter((c) =>
+            belongsToScope(c, 'organization')
+          );
+
+    const nextOrgConvs = [...existingOrgConvs];
+    for (const rawConv of payload.addedConversations ?? []) {
+      const conv: OrgConversation = {
+        ...rawConv,
+        mode: 'organization',
+        createdAt: rawConv.createdAt ?? now,
+        updatedAt: rawConv.updatedAt ?? now,
+      };
+      const idx = nextOrgConvs.findIndex((c) => c.id === conv.id);
+      if (idx === -1) {
+        nextOrgConvs.unshift(conv);
+      } else {
+        nextOrgConvs[idx] = conv;
+      }
+    }
+
+    const nextMembers = [...(globalState.members || [])];
+    for (const m of payload.addedMembers ?? []) {
+      if (!nextMembers.some((existing) => existing.id === m.id)) {
+        nextMembers.push(m);
+      }
+    }
+
+    projectsByScope.organization = nextOrgProjects;
+    conversationsByScope.organization = nextOrgConvs;
+
+    const retainedWorkplaceProjects = storedProjects.filter((p) => p.mode === 'workplace');
+    const combinedProjects = [...nextOrgProjects, ...retainedWorkplaceProjects];
+    saveStored(STORAGE_KEYS.HIERARCHY, nextHierarchy);
+    saveStored(STORAGE_KEYS.MEMBERS, nextMembers);
+    saveStored(STORAGE_KEYS.PROJECTS, combinedProjects);
+    void ipcBridge.org.saveProjects({ projects: nextOrgProjects, mode: 'organization' }).catch((err) => {
+      console.warn('[useOrgStore] Failed to persist imported org projects:', err);
+    });
+
+    const retainedWorkplaceConvs = loadStored<OrgConversation[]>(STORAGE_KEYS.CONVERSATIONS, () => []).filter(
+      (c) => c.mode === 'workplace'
+    );
+    const combinedConvs = [...nextOrgConvs, ...retainedWorkplaceConvs];
+    saveStored(STORAGE_KEYS.CONVERSATIONS, combinedConvs);
+
+    globalState = {
+      ...globalState,
+      hierarchy: nextHierarchy,
+      members: nextMembers,
+      ...(globalState.activeScope === 'organization' ? { projects: nextOrgProjects, conversations: nextOrgConvs } : {}),
+    };
+    notify();
+
+    return { hierarchy: nextHierarchy, projects: nextOrgProjects };
+  });
+}
+
 export function getOrgStoreSnapshot(): OrgStoreState {
   return globalState;
 }
 
 export function setOrgStoreSnapshot(next: Partial<OrgStoreState>): void {
   globalState = { ...globalState, ...next };
+  if (next.projects) {
+    projectsByScope[globalState.activeScope] = next.projects;
+  }
+  if (next.conversations) {
+    conversationsByScope[globalState.activeScope] = next.conversations;
+  }
   notify();
 }
 

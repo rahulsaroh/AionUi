@@ -49,7 +49,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ visible, account, in
           name: preset.label,
           platform: preset.value,
           baseUrl: preset.defaultUrl,
-          apiKey: preset.value === 'omniroute' ? 'sk-9465108bb15ed26b-1477ab-600eaeb5' : '',
+          apiKey: '',
           models: preset.defaultModels,
           requestsPerMinute: undefined,
           tokensPerMinute: undefined,
@@ -67,9 +67,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ visible, account, in
         form.setFieldValue('models', preset.defaultModels);
         if (!form.getFieldValue('name')) {
           form.setFieldValue('name', preset.label);
-        }
-        if (platform === 'omniroute' && !form.getFieldValue('apiKey')) {
-          form.setFieldValue('apiKey', 'sk-9465108bb15ed26b-1477ab-600eaeb5');
         }
       }
     }
@@ -227,7 +224,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ visible, account, in
         </Form.Item>
 
         {/* Direct Google Account Login (Browser Flow) */}
-        {(platformValue === 'gemini' || platformValue === 'omniroute') && (
+        {platformValue === 'gemini' && (
           <div className='mb-16px p-14px rounded-10px border border-border-2 bg-fill-2 flex flex-col gap-10px'>
             <div className='flex items-center justify-between'>
               <div className='text-13px font-600 text-t-primary flex items-center gap-6px'>

@@ -56,19 +56,6 @@ export const GATEWAY_PLATFORM_OPTIONS: Array<{
     defaultModels: ['anthropic/claude-3.7-sonnet', 'deepseek/deepseek-r1', 'google/gemini-2.5-pro'],
   },
   {
-    value: 'omniroute',
-    label: 'OmniRoute (Google Antigravity / Claude)',
-    defaultUrl: 'http://localhost:20128/v1',
-    defaultModels: [
-      'antigravity/claude-sonnet-4-6',
-      'antigravity/claude-opus-4-6-thinking',
-      'antigravity/gemini-3.8-flash-tiered',
-      'antigravity/gemini-3-flash',
-      'antigravity/gemini-3.5-flash-lite',
-      'claude-web/claude-sonnet-4-6',
-    ],
-  },
-  {
     value: 'custom',
     label: 'Custom OpenAI-Compatible',
     defaultUrl: 'http://localhost:11434/v1',

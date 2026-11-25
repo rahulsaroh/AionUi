@@ -1,7 +1,22 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { getUserDataDir } from '@/common/platform/userDataPath';
 
 export type ScopeCheckResult = { allowed: boolean; reason?: string; resolved: string };
+
+const registeredKnowledgeRoots = new Set<string>();
+
+/** Register a custom cache or worktree directory as read-only knowledge scope. */
+export function registerKnowledgeReadOnlyRoot(dir: string): void {
+  const trimmed = (dir || '').trim();
+  if (!trimmed) return;
+  registeredKnowledgeRoots.add(path.resolve(trimmed));
+}
+
+/** Clear registered custom knowledge roots (for testing). */
+export function clearRegisteredKnowledgeRoots(): void {
+  registeredKnowledgeRoots.clear();
+}
 
 function isWithinRoot(target: string, root: string): boolean {
   const normTarget = process.platform === 'win32' ? target.toLowerCase() : target;
@@ -9,29 +24,47 @@ function isWithinRoot(target: string, root: string): boolean {
   return normTarget === normRoot || normTarget.startsWith(normRoot + path.sep);
 }
 
+function addKnowledgeVariants(paths: string[], baseDir: string): void {
+  paths.push(path.join(baseDir, 'knowledge_worktrees'));
+  paths.push(path.join(baseDir, 'knowledge_repos'));
+  paths.push(path.join(baseDir, 'knowledge-repos'));
+}
+
 function getKnowledgeWorktreesDir(): string[] {
   const paths: string[] = [];
+  for (const custom of registeredKnowledgeRoots) {
+    paths.push(custom);
+  }
+  try {
+    addKnowledgeVariants(paths, getUserDataDir());
+  } catch {
+    // Ignore when userDataPath cannot resolve in isolated tests
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const electron = require('electron');
     if (electron.app?.getPath) {
-      paths.push(path.join(electron.app.getPath('userData'), 'knowledge_worktrees'));
-      paths.push(path.join(electron.app.getPath('userData'), 'knowledge_repos'));
+      addKnowledgeVariants(paths, electron.app.getPath('userData'));
     }
   } catch {
     // Ignore when running outside Electron main process
   }
-  paths.push(path.join(process.cwd(), '.cache', 'knowledge_worktrees'));
-  paths.push(path.join(process.cwd(), '.cache', 'knowledge_repos'));
+  addKnowledgeVariants(paths, path.join(process.cwd(), '.cache'));
   return paths;
 }
 
 function isKnowledgeWorktreePath(target: string): boolean {
   const dirs = getKnowledgeWorktreesDir();
   for (const d of dirs) {
-    if (isWithinRoot(target, d)) return true;
+    let resolvedDir = path.resolve(d);
+    try {
+      resolvedDir = fs.realpathSync(resolvedDir);
+    } catch {
+      // Directory may not exist yet
+    }
+    if (isWithinRoot(target, resolvedDir)) return true;
   }
-  return target.toLowerCase().includes('knowledge_worktrees') || target.toLowerCase().includes('knowledge_repos');
+  return /(?:^|[\\/])(?:knowledge_worktrees|knowledge_repos|knowledge-repos)(?:[\\/]|$)/i.test(target);
 }
 
 /**

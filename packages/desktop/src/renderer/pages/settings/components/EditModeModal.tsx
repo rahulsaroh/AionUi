@@ -20,8 +20,6 @@ const EditModeModal = ModalHOC<{ data?: IProvider; onChange(data: IProvider): vo
     const bedrockAuthMethod = Form.useWatch('bedrockAuthMethod', form);
     const isBedrock = data?.platform === 'bedrock';
     const isGoogleLogin = data?.platform === 'gemini-with-google-auth';
-    const isOmniroute =
-      data?.platform === 'custom' && (data?.base_url?.includes('51820') || data?.base_url?.includes('13408'));
 
     // Watch the live form values so editing the Base URL (or API key) re-keys the
     // model-list SWR cache. Without this the list would keep fetching from the
@@ -228,8 +226,8 @@ const EditModeModal = ModalHOC<{ data?: IProvider; onChange(data: IProvider): vo
             <Form.Item
               hidden={isBedrock || isGoogleLogin}
               label={t('settings.apiKey')}
-              required={!isBedrock && !isGoogleLogin && !isOmniroute}
-              rules={[{ required: !isBedrock && !isGoogleLogin && !isOmniroute }]}
+              required={!isBedrock && !isGoogleLogin}
+              rules={[{ required: !isBedrock && !isGoogleLogin }]}
               field={'api_key'}
               extra={<div className='text-11px text-t-secondary mt-2'>💡 {t('settings.multiApiKeyEditTip')}</div>}
             >

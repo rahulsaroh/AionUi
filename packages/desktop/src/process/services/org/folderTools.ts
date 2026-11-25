@@ -329,12 +329,14 @@ export class OrgFolderTools {
   public static async scanFolder(
     targetDir: string,
     allowedWorkspace: string,
-    options?: { depth?: number; maxEntries?: number }
+    options?: { depth?: number; maxEntries?: number; allowReadOnlyKnowledge?: boolean }
   ): Promise<FolderScanResult> {
     // Enforce main-process master root. The allowedWorkspace parameter is kept for
     // backward compatibility, but cannot widen scope; if valid, it may only narrow it.
     const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
-    const scopeCheck = await assertWithinScope(targetDir, effectiveScope);
+    const scopeCheck = await assertWithinScope(targetDir, effectiveScope, {
+      allowReadOnlyKnowledge: options?.allowReadOnlyKnowledge,
+    });
     if (!scopeCheck.allowed) {
       throw new Error(
         `Access denied: Target folder "${targetDir}" is outside workspace "${effectiveScope}" (${scopeCheck.reason})`
@@ -441,11 +443,13 @@ export class OrgFolderTools {
     targetFilePath: string,
     allowedWorkspace: string,
     maxBytes = 256 * 1024,
-    options?: { approvalToken?: string }
+    options?: { approvalToken?: string; allowReadOnlyKnowledge?: boolean }
   ): Promise<FileReadResult> {
     // Enforce main-process master root. allowedWorkspace can only narrow, never widen.
     const effectiveScope = await resolveEffectiveScope(allowedWorkspace);
-    const scopeCheck = await assertWithinScope(targetFilePath, effectiveScope);
+    const scopeCheck = await assertWithinScope(targetFilePath, effectiveScope, {
+      allowReadOnlyKnowledge: options?.allowReadOnlyKnowledge,
+    });
     if (!scopeCheck.allowed) {
       throw new Error(`Access denied: File "${targetFilePath}" is outside workspace "${effectiveScope}"`);
     }
@@ -548,8 +552,16 @@ export class OrgFolderTools {
   /**
    * Lists immediate directory children.
    */
-  public static async listDir(targetDir: string, allowedWorkspace: string): Promise<FolderScanEntry[]> {
-    const res = await OrgFolderTools.scanFolder(targetDir, allowedWorkspace, { depth: 1, maxEntries: 500 });
+  public static async listDir(
+    targetDir: string,
+    allowedWorkspace: string,
+    options?: { allowReadOnlyKnowledge?: boolean }
+  ): Promise<FolderScanEntry[]> {
+    const res = await OrgFolderTools.scanFolder(targetDir, allowedWorkspace, {
+      depth: 1,
+      maxEntries: 500,
+      allowReadOnlyKnowledge: options?.allowReadOnlyKnowledge,
+    });
     return res.entries;
   }
 

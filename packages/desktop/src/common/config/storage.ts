@@ -652,6 +652,8 @@ export interface IMcpServer {
   tools?: IMcpTool[];
   last_test_status?: 'connected' | 'disconnected' | 'error' | 'testing'; // 最近一次检测结果
   last_connected?: number;
+  last_latency_ms?: number;
+  last_error?: string;
   created_at: number;
   updated_at: number;
   original_json: string; // 存储原始JSON配置，用于编辑时的准确显示

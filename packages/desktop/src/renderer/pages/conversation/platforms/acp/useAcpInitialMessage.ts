@@ -8,6 +8,7 @@ import { ipcBridge } from '@/common';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { TConversationRuntimeSummary } from '@/common/config/storage';
 import { parseError, uuid } from '@/common/utils';
+import { enforceTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
 import { emitter } from '@/renderer/utils/emitter';
 import { type ChatFileRef, isChatFileRef, uploadFileRef } from '@/common/types/chatFile';
 import { useEffect } from 'react';
@@ -74,8 +75,9 @@ export const useAcpInitialMessage = ({
         setAiProcessing(true);
 
         void checkAndUpdateTitle(conversation_id, input);
+        const finalInput = enforceTaskBreakdownPrompt(input);
         const result = await ipcBridge.acpConversation.sendMessage.invoke({
-          input,
+          input: finalInput,
           conversation_id: conversation_id,
           files,
         });

@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "Tiefes Nachdenken, strategische Planung und rigorose Überprüfung",
   "slash.antigravity.browser": "Web-Recherche, Dokumentationsabruf und Online-Suche",
   "slash.antigravity.schedule": "Wiederkehrender Zeitplan oder zeitgesteuerte Ausführung",
-  "slash.antigravity.learn": "Erkenntnisse und Richtlinien für zukünftige Aufgaben sichern"
+  "slash.antigravity.learn": "Erkenntnisse und Richtlinien für zukünftige Aufgaben sichern",
+  "activity": {
+    "working": "Arbeitet...",
+    "workedFor": "Gearbeitet für {{duration}}",
+    "exploredFiles": "Dateien untersucht",
+    "ranCommands": "Befehle ausgeführt",
+    "editedFiles": "Dateien bearbeitet",
+    "createdFiles": "Dateien erstellt",
+    "usedTools": "Tools verwendet",
+    "ran": "Ausgeführt",
+    "analyzed": "Analysiert",
+    "searched": "Gesucht",
+    "listed": "Aufgelistet",
+    "edited": "Bearbeitet",
+    "created": "Erstellt",
+    "modified": "Geändert",
+    "input": "Eingabe",
+    "output": "Ausgabe",
+    "loading": "Wird geladen...",
+    "loadError": "Vollständige Ausgabe konnte nicht geladen werden"
+  }
 }

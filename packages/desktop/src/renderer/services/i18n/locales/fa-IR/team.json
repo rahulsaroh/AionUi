@@ -20,7 +20,9 @@
     "archiveSuccess": "Team archived",
     "archiveFailed": "Failed to archive team",
     "editTeam": "ÙˆÛŒØ±Ø§ÛŒØ´ ØªÛŒÙ…",
-    "deleteFailed": "Ø­Ø°Ù ØªÛŒÙ… Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯"
+    "deleteFailed": "Ø­Ø°Ù ØªÛŒÙ… Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯",
+    "moveToOrg": "انتقال به سازمان",
+    "moveToOrgShort": "انتقال به سازمان"
   },
   "activeMembers": {
     "title": "Ø§Ø¹Ø¶Ø§ÛŒ ÙØ¹Ø§Ù„",
@@ -383,7 +385,39 @@
     "newChat": "New chat",
     "noSearchResults": "No departments, teams, or projects match your search.",
     "noDepartments": "No departments found.",
-    "searchPlaceholder": "Search departments, teams, projects..."
+    "searchPlaceholder": "Search departments, teams, projects...",
+    "moveToOrg": {
+      "titleTeam": "Move Team to Organization",
+      "titleProject": "Move Project to Organization",
+      "confirm": "Move to Organization",
+      "membersCount": "{{count}} members",
+      "subTeamsCount": "+{{count}} sub-teams",
+      "chatsCount": "{{count}} chats",
+      "targetDepartment": "Target Department",
+      "existingDepartment": "Existing Department",
+      "newDepartment": "New Department",
+      "selectDepartmentPlaceholder": "Select a department",
+      "newDepartmentPlaceholder": "Enter new department name",
+      "nameLabel": "Name in Organization",
+      "namePlaceholder": "Enter name",
+      "descriptionPlaceholder": "Optional notes or goal for this department item",
+      "noMasterRootWarning": "Set an Organization Master Folder to bind workspace files inside the department.",
+      "setMasterFolder": "Set Master Folder",
+      "masterRootSet": "Organization Master Folder updated",
+      "masterRootFailed": "Failed to set Organization Master Folder",
+      "orgFolderLabel": "Organization Workspace Folder",
+      "alreadyInOrgRoot": "Folder is already inside the target department root and will be linked directly.",
+      "copyFiles": "Copy files into Organization folder (keep original files)",
+      "moveFiles": "Move files into Organization folder",
+      "skipFiles": "Create empty folder (do not transfer files)",
+      "pathOutsideRoot": "Target folder must be inside the department or Organization master root.",
+      "createLinkedProject": "Also register as a Project in this department",
+      "includeSubTeams": "Include {{count}} sub-team(s)",
+      "removeFromWorkplace": "Move out of Workplace sidebar (uncheck to keep a copy in Workplace)",
+      "openAfterMove": "Switch to Organization and open after moving",
+      "success": "Moved to Organization",
+      "failed": "Failed to move to Organization"
+    }
   },
   "knowledgeRepos": {
     "title": "دانش",
@@ -432,7 +466,10 @@
     "setupInstructions": "دستورالعمل‌ها و نیازمندی‌های راه‌اندازی",
     "runSetup": "اجرای راه‌اندازی",
     "envVars": "متغیرهای محیطی",
-    "conflictsWarning": "تداخل قوانین شناسایی شد: مخزن با اولویت بالاتر اعمال شد."
+    "conflictsWarning": "تداخل قوانین شناسایی شد: مخزن با اولویت بالاتر اعمال شد.",
+    "refAutoPlaceholder": "شاخه یا برچسب (تشخیص خودکار پیش‌فرض)",
+    "subpathPlaceholder": "زیرمسیر (اختیاری، مثلاً docs/playbook)",
+    "repoMapIndexed": "نقشه فایل‌ها نمایه‌سازی شد"
   },
   "handbook": {
     "title": "Employee Handbook",

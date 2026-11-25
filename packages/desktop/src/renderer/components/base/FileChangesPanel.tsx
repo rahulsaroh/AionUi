@@ -8,6 +8,7 @@ import classNames from 'classnames';
 import React, { useState } from 'react';
 import { Down, PreviewOpen } from '@icon-park/react';
 import { diffColors, iconColors } from '@/renderer/styles/colors';
+import FileTypeIcon from '@/renderer/pages/conversation/explorer/fileIcon/FileTypeIcon';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -77,7 +78,7 @@ const FileChangesPanel: React.FC<FileChangesPanelProps> = ({
       >
         <div className='group flex items-center justify-between px-16px py-12px hover:bg-3 transition-colors'>
           <div className='flex items-center min-w-0 gap-8px'>
-            <span className='w-8px h-8px rounded-full shrink-0' style={{ backgroundColor: diffColors.addition }} />
+            <FileTypeIcon node={{ name: file.file_name, relativePath: file.fullPath, isFile: true }} />
             <span className='text-14px text-t-primary font-medium truncate'>{file.file_name}</span>
           </div>
           <div className='flex items-center gap-8px shrink-0'>
@@ -153,7 +154,8 @@ const FileChangesPanel: React.FC<FileChangesPanelProps> = ({
               )}
             >
               {/* 文件名 / File name */}
-              <div className='flex items-center min-w-0'>
+              <div className='flex items-center min-w-0 gap-8px'>
+                <FileTypeIcon node={{ name: file.file_name, relativePath: file.fullPath, isFile: true }} />
                 <span className='text-14px text-t-primary truncate'>{file.file_name}</span>
               </div>
               {/* 变更统计 + 预览按钮 / Change statistics + Preview button */}

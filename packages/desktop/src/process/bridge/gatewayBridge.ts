@@ -112,27 +112,6 @@ export function registerGatewayBridge(): void {
     }
   });
 
-  ipcMain.handle('gateway:syncLocalOmniRoute', async () => {
-    try {
-      const { syncOmniRouteIntoStore } = await import('../services/gateway/localOmniRouteSync');
-      const res = await syncOmniRouteIntoStore(store);
-      void service.syncWithBackend();
-      return { success: true, data: res };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
-  ipcMain.handle('gateway:checkOmniRouteStatus', async () => {
-    try {
-      const { checkOmniRouteRunning } = await import('../services/gateway/localOmniRouteSync');
-      const isRunning = await checkOmniRouteRunning();
-      return { success: true, isRunning, port: 20128 };
-    } catch (error) {
-      return { success: false, isRunning: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
   ipcMain.handle('gateway:googleOAuthLogin', async () => {
     try {
       const { loginWithGoogleInBrowser } = await import('../services/oauth/googleOAuthService');

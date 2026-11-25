@@ -132,8 +132,8 @@ export async function scanFolderCompact(targetPath?: string, options?: ScanFolde
   const effectiveScope = options?.allowedScope ? options.allowedScope.trim() : masterRoot;
   const pathToCheck = targetPath && targetPath.trim() ? targetPath.trim() : effectiveScope;
 
-  // Enforce boundary
-  const scopeCheck = await assertWithinScope(pathToCheck, effectiveScope);
+  // Enforce boundary (read-only knowledge worktrees/repos are allowed)
+  const scopeCheck = await assertWithinScope(pathToCheck, effectiveScope, { allowReadOnlyKnowledge: true });
   if (!scopeCheck.allowed) {
     return {
       success: false,

@@ -42,6 +42,11 @@ async function main() {
       entryPoints: [path.join(ROOT, 'packages/desktop/src/process/resources/builtinMcp/orgServer.ts')],
       outfile: path.join(ROOT, 'out/main/builtin-mcp-org.js'),
     }),
+    esbuild.build({
+      ...SHARED_OPTIONS,
+      entryPoints: [path.join(ROOT, 'packages/desktop/src/process/resources/builtinMcp/desktopControlServer.ts')],
+      outfile: path.join(ROOT, 'out/main/builtin-mcp-desktop-control.js'),
+    }),
   ]);
 }
 

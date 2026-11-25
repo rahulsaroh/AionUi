@@ -291,12 +291,7 @@ const AcpSendBox: React.FC<{
       try {
         if (teamPermission) await teamPermission.warmupSession();
         void checkAndUpdateTitle(conversation_id, input);
-        const isAntigravityOrMultiStep =
-          backend === 'antigravity' ||
-          session_mode === 'antigravity' ||
-          session_mode === 'plan' ||
-          currentMode === 'plan';
-        const finalInput = isAntigravityOrMultiStep ? enforceTaskBreakdownPrompt(input) : input;
+        const finalInput = enforceTaskBreakdownPrompt(input);
 
         if (teamSendMessage) {
           await teamSendMessage({ input: finalInput, files });

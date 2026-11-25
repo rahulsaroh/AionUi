@@ -17,6 +17,7 @@ import ToolsModalContent from '@/renderer/components/settings/SettingsModal/cont
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
 import SettingsPageHeader from '../components/SettingsPageHeader';
 import { BrowserAutomationSettings } from './BrowserAutomationSettings';
+import { DesktopControlSettings } from './DesktopControlSettings';
 
 const TabPane = Tabs.TabPane;
 
@@ -40,6 +41,9 @@ const ToolsSettings: React.FC = () => {
           </TabPane>
           <TabPane key='browser' title={t('settings.browserAutomation', { defaultValue: 'Browser Automation' })}>
             <BrowserAutomationSettings />
+          </TabPane>
+          <TabPane key='desktop' title={t('settings.desktopControl', { defaultValue: 'Desktop Control' })}>
+            <DesktopControlSettings />
           </TabPane>
         </Tabs>
       </div>

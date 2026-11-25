@@ -184,4 +184,20 @@ describe('orgDirectory', () => {
     const doc = buildOrgDirectory({ hierarchy: buildHierarchy(), projects: buildProjects() });
     expect(findOrgOwners(doc, 'quantum welding')).toEqual([]);
   });
+
+  it('includes knowledgeReposByProjectId and knowledgeReposByMemberId in directory output', () => {
+    const doc = buildOrgDirectory({
+      hierarchy: buildHierarchy(),
+      projects: buildProjects(),
+      knowledgeReposByMemberId: { 'spec-api': ['OpenAPI Playbook'] },
+      knowledgeReposByProjectId: { 'proj-invoice': ['Billing Repo'] },
+    });
+
+    const md = renderOrgDirectoryMarkdown(doc);
+    expect(md).toContain('knowledge: OpenAPI Playbook');
+    expect(md).toContain('knowledge: Billing Repo');
+
+    const prompt = getOrgDirectoryPrompt(doc, { conversationId: 'conv-knowledge' });
+    expect(prompt).toContain('(knowledge: Billing Repo)');
+  });
 });

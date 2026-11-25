@@ -123,6 +123,9 @@ export function registerKnowledgeRepoBridge(): void {
         repoIds: string[];
         whenToUseHint?: string;
         tokenBudget?: number;
+        conversationId?: string;
+        memberKey?: string;
+        forceFullPlaybook?: boolean;
       }
     ) => {
       return knowledgeRepoService.buildEffectiveInstructions(params);

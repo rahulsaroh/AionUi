@@ -394,4 +394,43 @@ describe('AnthropicAdapter Tests', () => {
     expect(emittedChunks.length).toBe(3);
     expect(emittedChunks[2]).toBe('data: [DONE]\n\n');
   });
+
+  it('should resolve accountId:model and accountName:model targets in ComboRouter', () => {
+    const store = new GatewayStore();
+    const monitor = new QuotaMonitor(store);
+    const router = new ComboRouter(store, monitor);
+
+    const acc1: GatewayAccount = {
+      id: 'acc-work',
+      name: 'Work OpenAI',
+      platform: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-work',
+      models: ['gpt-4o', 'gpt-4o-mini'],
+      enabled: true,
+      status: 'active',
+    };
+    const acc2: GatewayAccount = {
+      id: 'acc-personal',
+      name: 'Personal OpenAI',
+      platform: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-personal',
+      models: ['gpt-4o'],
+      enabled: true,
+      status: 'active',
+    };
+    store.saveAccount(acc1);
+    store.saveAccount(acc2);
+
+    const byName = router.resolveTargets('Personal OpenAI:gpt-4o');
+    expect(byName.targets).toHaveLength(1);
+    expect(byName.targets[0].account.id).toBe('acc-personal');
+    expect(byName.targets[0].model).toBe('gpt-4o');
+
+    const byId = router.resolveTargets('acc-work:gpt-4o-mini');
+    expect(byId.targets).toHaveLength(1);
+    expect(byId.targets[0].account.id).toBe('acc-work');
+    expect(byId.targets[0].model).toBe('gpt-4o-mini');
+  });
 });

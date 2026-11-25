@@ -7,7 +7,12 @@
 import { OrgDelegationEngine } from './orgDelegationEngine';
 import { runCeoTurn, type CeoEvent } from './ceoExecutionService';
 import { buildOrgDirectory, getOrgDirectoryPrompt } from './orgDirectory';
-import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
+import { memberHandbook } from '@/common/adapter/ipcBridge';
+import {
+  loadKnowledgeRepoMaps,
+  resolveEntityKnowledgeInstructions,
+  withKnowledgeTaskLock,
+} from '@/renderer/components/knowledge';
 import type { OrgAgentMember, OrgConversation, OrgHierarchy, OrgProject } from '@/types/organization';
 
 export type OrgChatTargetType = 'ceo' | 'department_head' | 'project_head' | 'member';
@@ -132,12 +137,28 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
     try {
       const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, onNodeStatusUpdate, { projects });
 
+      const convIdForKnowledge = conversation?.backendConversationId || conversation?.id;
+      const knowledgeMaps = await loadKnowledgeRepoMaps();
+      const enrichedDirectoryDoc = buildOrgDirectory({
+        hierarchy,
+        projects,
+        members,
+        knowledgeReposByMemberId: knowledgeMaps.byMemberId,
+        knowledgeReposByProjectId: knowledgeMaps.byProjectId,
+      });
+      const enrichedDirectoryBlock = getOrgDirectoryPrompt(enrichedDirectoryDoc, {
+        conversationId: convIdForKnowledge,
+      });
+
+      const targetProjectId = target.projectId || conversation?.projectId;
+      const targetProject = targetProjectId ? projects.find((p) => p.id === targetProjectId) : undefined;
+
       let handbookBlock = '';
       try {
         const memberKey = `org:${agent.id}`;
         const hb = await memberHandbook.getInjectedBlock({
           memberKey,
-          conversationId: conversation?.backendConversationId || conversation?.id,
+          conversationId: convIdForKnowledge,
           model: agent.model?.modelId,
         });
         if (hb?.promptBlock) {
@@ -147,25 +168,14 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
         console.warn('[agentTurn] Failed to load agent handbook:', err);
       }
 
-      let knowledgeBlock = '';
-      try {
-        const memberKey = `org:${agent.id}`;
-        const assign = await knowledgeRepo.getAssignment(memberKey);
-        if (assign && assign.repoIds.length > 0) {
-          const inst = await knowledgeRepo.buildInstructions({
-            memberKey,
-            conversationId: conversation?.backendConversationId,
-            memberName: agent.name,
-            repoIds: assign.repoIds,
-            whenToUseHint: assign.whenToUseHint,
-          });
-          if (inst?.instructions) {
-            knowledgeBlock = inst.instructions;
-          }
-        }
-      } catch (err) {
-        console.warn('[agentTurn] Failed to load agent knowledge:', err);
-      }
+      const knowledgeRes = await resolveEntityKnowledgeInstructions({
+        memberKey: `org:${agent.id}`,
+        memberName: agent.name,
+        projectId: targetProject?.id,
+        projectRepoIds: targetProject?.context?.repos,
+        conversationId: convIdForKnowledge,
+      });
+      const knowledgeBlock = knowledgeRes.instructions;
 
       const priorMessages = !conversation?.backendConversationId
         ? (conversation?.messages ?? [])
@@ -178,7 +188,7 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
         .join('\n\n')
         .slice(-24_000);
       const promptBlocks = [
-        directoryBlock,
+        enrichedDirectoryBlock,
         handbookBlock,
         knowledgeBlock,
         systemContext,
@@ -201,13 +211,16 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
         }
       }
 
-      const response = await engine.executeDirectMessage(
-        agent,
-        composedPrompt,
-        resolvedWorkspace,
-        true,
-        resolvedSystemPrompt,
-        conversation?.backendConversationId
+      const response = await withKnowledgeTaskLock(knowledgeRes.repoIds, () =>
+        engine.executeDirectMessage(
+          agent,
+          composedPrompt,
+          resolvedWorkspace,
+          true,
+          resolvedSystemPrompt,
+          conversation?.backendConversationId,
+          targetProject?.id
+        )
       );
 
       if (cancelled) return;

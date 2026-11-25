@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "تفکر عمیق، برنامه‌ریزی استراتژیک و اعتبارسنجی دقیق",
   "slash.antigravity.browser": "مرور وب، جستجوی مستندات و پژوهش آنلاین",
   "slash.antigravity.schedule": "زمان‌بندی تکرارشونده یا اجرای زمان‌دار",
-  "slash.antigravity.learn": "ذخیره تجربیات و قواعد برای استفاده در کارهای آینده"
+  "slash.antigravity.learn": "ذخیره تجربیات و قواعد برای استفاده در کارهای آینده",
+  "activity": {
+    "working": "در حال انجام...",
+    "workedFor": "مدت زمان کار: {{duration}}",
+    "exploredFiles": "بررسی فایل‌ها",
+    "ranCommands": "اجرای دستورات",
+    "editedFiles": "ویرایش فایل‌ها",
+    "createdFiles": "ایجاد فایل‌ها",
+    "usedTools": "استفاده از ابزارها",
+    "ran": "اجرا شد",
+    "analyzed": "بررسی شد",
+    "searched": "جستجو شد",
+    "listed": "فهرست شد",
+    "edited": "ویرایش شد",
+    "created": "ایجاد شد",
+    "modified": "تغییر یافت",
+    "input": "ورودی",
+    "output": "خروجی",
+    "loading": "در حال بارگذاری...",
+    "loadError": "خطا در بارگذاری خروجی کامل"
+  }
 }

@@ -95,19 +95,19 @@ export class ComboRouter {
       return { combo: matchedCombo, targets: resolved };
     }
 
-    // 2. Check if model has format "accountId:modelName"
+    // 2. Check if model has format "accountId:modelName" or "accountName:modelName"
+    const allAccounts = this.store.getAccounts().filter((a) => a.enabled);
     if (modelName.includes(':')) {
       const parts = modelName.split(':');
-      const accountId = parts[0];
+      const accountKey = parts[0];
       const actualModel = parts.slice(1).join(':');
-      const acc = this.store.getAccount(accountId);
-      if (acc) {
+      const acc = this.store.getAccount(accountKey) ?? allAccounts.find((a) => a.name === accountKey);
+      if (acc && acc.enabled) {
         return { targets: [{ account: acc, model: actualModel }] };
       }
     }
 
     // 3. Fallback: match by model name across all enabled accounts
-    const allAccounts = this.store.getAccounts().filter((a) => a.enabled);
     const matchedAccounts = allAccounts.filter((a) => a.models.includes(modelName));
     if (matchedAccounts.length > 0) {
       return {

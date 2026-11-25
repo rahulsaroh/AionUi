@@ -287,7 +287,7 @@ export function initApplicationBridge(): void {
   });
 
   ipcBridge.team.updateTeam.provider(
-    async ({ id, name, workspace, leader_assistant_id, parent_id, department_role, description }) => {
+    async ({ id, name, workspace, leader_assistant_id, parent_id, department_role, description, mode }) => {
       const db = await openBackendDb();
       if (!db) return;
       try {
@@ -300,6 +300,39 @@ export function initApplicationBridge(): void {
 
         // Note: teams.parent_id and teams.department_role do not exist in the pinned AionCore SQLite schema.
         // Department links and roles are maintained in the Organization store.
+
+        if (mode === 'workplace' || mode === 'organization') {
+          const hasTeamModeCol = db.get<{ name: string }>(
+            "SELECT name FROM pragma_table_info('teams') WHERE name = 'mode'"
+          );
+          if (hasTeamModeCol) {
+            db.run('UPDATE teams SET mode = ?, updated_at = ? WHERE id = ?', mode, now, id);
+          }
+
+          const hasConvModeCol = db.get<{ name: string }>(
+            "SELECT name FROM pragma_table_info('conversations') WHERE name = 'mode'"
+          );
+          if (hasConvModeCol) {
+            db.run(
+              `UPDATE conversations
+               SET mode = ?, extra = json_set(extra, '$.mode', ?), updated_at = ?
+               WHERE COALESCE(NULLIF(json_extract(extra, '$.team_id'), ''), NULLIF(json_extract(extra, '$.teamId'), '')) = ?`,
+              mode,
+              mode,
+              now,
+              id
+            );
+          } else {
+            db.run(
+              `UPDATE conversations
+               SET extra = json_set(extra, '$.mode', ?), updated_at = ?
+               WHERE COALESCE(NULLIF(json_extract(extra, '$.team_id'), ''), NULLIF(json_extract(extra, '$.teamId'), '')) = ?`,
+              mode,
+              now,
+              id
+            );
+          }
+        }
 
         if (description !== undefined) {
           db.run('UPDATE teams SET description = ?, updated_at = ? WHERE id = ?', description.trim(), now, id);

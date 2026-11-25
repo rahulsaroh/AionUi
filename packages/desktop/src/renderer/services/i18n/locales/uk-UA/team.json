@@ -20,7 +20,9 @@
     "archiveSuccess": "Team archived",
     "archiveFailed": "Failed to archive team",
     "editTeam": "Ð ÐµÐ´Ð°Ð³ÑƒÐ²Ð°Ñ‚Ð¸ ÐºÐ¾Ð¼Ð°Ð½Ð´Ñƒ",
-    "deleteFailed": "ÐÐµ Ð²Ð´Ð°Ð»Ð¾ÑÑ Ð²Ð¸Ð´Ð°Ð»Ð¸Ñ‚Ð¸ ÐºÐ¾Ð¼Ð°Ð½Ð´Ñƒ"
+    "deleteFailed": "ÐÐµ Ð²Ð´Ð°Ð»Ð¾ÑÑ Ð²Ð¸Ð´Ð°Ð»Ð¸Ñ‚Ð¸ ÐºÐ¾Ð¼Ð°Ð½Ð´Ñƒ",
+    "moveToOrg": "Перемістити до організації",
+    "moveToOrgShort": "До орг."
   },
   "activeMembers": {
     "title": "ÐÐºÑ‚Ð¸Ð²Ð½Ñ– ÑƒÑ‡Ð°ÑÐ½Ð¸ÐºÐ¸",
@@ -385,7 +387,39 @@
     "newChat": "New chat",
     "noSearchResults": "No departments, teams, or projects match your search.",
     "noDepartments": "No departments found.",
-    "searchPlaceholder": "Search departments, teams, projects..."
+    "searchPlaceholder": "Search departments, teams, projects...",
+    "moveToOrg": {
+      "titleTeam": "Move Team to Organization",
+      "titleProject": "Move Project to Organization",
+      "confirm": "Move to Organization",
+      "membersCount": "{{count}} members",
+      "subTeamsCount": "+{{count}} sub-teams",
+      "chatsCount": "{{count}} chats",
+      "targetDepartment": "Target Department",
+      "existingDepartment": "Existing Department",
+      "newDepartment": "New Department",
+      "selectDepartmentPlaceholder": "Select a department",
+      "newDepartmentPlaceholder": "Enter new department name",
+      "nameLabel": "Name in Organization",
+      "namePlaceholder": "Enter name",
+      "descriptionPlaceholder": "Optional notes or goal for this department item",
+      "noMasterRootWarning": "Set an Organization Master Folder to bind workspace files inside the department.",
+      "setMasterFolder": "Set Master Folder",
+      "masterRootSet": "Organization Master Folder updated",
+      "masterRootFailed": "Failed to set Organization Master Folder",
+      "orgFolderLabel": "Organization Workspace Folder",
+      "alreadyInOrgRoot": "Folder is already inside the target department root and will be linked directly.",
+      "copyFiles": "Copy files into Organization folder (keep original files)",
+      "moveFiles": "Move files into Organization folder",
+      "skipFiles": "Create empty folder (do not transfer files)",
+      "pathOutsideRoot": "Target folder must be inside the department or Organization master root.",
+      "createLinkedProject": "Also register as a Project in this department",
+      "includeSubTeams": "Include {{count}} sub-team(s)",
+      "removeFromWorkplace": "Move out of Workplace sidebar (uncheck to keep a copy in Workplace)",
+      "openAfterMove": "Switch to Organization and open after moving",
+      "success": "Moved to Organization",
+      "failed": "Failed to move to Organization"
+    }
   },
   "knowledgeRepos": {
     "title": "База знань",
@@ -434,7 +468,10 @@
     "setupInstructions": "Інструкції та вимоги до налаштування",
     "runSetup": "Запустити налаштування",
     "envVars": "Змінні середовища",
-    "conflictsWarning": "Виявлено конфлікт правил: пріоритет віддано вищому репозиторію."
+    "conflictsWarning": "Виявлено конфлікт правил: пріоритет віддано вищому репозиторію.",
+    "refAutoPlaceholder": "Гілка або тег (автовизначення за замовчуванням)",
+    "subpathPlaceholder": "Підшлях (необов’язково, напр. docs/playbook)",
+    "repoMapIndexed": "Карту файлів проіндексовано"
   },
   "handbook": {
     "title": "Employee Handbook",

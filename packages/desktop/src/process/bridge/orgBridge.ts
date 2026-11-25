@@ -69,12 +69,23 @@ export function registerOrgBridge(): void {
 
   ipcMain.handle(
     'org:pickMasterRoot',
-    async (): Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }> => {
+    async (
+      _event,
+      params?: { defaultPath?: string }
+    ): Promise<{ success: boolean; masterRoot?: string; error?: string; cancelled?: boolean }> => {
       try {
+        const defaultPath =
+          params?.defaultPath && typeof params.defaultPath === 'string' && params.defaultPath.trim()
+            ? params.defaultPath.trim()
+            : undefined;
+        const dialogOptions: Electron.OpenDialogOptions = {
+          ...(defaultPath ? { defaultPath } : {}),
+          properties: ['openDirectory', 'createDirectory'],
+        };
         const focusedWindow = BrowserWindow.getFocusedWindow();
         const result = focusedWindow
-          ? await dialog.showOpenDialog(focusedWindow, { properties: ['openDirectory', 'createDirectory'] })
-          : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+          ? await dialog.showOpenDialog(focusedWindow, dialogOptions)
+          : await dialog.showOpenDialog(dialogOptions);
 
         if (result.canceled || !result.filePaths || result.filePaths.length === 0 || !result.filePaths[0]) {
           return { success: false, cancelled: true };

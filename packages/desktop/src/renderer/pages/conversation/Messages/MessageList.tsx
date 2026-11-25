@@ -27,7 +27,7 @@ import { uuid } from '@renderer/utils/common';
 import './messages.css';
 import HOC from '@renderer/utils/ui/HOC';
 import type { FileChangeInfo } from './MessageFileChanges';
-import MessageFileChanges, { parseDiff } from './MessageFileChanges';
+import MessageFileChanges from './MessageFileChanges';
 import { useConversationArtifacts } from './artifacts';
 import { MessageAnchorRail } from './anchorRail';
 import {
@@ -46,7 +46,6 @@ import MessageCronTrigger from './components/MessageCronTrigger';
 import MessageSkillSuggest from './components/MessageSkillSuggest';
 import MessageText from './components/MessageText';
 import MessageThinking from './components/MessageThinking';
-import type { WriteFileResult } from './types';
 import { useAutoScroll } from './useAutoScroll';
 import SelectionReplyButton from './components/SelectionReplyButton';
 
@@ -59,51 +58,22 @@ type IMessageVO =
       messages: Array<IMessageToolGroup | IMessageAcpToolCall | IMessageToolCall>;
       sourceMessageIds: string[];
       created_at: number;
+      durationMs?: number;
     };
 type IArtifactVO = { type: 'artifact'; id: string; artifact: IConversationArtifact; created_at: number };
 type IProcessedItem = IMessageVO | IArtifactVO;
 
-type CompactAcpToolCallContent = IMessageAcpToolCall['content'] & {
-  _compact?: {
-    truncated?: boolean;
-  };
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const hasRenderableAcpDiff = (message: IMessageAcpToolCall): boolean => {
-  const content = message.content as CompactAcpToolCallContent | undefined;
-  if (!content?.update) return false;
-
-  // Compact history may truncate either side of a diff, making its line counts unreliable.
-  if (content._compact?.truncated === true) return false;
-
-  const updateContent: unknown = content.update.content;
-  if (!Array.isArray(updateContent)) return false;
-
-  const contentItems = updateContent.filter(isRecord);
-  if (contentItems.length !== updateContent.length) return false;
-
-  const diffItems = contentItems.filter((item) => item.type === 'diff');
-  return (
-    diffItems.length > 0 &&
-    diffItems.every(
-      (item) =>
-        typeof item.path === 'string' &&
-        item.path.trim().length > 0 &&
-        (typeof item.old_text === 'string' || typeof item.new_text === 'string')
-    )
+const hasInteractiveToolGroup = (message: IMessageToolGroup): boolean =>
+  Array.isArray(message.content) &&
+  message.content.some(
+    (item) =>
+      item.status === 'Confirming' ||
+      (item.name === 'ImageGeneration' &&
+        typeof item.result_display === 'object' &&
+        item.result_display !== null &&
+        'img_url' in item.result_display &&
+        Boolean(item.result_display.img_url))
   );
-};
-
-const isWriteFileResult = (value: unknown): value is WriteFileResult =>
-  isRecord(value) &&
-  'file_diff' in value &&
-  typeof value.file_diff === 'string' &&
-  value.file_diff.length > 0 &&
-  'file_name' in value &&
-  typeof value.file_name === 'string';
 
 type ConversationLocationState = {
   targetMessageId?: string;
@@ -354,51 +324,63 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
   const scrollerElementRef = useRef<HTMLDivElement | null>(null);
   const contentElementRef = useRef<HTMLDivElement | null>(null);
 
-  // Pre-process message list to group tool outputs into summary cards
+  // Pre-process message list to group tool outputs into unified Antigravity/Claude activity blocks
   const processedList = useMemo(() => {
     const result: Array<IMessageVO> = [];
-    let diffsChanges: FileChangeInfo[] = [];
-    let diffsSourceMessageIds: string[] = [];
     let toolList: Array<IMessageToolGroup | IMessageAcpToolCall | IMessageToolCall> = [];
     let toolSourceMessageIds: string[] = [];
+    let activeToolSummary: Extract<IMessageVO, { type: 'tool_summary' }> | null = null;
+    let activeBlockStartAt: number | undefined;
+    let activeBlockMaxAt: number | undefined;
+    let lastPrecedingCreatedAt: number | undefined;
 
-    const pushFileDiffChanges = (changes: FileChangeInfo, sourceMessageId: string, created_at: number) => {
-      if (!diffsChanges.length) {
-        diffsSourceMessageIds = [];
-        result.push({
-          type: 'file_summary',
-          id: `summary-${sourceMessageId}`,
-          diffs: diffsChanges,
-          sourceMessageIds: diffsSourceMessageIds,
-          created_at,
-        });
+    const finalizeActiveToolSummary = (nextCreatedAt?: number) => {
+      if (!activeToolSummary) return;
+      const startAt = activeBlockStartAt;
+      const candidateEndAt =
+        nextCreatedAt && activeBlockMaxAt && nextCreatedAt > activeBlockMaxAt ? nextCreatedAt : activeBlockMaxAt;
+      if (startAt && candidateEndAt && candidateEndAt > startAt) {
+        activeToolSummary.durationMs = candidateEndAt - startAt;
       }
-      diffsChanges.push(changes);
-      diffsSourceMessageIds.push(sourceMessageId);
-      toolList = [];
-      toolSourceMessageIds = [];
+      activeToolSummary = null;
+      activeBlockStartAt = undefined;
+      activeBlockMaxAt = undefined;
     };
+
     const pushToolList = (message: IMessageToolGroup | IMessageAcpToolCall | IMessageToolCall) => {
+      const msgCreatedAt =
+        typeof message.created_at === 'number' && message.created_at > 0 ? message.created_at : undefined;
       if (!toolList.length) {
         toolSourceMessageIds = [];
-        result.push({
+        activeBlockStartAt =
+          lastPrecedingCreatedAt && msgCreatedAt && msgCreatedAt >= lastPrecedingCreatedAt
+            ? lastPrecedingCreatedAt
+            : msgCreatedAt;
+        activeBlockMaxAt = msgCreatedAt;
+        activeToolSummary = {
           type: 'tool_summary',
           id: `tool-summary-${message.id}`,
           messages: toolList,
           sourceMessageIds: toolSourceMessageIds,
           created_at: message.created_at ?? 0,
-        });
+        };
+        result.push(activeToolSummary);
+      } else if (msgCreatedAt && (!activeBlockMaxAt || msgCreatedAt > activeBlockMaxAt)) {
+        activeBlockMaxAt = msgCreatedAt;
       }
       toolList.push(message);
       toolSourceMessageIds.push(message.id);
-      diffsChanges = [];
-      diffsSourceMessageIds = [];
     };
+
     const pushStandaloneMessage = (message: TMessage) => {
+      const msgCreatedAt =
+        typeof message.created_at === 'number' && message.created_at > 0 ? message.created_at : undefined;
+      finalizeActiveToolSummary(message.type === 'text' && message.position === 'left' ? msgCreatedAt : undefined);
       toolList = [];
       toolSourceMessageIds = [];
-      diffsChanges = [];
-      diffsSourceMessageIds = [];
+      if (msgCreatedAt) {
+        lastPrecedingCreatedAt = msgCreatedAt;
+      }
       result.push(message);
     };
 
@@ -411,27 +393,14 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
       // here rather than rendered as null: a null row still occupies a slot.
       if (message.type === 'plan') continue;
       if (message.type === 'tool_group') {
-        const writeFileResults = message.content.flatMap((item) =>
-          item.name === 'WriteFile' && isWriteFileResult(item.result_display) ? [item.result_display] : []
-        );
-        if (writeFileResults.length > 0 && writeFileResults.length === message.content.length) {
-          writeFileResults.forEach((writeFileResult) => {
-            pushFileDiffChanges(
-              parseDiff(writeFileResult.file_diff, writeFileResult.file_name),
-              message.id,
-              message.created_at ?? 0
-            );
-          });
+        if (hasInteractiveToolGroup(message)) {
+          pushStandaloneMessage(message);
           continue;
         }
         pushToolList(message);
         continue;
       }
       if (message.type === 'acp_tool_call') {
-        if (hasRenderableAcpDiff(message)) {
-          pushStandaloneMessage(message);
-          continue;
-        }
         pushToolList(message);
         continue;
       }
@@ -441,6 +410,7 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
       }
       pushStandaloneMessage(message);
     }
+    finalizeActiveToolSummary();
     const visibleArtifacts = artifacts
       .filter((artifact) => {
         if (artifact.kind === 'cron_trigger') return artifact.status === 'active';
@@ -704,7 +674,9 @@ const MessageList: React.FC<{ className?: string; emptySlot?: React.ReactNode }>
           style={highlighted ? highlightStyle : undefined}
         >
           {item.type === 'file_summary' && <MessageFileChanges diffsChanges={item.diffs} />}
-          {item.type === 'tool_summary' && <MessageToolGroupSummary messages={item.messages}></MessageToolGroupSummary>}
+          {item.type === 'tool_summary' && (
+            <MessageToolGroupSummary messages={item.messages} durationMs={item.durationMs}></MessageToolGroupSummary>
+          )}
         </div>
       );
     }

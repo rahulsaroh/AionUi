@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "深度思考、戰略規劃與嚴密驗證",
   "slash.antigravity.browser": "網路瀏覽、文件檢索與線上研究",
   "slash.antigravity.schedule": "定時任務或週期性計畫執行",
-  "slash.antigravity.learn": "沉澱經驗、規則與規範以供後續任務復用"
+  "slash.antigravity.learn": "沉澱經驗、規則與規範以供後續任務復用",
+  "activity": {
+    "working": "正在執行...",
+    "workedFor": "已工作 {{duration}}",
+    "exploredFiles": "瀏覽檔案",
+    "ranCommands": "執行命令",
+    "editedFiles": "編輯檔案",
+    "createdFiles": "建立檔案",
+    "usedTools": "呼叫工具",
+    "ran": "執行",
+    "analyzed": "分析",
+    "searched": "搜尋",
+    "listed": "列出",
+    "edited": "已編輯",
+    "created": "已建立",
+    "modified": "已修改",
+    "input": "輸入",
+    "output": "輸出",
+    "loading": "載入中...",
+    "loadError": "載入完整輸出失敗"
+  }
 }

@@ -67,9 +67,8 @@ describe('Titlebar right sidebar toggle', () => {
 
     // The right sidebar toggle should be after the feedback button
     expect(report.nextElementSibling).toBe(rightSidebarToggle);
-    // The sync indicator should be after the right sidebar toggle
-    const syncIndicator = screen.getByText('Synced').closest('div');
-    expect(rightSidebarToggle.nextElementSibling).toBe(syncIndicator);
+    expect(rightSidebarToggle.nextElementSibling).toBe(screen.getByTestId('window-controls'));
+    expect(screen.queryByText('Synced')).not.toBeInTheDocument();
   });
 
   it.each([

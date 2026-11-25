@@ -45,7 +45,7 @@ describe('legacy handoff user-state matrix', () => {
 
   it('covers already-upgraded v2.x users with a no-op repair', () => {
     const driver = makeDriver({
-      teams: ['id', 'session_mode', 'agents_version'],
+      teams: ['id', 'session_mode', 'agents_version', 'parent_id', 'department_role', 'description'],
       conversations: ['id', 'pinned', 'pinned_at'],
       cron_jobs: ['id', 'skill_content', 'description'],
     });

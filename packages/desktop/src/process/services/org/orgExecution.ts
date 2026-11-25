@@ -119,29 +119,36 @@ async function resolveCwd(cwdArg: string | undefined, ctx: OrgCtx): Promise<{ cw
 
 async function resolveTarget(
   targetArg: string | undefined,
-  ctx: OrgCtx
+  ctx: OrgCtx,
+  options?: { allowReadOnlyKnowledge?: boolean }
 ): Promise<{ target: string; inFolder: boolean; error?: string }> {
   if (!targetArg || !targetArg.trim()) {
     return { target: '', inFolder: false, error: 'Missing file path' };
   }
   const raw = targetArg.trim();
   const resolved = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(ctx.projectFolder, raw);
-  const check = await assertWithinScope(resolved, ctx.projectFolder);
+  const check = await assertWithinScope(resolved, ctx.projectFolder, {
+    allowReadOnlyKnowledge: options?.allowReadOnlyKnowledge,
+  });
   return { target: check.allowed ? check.resolved : resolved, inFolder: check.allowed };
 }
 
 export async function executeListDir(
   args: { path?: string },
   ctx: OrgCtx,
-  opts: { masterRoot?: string | null; broker?: ApprovalBroker } = {}
+  _opts: { masterRoot?: string | null; broker?: ApprovalBroker } = {}
 ): Promise<ExecResult> {
   return withProject(ctx.projectId, async () => {
-    const { target, inFolder } = await resolveTarget(args.path ?? ctx.projectFolder, ctx);
+    const { target, inFolder } = await resolveTarget(args.path ?? ctx.projectFolder, ctx, {
+      allowReadOnlyKnowledge: true,
+    });
     if (!inFolder) {
       return { success: false, error: `Access denied: "${target}" is outside the project folder` };
     }
     try {
-      const entries = await OrgFolderTools.listDir(target, ctx.projectFolder);
+      const entries = await OrgFolderTools.listDir(target, ctx.projectFolder, {
+        allowReadOnlyKnowledge: true,
+      });
       return { success: true, content: JSON.stringify(entries) };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -155,7 +162,9 @@ export async function executeReadFile(
   opts: { masterRoot?: string | null; broker?: ApprovalBroker; approvalToken?: string; maxBytes?: number } = {}
 ): Promise<ExecResult> {
   return withProject(ctx.projectId, async () => {
-    const { target, inFolder } = await resolveTarget(args.path, ctx);
+    const { target, inFolder } = await resolveTarget(args.path, ctx, {
+      allowReadOnlyKnowledge: true,
+    });
     if (!inFolder) {
       audit(opts.masterRoot ?? null, {
         kind: 'approval',
@@ -170,6 +179,7 @@ export async function executeReadFile(
     try {
       const res = await OrgFolderTools.readFile(target, ctx.projectFolder, opts.maxBytes, {
         approvalToken: opts.approvalToken,
+        allowReadOnlyKnowledge: true,
       });
       return { success: true, content: res.content, size: res.size, truncated: res.truncated, filePath: target };
     } catch (err) {
@@ -197,6 +207,7 @@ export async function executeReadFile(
         try {
           const retry = await OrgFolderTools.readFile(target, ctx.projectFolder, opts.maxBytes, {
             approvalToken: token,
+            allowReadOnlyKnowledge: true,
           });
           return {
             success: true,

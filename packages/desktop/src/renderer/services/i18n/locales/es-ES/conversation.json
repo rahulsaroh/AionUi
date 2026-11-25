@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "Movido al proyecto con éxito",
     "moveToProjectFailed": "Error al mover la conversación al proyecto",
     "noFolderSelected": "Por favor, selecciona o introduce una carpeta de proyecto",
-    "sameFolderWarning": "El proyecto de destino ya es el espacio de trabajo actual"
+    "sameFolderWarning": "El proyecto de destino ya es el espacio de trabajo actual",
+    "moveProjectToOrg": "Mover a la organización"
   },
   "historySearch": {
     "tooltip": "Buscar mensajes",

@@ -6,8 +6,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button, Dropdown, Menu, Message, Tooltip } from '@arco-design/web-react';
-import { ApplicationOne, Browser, Download, ListCheckbox, OffScreenTwo } from '@icon-park/react';
+import { ApplicationOne, Browser, Contrast, Download, ListCheckbox, MagicWand, OffScreenTwo } from '@icon-park/react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
 import type { TChatConversation } from '@/common/config/storage';
 import {
@@ -17,6 +18,8 @@ import {
 } from '@/renderer/utils/workspace/workspaceEvents';
 import { buildConversationMarkdown } from '../GroupedHistory/utils/exportHelpers';
 import { ArtifactGalleryModal } from './ArtifactGalleryModal';
+import { ModelComparisonModal } from './ModelComparisonModal';
+import { WorkspacePresetModal } from './WorkspacePresetModal';
 
 type ChatHeaderActionsProps = {
   conversation?: TChatConversation;
@@ -30,8 +33,12 @@ export const ChatHeaderActions: React.FC<ChatHeaderActionsProps> = ({
   onToggleBrowser,
 }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isArtifactsOpen, setIsArtifactsOpen] = useState(false);
+  const [isPresetOpen, setIsPresetOpen] = useState(false);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const workspacePath = (conversation?.extra as { workspace?: string } | undefined)?.workspace;
 
   useEffect(() => {
     const handleState = (e: Event) => {
@@ -109,6 +116,24 @@ export const ChatHeaderActions: React.FC<ChatHeaderActionsProps> = ({
         </Tooltip>
       </Dropdown>
 
+      <Tooltip content={t('conversation.workspacePresetTitle', { defaultValue: 'Workspace Output Preset' })}>
+        <Button
+          icon={<MagicWand theme='outline' size='16' />}
+          onClick={() => setIsPresetOpen(true)}
+          shape='circle'
+          size='small'
+        />
+      </Tooltip>
+
+      <Tooltip content={t('conversation.compareTitle', { defaultValue: 'Compare Models' })}>
+        <Button
+          icon={<Contrast theme='outline' size='16' />}
+          onClick={() => setIsCompareOpen(true)}
+          shape='circle'
+          size='small'
+        />
+      </Tooltip>
+
       <Tooltip content='Pop out into new window'>
         <Button icon={<OffScreenTwo theme='outline' size='16' />} onClick={handlePopOut} shape='circle' size='small' />
       </Tooltip>
@@ -144,6 +169,15 @@ export const ChatHeaderActions: React.FC<ChatHeaderActionsProps> = ({
           conversationId={conversation.id}
         />
       )}
+
+      <WorkspacePresetModal visible={isPresetOpen} workspace={workspacePath} onClose={() => setIsPresetOpen(false)} />
+
+      <ModelComparisonModal
+        visible={isCompareOpen}
+        workspace={workspacePath}
+        onClose={() => setIsCompareOpen(false)}
+        onOpenConversation={(id) => void navigate(`/conversation/${id}`)}
+      />
     </div>
   );
 };

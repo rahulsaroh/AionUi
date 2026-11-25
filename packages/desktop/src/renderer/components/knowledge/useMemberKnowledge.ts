@@ -119,7 +119,7 @@ export function useMemberKnowledge(memberKey?: string) {
   );
 
   const addAndAssignRepo = useCallback(
-    async (params: { gitUrl: string; ref?: string; authToken?: string; name?: string }) => {
+    async (params: { gitUrl: string; ref?: string; subpath?: string; authToken?: string; name?: string }) => {
       if (!memberKey) throw new Error('Missing memberKey');
       try {
         const urlParts = params.gitUrl.replace(/\.git$/, '').split('/');
@@ -129,7 +129,8 @@ export function useMemberKnowledge(memberKey?: string) {
         const newRepo = await knowledgeRepo.add({
           name: repoName,
           gitUrl: params.gitUrl,
-          ref: params.ref || 'main',
+          ref: params.ref?.trim() || undefined,
+          subpath: params.subpath?.trim() || undefined,
           authToken: params.authToken,
         });
 

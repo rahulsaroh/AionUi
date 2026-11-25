@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Delete, Down, Edit, EditOne, FolderClose, Peoples, Plus, Pushpin, Right } from '@icon-park/react';
+import { Delete, Down, Edit, EditOne, FolderClose, NetworkTree, Peoples, Plus, Pushpin, Right } from '@icon-park/react';
 import { Dropdown, Input, Menu, Message, Modal, Spin, Tooltip } from '@arco-design/web-react';
 import classNames from 'classnames';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useSWRConfig } from 'swr';
@@ -18,11 +18,16 @@ import { useTeamList } from '@renderer/pages/team/hooks/useTeamList';
 import { useSiderTeamBadges } from '@renderer/pages/team/hooks/useSiderTeamBadges';
 import TeamCreateModal from '@renderer/pages/team/components/TeamCreateModal';
 import { buildTeamTree, getDescendantTeamIds, type TeamTreeNode } from '@renderer/pages/team/utils/teamStorage';
+import type { MoveToOrgTarget } from '@renderer/pages/organization/move';
+import { getOrganizationBackendTeamIds, useOrgStore } from '@renderer/pages/organization/store/useOrgStore';
+
+const MoveToOrgModal = React.lazy(() => import('@/renderer/pages/organization/move/MoveToOrgModal'));
 import { ipcBridge } from '@/common';
 import type { TTeam } from '@/common/types/team/teamTypes';
 import SiderItem from './SiderItem';
 import type { SiderMenuItem } from './SiderItem';
 import { useSiderTeamRunning } from './useSiderTeamRunning';
+import { preloadRoute } from '@/renderer/utils/navigation';
 
 const TEAM_PINNED_KEY = 'team-pinned-ids';
 
@@ -182,6 +187,9 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
   const [createTeamVisible, setCreateTeamVisible] = useState(false);
   const [createSubTeamParentId, setCreateSubTeamParentId] = useState<string | null>(null);
   const [editTeamTarget, setEditTeamTarget] = useState<TTeam | null>(null);
+  const [moveToOrgTarget, setMoveToOrgTarget] = useState<MoveToOrgTarget | null>(null);
+  const { hierarchy: orgHierarchy, projects: orgStoreProjects } = useOrgStore();
+  const orgBackendTeamIds = useMemo(() => getOrganizationBackendTeamIds(), [orgHierarchy, orgStoreProjects]);
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<boolean>(() => localStorage.getItem('team-section-expanded') === 'true');
   useEffect(() => {
@@ -241,12 +249,12 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
     // Workplace scope isolation: exclude teams belonging to the Organization namespace
     const workplaceTeams = teams.filter((team) => {
       const item = team as any;
-      return item.mode !== 'organization' && item.scope !== 'organization';
+      return item.mode !== 'organization' && item.scope !== 'organization' && !orgBackendTeamIds.has(team.id);
     });
     const pinned = workplaceTeams.filter((team) => pinnedIds.includes(team.id));
     const unpinned = workplaceTeams.filter((team) => !pinnedIds.includes(team.id));
     return [...pinned, ...unpinned];
-  }, [teams, pinnedIds]);
+  }, [teams, pinnedIds, orgBackendTeamIds]);
 
   const handleTeamClick = useCallback(
     (team_id: string) => {
@@ -262,6 +270,7 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
 
   const handleTeamHover = useCallback(
     (team_id: string) => {
+      preloadRoute('team');
       if (prefetchTimerRef.current.has(team_id)) return;
       const timer = setTimeout(() => {
         void globalMutate(`team/${team_id}`, () => ipcBridge.team.get.invoke({ id: team_id }), {
@@ -376,6 +385,11 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
           label: t('team.sider.rename'),
         },
         {
+          key: 'moveToOrg',
+          icon: <NetworkTree theme='outline' size='14' />,
+          label: t('team.sider.moveToOrg', { defaultValue: 'Move to Organization' }),
+        },
+        {
           key: 'archive',
           icon: <FolderClose theme='outline' size='14' />,
           label: t('team.sider.archive'),
@@ -402,13 +416,17 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
         setRenameId(team.id);
         setRenameName(team.name);
         setRenameVisible(true);
+      } else if (key === 'moveToOrg') {
+        const descendantIds = new Set(getDescendantTeamIds(teams, team.id));
+        const subTeams = teams.filter((item) => descendantIds.has(item.id));
+        setMoveToOrgTarget({ kind: 'team', team, subTeams });
       } else if (key === 'archive') {
         void handleArchiveTeam(team.id);
       } else if (key === 'delete') {
         handleDeleteTeam(team);
       }
     },
-    [handleArchiveTeam, handleDeleteTeam, handleAddSubTeam, togglePin]
+    [handleArchiveTeam, handleDeleteTeam, handleAddSubTeam, togglePin, teams]
   );
 
   const teamTree = useMemo(() => {
@@ -600,6 +618,18 @@ const TeamSiderSection: React.FC<TeamSiderSectionProps> = ({
           allowClear
         />
       </Modal>
+      {moveToOrgTarget && (
+        <Suspense fallback={null}>
+          <MoveToOrgModal
+            visible={true}
+            target={moveToOrgTarget}
+            onClose={() => setMoveToOrgTarget(null)}
+            onSuccess={() => {
+              void refreshTeams();
+            }}
+          />
+        </Suspense>
+      )}
     </>
   );
 };

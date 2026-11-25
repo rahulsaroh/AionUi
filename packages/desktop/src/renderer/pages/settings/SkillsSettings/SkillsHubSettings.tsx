@@ -13,6 +13,7 @@ import SettingsPageHeader from '../components/SettingsPageHeader';
 import TalkToButlerButton from '@/renderer/components/base/TalkToButlerButton';
 import { AionSearchInput } from '@/renderer/components/base';
 import { formatDateTime } from '@/renderer/services/i18n/format';
+import { getSkillTelemetryMap } from '@/renderer/utils/skills/skillTelemetry';
 import { buildSkillImportNotice, getSkillImportErrorMessage } from './skillImportMessages';
 
 // Skill 信息类型 / Skill info type
@@ -29,6 +30,7 @@ interface SkillInfo {
   is_auto_inject: boolean;
   is_custom: boolean;
   source?: 'builtin' | 'custom' | 'cron' | 'extension';
+  last_used_at?: number;
 }
 
 const isAutoInjectedBuiltinSkill = (skill: SkillInfo) => skill.source === 'builtin' && skill.is_auto_inject;
@@ -643,11 +645,15 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
     </div>
   );
 
+  const telemetryMap = useMemo(() => getSkillTelemetryMap(), [mySkills]);
+
   // Read-only skill card used by the Official / Extension / Auto-injected sections.
   const renderReadonlySkillCard = (skill: SkillInfo, variant: 'official' | 'extension' | 'auto', testId?: string) => {
     const isAuto = variant === 'auto';
     const isExtension = variant === 'extension';
     const accent = isAuto ? 'success' : 'primary';
+    const telemetry = telemetryMap[skill.name];
+    const lastUsedTimestamp = skill.last_used_at ?? telemetry?.lastUsedAt;
     return (
       <div
         key={skill.name}
@@ -687,11 +693,25 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
           <div className='flex items-center gap-8px mt-2px text-11px text-t-tertiary'>
             <span className='flex items-center gap-4px'>
               <span className='inline-block w-4px h-4px rounded-full bg-[var(--color-success-6)]' />
-              Used in {getAssistantsUsingSkill(skill.name, assistantCatalog ?? []).length} assistants
+              {t('settings.skillsHub.usedInAssistants', {
+                count: getAssistantsUsingSkill(skill.name, assistantCatalog ?? []).length,
+                defaultValue: `Used in ${getAssistantsUsingSkill(skill.name, assistantCatalog ?? []).length} assistants`,
+              })}
             </span>
-            {(skill as any).last_used_at && (
+            {telemetry && telemetry.count > 0 && (
+              <span className='px-6px py-1px rd-4px bg-fill-2 text-t-secondary'>
+                {t('settings.skillsHub.usageCount', {
+                  count: telemetry.count,
+                  defaultValue: `${telemetry.count} uses`,
+                })}
+              </span>
+            )}
+            {lastUsedTimestamp && (
               <span className='flex items-center gap-4px'>
-                Last used {new Date((skill as any).last_used_at).toLocaleDateString()}
+                {t('settings.skillsHub.lastUsed', {
+                  date: new Date(lastUsedTimestamp).toLocaleDateString(),
+                  defaultValue: `Last used ${new Date(lastUsedTimestamp).toLocaleDateString()}`,
+                })}
               </span>
             )}
           </div>
@@ -878,6 +898,22 @@ const SkillsHubSettings: React.FC<SkillsHubSettingsProps> = ({ withWrapper = tru
                   <p className='text-13px text-t-secondary leading-relaxed line-clamp-2 m-0' title={skill.description}>
                     {skill.description}
                   </p>
+                )}
+                {telemetryMap[skill.name] && telemetryMap[skill.name].count > 0 && (
+                  <div className='flex items-center gap-8px mt-2px text-11px text-t-tertiary'>
+                    <span className='px-6px py-1px rd-4px bg-fill-2 text-t-secondary'>
+                      {t('settings.skillsHub.usageCount', {
+                        count: telemetryMap[skill.name].count,
+                        defaultValue: `${telemetryMap[skill.name].count} uses`,
+                      })}
+                    </span>
+                    <span>
+                      {t('settings.skillsHub.lastUsed', {
+                        date: new Date(telemetryMap[skill.name].lastUsedAt).toLocaleDateString(),
+                        defaultValue: `Last used ${new Date(telemetryMap[skill.name].lastUsedAt).toLocaleDateString()}`,
+                      })}
+                    </span>
+                  </div>
                 )}
               </div>
 

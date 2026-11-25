@@ -121,7 +121,8 @@
     "moveToProjectSuccess": "Успешно перемещено в проект",
     "moveToProjectFailed": "Не удалось переместить беседу в проект",
     "noFolderSelected": "Пожалуйста, выберите или укажите папку проекта",
-    "sameFolderWarning": "Целевой проект совпадает с текущей рабочей областью"
+    "sameFolderWarning": "Целевой проект совпадает с текущей рабочей областью",
+    "moveProjectToOrg": "Переместить в организацию"
   },
   "historySearch": {
     "tooltip": "Поиск сообщений",

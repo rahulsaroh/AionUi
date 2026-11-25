@@ -157,15 +157,17 @@ export const useMcpConnection = (
         );
       };
 
-      await updateServerStatus('testing');
+      await updateServerStatus('testing', { last_error: undefined });
 
+      const startMs = performance.now();
       try {
         const result = await mcpService.testMcpConnection.invoke({ ...server, runtime_scope_id: server.id });
+        const latencyMs = Math.max(1, Math.round(performance.now() - startMs));
         const needsAuth = result.needsAuth ?? result.needs_auth;
 
         // 检查是否需要认证
         if (needsAuth) {
-          await updateServerStatus('disconnected');
+          await updateServerStatus('disconnected', { last_latency_ms: latencyMs });
           if (notify) {
             await globalMessageQueue.add(() => {
               try {
@@ -197,6 +199,8 @@ export const useMcpConnection = (
               ...(tool._meta ? { _meta: tool._meta } : {}),
             })),
             last_connected: Date.now(),
+            last_latency_ms: latencyMs,
+            last_error: undefined,
           });
           if (notify) {
             await globalMessageQueue.add(() => {
@@ -211,8 +215,8 @@ export const useMcpConnection = (
           // 连接测试成功，不执行额外操作
         } else {
           // Record the latest failed availability test in local UI state.
-          await updateServerStatus('error');
           const errorMsg = truncateErrorMessage(formatMcpErrorMessage(t, result));
+          await updateServerStatus('error', { last_latency_ms: latencyMs, last_error: errorMsg });
           if (notify) {
             await globalMessageQueue.add(() => {
               try {
@@ -232,8 +236,9 @@ export const useMcpConnection = (
         }
       } catch (error) {
         // Record the latest failed availability test in local UI state.
-        await updateServerStatus('error');
+        const latencyMs = Math.max(1, Math.round(performance.now() - startMs));
         const errorMsg = truncateErrorMessage(formatThrownMcpErrorMessage(t, error));
+        await updateServerStatus('error', { last_latency_ms: latencyMs, last_error: errorMsg });
         if (notify) {
           await globalMessageQueue.add(() => {
             try {

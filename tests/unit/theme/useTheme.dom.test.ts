@@ -35,10 +35,10 @@ vi.mock('@/renderer/utils/theme/systemThemeWatcher', () => ({
 
 import useTheme from '@/renderer/hooks/system/useTheme';
 
-const darkTheme: Theme = {
-  id: 'dark',
-  name: 'Dark',
-  appearance: 'dark',
+const lightTheme: Theme = {
+  id: 'light',
+  name: 'Light',
+  appearance: 'light',
   builtin: true,
   created_at: 0,
   updated_at: 0,
@@ -47,7 +47,7 @@ const darkTheme: Theme = {
 describe('useTheme selection', () => {
   beforeEach(() => {
     configGetMock.mockImplementation((key: string) => {
-      if (key === 'theme.activeId') return 'light';
+      if (key === 'theme.activeId') return 'dark';
       if (key === 'theme.userThemes') return [];
       return undefined;
     });
@@ -55,24 +55,24 @@ describe('useTheme selection', () => {
   });
 
   it('updates local theme state without waiting for a cross-window event', async () => {
-    setActiveThemeMock.mockResolvedValue(darkTheme);
+    setActiveThemeMock.mockResolvedValue(lightTheme);
     const { result } = renderHook(() => useTheme());
 
-    await waitFor(() => expect(result.current[0]?.appearance).toBe('light'));
-    await act(async () => result.current[1]('dark'));
+    await waitFor(() => expect(result.current[0]?.appearance).toBe('dark'));
+    await act(async () => result.current[1]('light'));
 
-    expect(result.current[0]?.appearance).toBe('dark');
-    expect(result.current[2]).toBe('dark');
-    expect(localStorage.getItem('__aionui_theme')).toBe('dark');
+    expect(result.current[0]?.appearance).toBe('light');
+    expect(result.current[2]).toBe('light');
+    expect(localStorage.getItem('__aionui_theme')).toBe('light');
   });
 
   it('keeps the current state when selecting a theme fails', async () => {
     setActiveThemeMock.mockRejectedValue(new Error('save failed'));
     const { result } = renderHook(() => useTheme());
 
-    await waitFor(() => expect(result.current[0]?.appearance).toBe('light'));
-    await expect(act(async () => result.current[1]('dark'))).rejects.toThrow('save failed');
+    await waitFor(() => expect(result.current[0]?.appearance).toBe('dark'));
+    await expect(act(async () => result.current[1]('light'))).rejects.toThrow('save failed');
 
-    expect(result.current[0]?.appearance).toBe('light');
+    expect(result.current[0]?.appearance).toBe('dark');
   });
 });

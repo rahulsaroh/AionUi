@@ -21,7 +21,9 @@
     "archiveFailed": "归档团队失败",
     "editTeam": "编辑团队",
     "deleteFailed": "删除团队失败",
-    "teamsTab": "团队"
+    "teamsTab": "团队",
+    "moveToOrg": "移至组织",
+    "moveToOrgShort": "移至组织"
   },
   "organization": {
     "tab": "组织架构",
@@ -69,7 +71,39 @@
     "newChat": "新建聊天",
     "noSearchResults": "未找到匹配的部门、团队或项目。",
     "noDepartments": "未找到部门。",
-    "searchPlaceholder": "搜索部门、团队、项目..."
+    "searchPlaceholder": "搜索部门、团队、项目...",
+    "moveToOrg": {
+      "titleTeam": "将团队移至组织",
+      "titleProject": "将项目移至组织",
+      "confirm": "移至组织",
+      "membersCount": "{{count}} 位成员",
+      "subTeamsCount": "+{{count}} 个子团队",
+      "chatsCount": "{{count}} 个对话",
+      "targetDepartment": "目标部门",
+      "existingDepartment": "已有部门",
+      "newDepartment": "新建部门",
+      "selectDepartmentPlaceholder": "选择部门",
+      "newDepartmentPlaceholder": "输入新部门名称",
+      "nameLabel": "在组织中的名称",
+      "namePlaceholder": "输入名称",
+      "descriptionPlaceholder": "可选备注或目标说明",
+      "noMasterRootWarning": "请设置组织主文件夹，以便将工作区文件绑定到部门中。",
+      "setMasterFolder": "设置主文件夹",
+      "masterRootSet": "组织主文件夹已更新",
+      "masterRootFailed": "设置组织主文件夹失败",
+      "orgFolderLabel": "组织工作区文件夹",
+      "alreadyInOrgRoot": "文件夹已位于目标部门目录下，将直接关联。",
+      "copyFiles": "复制文件到组织文件夹（保留原文件）",
+      "moveFiles": "移动文件到组织文件夹",
+      "skipFiles": "创建空文件夹（不传输文件）",
+      "pathOutsideRoot": "目标文件夹必须位于部门或组织主文件夹内。",
+      "createLinkedProject": "同时在此部门中注册为项目",
+      "includeSubTeams": "包含 {{count}} 个子团队",
+      "removeFromWorkplace": "从工作区侧边栏移出（取消勾选则在工作区保留副本）",
+      "openAfterMove": "移动后切换到组织并打开",
+      "success": "已移至组织",
+      "failed": "移至组织失败"
+    }
   },
   "activeMembers": {
     "title": "工作中成员",
@@ -440,7 +474,10 @@
     "setupInstructions": "环境配置说明",
     "runSetup": "执行配置脚本",
     "envVars": "环境变量",
-    "conflictsWarning": "检测到规则冲突：高优先级知识库已生效。"
+    "conflictsWarning": "检测到规则冲突：高优先级知识库已生效。",
+    "refAutoPlaceholder": "分支或标签（默认自动检测）",
+    "subpathPlaceholder": "子路径（可选，例如 docs/playbook）",
+    "repoMapIndexed": "已索引文件目录"
   },
   "handbook": {
     "title": "员工手册",

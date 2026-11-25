@@ -4,15 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type GatewayPlatform =
-  | 'gemini'
-  | 'anthropic'
-  | 'openai'
-  | 'groq'
-  | 'deepseek'
-  | 'openrouter'
-  | 'omniroute'
-  | 'custom';
+export type GatewayPlatform = 'gemini' | 'anthropic' | 'openai' | 'groq' | 'deepseek' | 'openrouter' | 'custom';
 
 export type GatewayAccount = {
   id: string;

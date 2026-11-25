@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "Derin düşünme, stratejik planlama ve titiz doğrulama",
   "slash.antigravity.browser": "Web tarama, belge arama ve çevrimiçi araştırma",
   "slash.antigravity.schedule": "Yinelenen zamanlama veya süreli görev yürütme",
-  "slash.antigravity.learn": "Gelecekteki görevler için kuralları ve deneyimleri kaydet"
+  "slash.antigravity.learn": "Gelecekteki görevler için kuralları ve deneyimleri kaydet",
+  "activity": {
+    "working": "Çalışıyor...",
+    "workedFor": "{{duration}} çalıştı",
+    "exploredFiles": "dosyalar incelendi",
+    "ranCommands": "komutlar çalıştırıldı",
+    "editedFiles": "dosyalar düzenlendi",
+    "createdFiles": "dosyalar oluşturuldu",
+    "usedTools": "araçlar kullanıldı",
+    "ran": "Çalıştırıldı",
+    "analyzed": "İncelendi",
+    "searched": "Arandı",
+    "listed": "Listelendi",
+    "edited": "Düzenlendi",
+    "created": "Oluşturuldu",
+    "modified": "Değiştirildi",
+    "input": "Girdi",
+    "output": "Çıktı",
+    "loading": "Yükleniyor...",
+    "loadError": "Tam çıktı yüklenemedi"
+  }
 }

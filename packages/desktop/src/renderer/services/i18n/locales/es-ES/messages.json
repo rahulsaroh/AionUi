@@ -105,5 +105,25 @@
   "slash.antigravity.boost": "Pensamiento profundo, planificación estratégica y verificación rigurosa",
   "slash.antigravity.browser": "Navegación web, búsqueda de documentación e investigación online",
   "slash.antigravity.schedule": "Programación recurrente o ejecución con temporizador",
-  "slash.antigravity.learn": "Conservar aprendizajes y directrices para futuras tareas"
+  "slash.antigravity.learn": "Conservar aprendizajes y directrices para futuras tareas",
+  "activity": {
+    "working": "Trabajando...",
+    "workedFor": "Trabajó durante {{duration}}",
+    "exploredFiles": "archivos explorados",
+    "ranCommands": "comandos ejecutados",
+    "editedFiles": "archivos editados",
+    "createdFiles": "archivos creados",
+    "usedTools": "herramientas usadas",
+    "ran": "Ejecutó",
+    "analyzed": "Analizó",
+    "searched": "Buscó",
+    "listed": "Listó",
+    "edited": "Editado",
+    "created": "Creado",
+    "modified": "Modificado",
+    "input": "Entrada",
+    "output": "Salida",
+    "loading": "Cargando...",
+    "loadError": "Error al cargar la salida completa"
+  }
 }

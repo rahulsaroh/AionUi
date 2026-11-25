@@ -428,8 +428,12 @@ export const KnowledgeRepoModal: React.FC<KnowledgeRepoModalProps> = ({ visible,
           <Form.Item label={t('team.knowledgeRepos.gitUrl')} field='gitUrl' rules={[{ required: true }]}>
             <Input placeholder='https://github.com/owner/repository' />
           </Form.Item>
-          <Form.Item label={t('team.knowledgeRepos.ref')} field='ref' initialValue='main'>
-            <Input placeholder='main' />
+          <Form.Item label={t('team.knowledgeRepos.ref')} field='ref' initialValue=''>
+            <Input
+              placeholder={t('team.knowledgeRepos.refAutoPlaceholder', {
+                defaultValue: 'Branch or tag (auto-detect default)',
+              })}
+            />
           </Form.Item>
           <Form.Item label={t('team.knowledgeRepos.subpath')} field='subpath'>
             <Input placeholder='Optional relative subpath' />

@@ -833,6 +833,25 @@ const handleAppReady = async (): Promise<void> => {
     }
   }
 
+  // Start authenticated localhost bridge for OS-level Desktop Control MCP before backend startup
+  // so aioncore and spawned CLI agents inherit the ephemeral port and bearer token.
+  try {
+    const { startDesktopControlBridgeServer, stopDesktopControlBridgeServer } =
+      await import('./process/resources/builtinMcp/desktopControlBridgeServer');
+    const { getDesktopControlService } = await import('./process/services/desktopControl');
+    const desktopBridge = await startDesktopControlBridgeServer();
+    process.env.AIONUI_DESKTOP_CONTROL_PORT = String(desktopBridge.port);
+    process.env.AIONUI_DESKTOP_CONTROL_TOKEN = desktopBridge.token;
+    console.log(`[DesktopControl] Bridge listening on 127.0.0.1:${desktopBridge.port} (token required)`);
+    app.once('will-quit', () => {
+      getDesktopControlService().disposeHotkeys();
+      void stopDesktopControlBridgeServer();
+    });
+    mark('desktopControlBridge');
+  } catch (error) {
+    console.error('[DesktopControl] Failed to start bridge:', error);
+  }
+
   const debugBackendStartupFailure = resolveDebugBackendStartupFailure();
   if (debugBackendStartupFailure) {
     applyDebugBackendStartupFailure(debugBackendStartupFailure);
@@ -1038,6 +1057,14 @@ const handleAppReady = async (): Promise<void> => {
     createWindow({ showOnReady: showMainWindowOnReady });
     appReadyDone = true;
     mark('createWindow');
+
+    void import('./process/services/desktopControl')
+      .then(({ getDesktopControlService }) => {
+        getDesktopControlService().syncEmergencyHotkey();
+      })
+      .catch((err) => {
+        console.warn('[DesktopControl] Failed to sync emergency hotkey:', err);
+      });
 
     // Initialize desktop pet (delayed to not block main window)
     setTimeout(() => {

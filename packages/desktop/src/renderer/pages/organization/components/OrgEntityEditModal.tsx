@@ -71,6 +71,8 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const [memberPrompt, setMemberPrompt] = useState('');
   const [memberMcp, setMemberMcp] = useState('');
   const [isKnowledgePanelOpen, setIsKnowledgePanelOpen] = useState(false);
+  const [projectRepoIds, setProjectRepoIds] = useState<string[]>([]);
+  const [draftProjectId] = useState(() => `proj-${Date.now()}`);
   const [modelId, setModelId] = useState('claude-3-7-sonnet');
   const [parentDeptId, setParentDeptId] = useState('');
   const [folderPath, setFolderPath] = useState('');
@@ -155,7 +157,11 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
   const isEdit = Boolean(data);
 
   useEffect(() => {
-    if (!visible || !data) return;
+    if (!visible) return;
+    if (!data) {
+      setProjectRepoIds([]);
+      return;
+    }
     setFolderPath('');
     setFolderPaths([]);
     setProjectDeptId('');
@@ -212,6 +218,7 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
             : ['']
       );
       setProjectStatus((project.status ?? 'active') as 'active' | 'dormant' | 'done');
+      setProjectRepoIds(project.context?.repos ?? []);
       setModelId(project.model?.modelId ?? '');
     }
   }, [visible, data, entity]);
@@ -369,15 +376,20 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           }
         : undefined;
 
+      const resolvedProjectId = (data as OrgProject | null)?.id ?? draftProjectId;
       upsertOrgProject({
-        id: (data as OrgProject | null)?.id ?? `proj-${Date.now()}`,
+        id: resolvedProjectId,
         name: name.trim(),
         departmentId: projectDeptId,
         teamIds: projectTeamId ? [projectTeamId] : [],
         path: assignedPaths[0] || undefined,
         workspacePath: assignedPaths[0] || null,
         workspacePaths: assignedPaths,
-        context: { ...(data as OrgProject | null)?.context, workspacePaths: assignedPaths },
+        context: {
+          ...(data as OrgProject | null)?.context,
+          workspacePaths: assignedPaths,
+          repos: projectRepoIds,
+        },
         description: description.trim() || undefined,
         status: projectStatus,
         model: selectedModel,
@@ -411,6 +423,8 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
     projectDeptId,
     projectTeamId,
     projectStatus,
+    projectRepoIds,
+    draftProjectId,
     updateDepartment,
     updateTeamNode,
     updateTeamMember,
@@ -902,6 +916,19 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
                   </Select.Option>
                 </Select>
               </div>
+              <div className='flex flex-col gap-4px'>
+                <span className='text-12px text-t-secondary'>
+                  {t('team.knowledgeRepos.chipLabel', { defaultValue: 'Knowledge' })}
+                </span>
+                <div className='flex items-center gap-8px'>
+                  <KnowledgeChip
+                    memberKey={`project:${(data as OrgProject | null)?.id ?? draftProjectId}`}
+                    memberName={name || (data as OrgProject | null)?.name || 'Project'}
+                    onClick={() => setIsKnowledgePanelOpen(true)}
+                    showWhenEmpty
+                  />
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -912,6 +939,16 @@ export const OrgEntityEditModal: React.FC<OrgEntityEditModalProps> = ({
           memberName={memberName || (data as OrgAgentMember).name}
           visible={isKnowledgePanelOpen}
           onClose={() => setIsKnowledgePanelOpen(false)}
+        />
+      )}
+      {isProject && (
+        <MemberKnowledgePanel
+          memberKey={`project:${(data as OrgProject | null)?.id ?? draftProjectId}`}
+          memberName={name || (data as OrgProject | null)?.name || 'Project'}
+          visible={isKnowledgePanelOpen}
+          hideDocumentKnowledge
+          onClose={() => setIsKnowledgePanelOpen(false)}
+          onSaved={(ids) => setProjectRepoIds(ids)}
         />
       )}
     </>

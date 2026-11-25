@@ -98,14 +98,6 @@ export const MODEL_PLATFORMS: PlatformConfig[] = [
     i18nKey: 'settings.platformGeminiGoogleLogin',
   },
   {
-    name: 'OmniRoute Gateway',
-    value: 'omniroute',
-    logo: buildLogoAssetUrl('ai-cloud/newapi.svg'),
-    platform: 'custom',
-    base_url: 'http://localhost:20128/v1',
-    i18nKey: 'settings.platformOmniroute',
-  },
-  {
     name: 'Gemini',
     value: 'gemini',
     logo: buildLogoAssetUrl('ai-major/gemini.svg'),
@@ -394,13 +386,6 @@ export const isGeminiPlatform = (platform: PlatformType): boolean => {
  */
 export const isGoogleLoginPlatform = (platform: PlatformType | string): boolean => {
   return platform === 'gemini-with-google-auth';
-};
-
-/**
- * Check if option is OmniRoute gateway
- */
-export const isOmnirouteOption = (value: string): boolean => {
-  return value === 'omniroute';
 };
 
 /**

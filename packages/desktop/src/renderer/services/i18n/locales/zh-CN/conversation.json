@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "已成功移动到项目",
     "moveToProjectFailed": "移动到项目失败",
     "noFolderSelected": "请选择或输入项目文件夹",
-    "sameFolderWarning": "目标项目与当前工作区相同"
+    "sameFolderWarning": "目标项目与当前工作区相同",
+    "moveProjectToOrg": "移至组织"
   },
   "historySearch": {
     "tooltip": "检索会话",

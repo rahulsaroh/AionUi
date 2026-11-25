@@ -122,4 +122,30 @@ describe('useAcpInitialMessage', () => {
     expect(resetState).toHaveBeenCalledTimes(1);
     expect(setAiProcessing).toHaveBeenCalledWith(false);
   });
+
+  it('enforces task breakdown instructions on initial ACP message while keeping raw title', async () => {
+    sessionStorage.setItem('acp_initial_message_conv-1', JSON.stringify({ input: 'Build a login form', files: [] }));
+    sendMessageInvokeMock.mockResolvedValue({ turn_id: 'turn-1', runtime: {}, msg_id: 'msg-1' });
+    const checkAndUpdateTitle = vi.fn();
+
+    renderHook(() =>
+      useAcpInitialMessage({
+        conversation_id: 'conv-1',
+        backend: 'claude',
+        setAiProcessing: vi.fn(),
+        resetState: vi.fn(),
+        checkAndUpdateTitle,
+        addOrUpdateMessage: vi.fn(),
+      })
+    );
+
+    await waitFor(() => expect(sendMessageInvokeMock).toHaveBeenCalledTimes(1));
+    expect(checkAndUpdateTitle).toHaveBeenCalledWith('conv-1', 'Build a login form');
+    expect(sendMessageInvokeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.stringContaining('Build a login form'),
+      })
+    );
+    expect(sendMessageInvokeMock.mock.calls[0][0].input).toContain('one by one');
+  });
 });

@@ -18,13 +18,14 @@ describe('orgStorageService: new fields persist (approvalPolicy, allowlist, exec
   });
 
   it('validates approvalPolicy enum and allowlist array bounds', () => {
-    expect(validateProjectShape({ approvalPolicy: 'auto_edit' })).toBe(true);
-    expect(validateProjectShape({ approvalPolicy: 'read_only' })).toBe(true);
-    expect(validateProjectShape({ approvalPolicy: 'full_auto' })).toBe(true);
-    expect(validateProjectShape({ approvalPolicy: 'bogus' })).toBe(false);
-    expect(validateProjectShape({ allowlist: ['/a', '/b'] })).toBe(true);
-    expect(validateProjectShape({ allowlist: 'not-array' })).toBe(false);
-    expect(validateProjectShape({ allowlist: Array.from({ length: 21 }, () => '/x') })).toBe(false);
+    const base = { id: 'p1', name: 'Proj', departmentId: 'd1' };
+    expect(validateProjectShape({ ...base, approvalPolicy: 'auto_edit' })).toBe(true);
+    expect(validateProjectShape({ ...base, approvalPolicy: 'read_only' })).toBe(true);
+    expect(validateProjectShape({ ...base, approvalPolicy: 'full_auto' })).toBe(true);
+    expect(validateProjectShape({ ...base, approvalPolicy: 'bogus' })).toBe(false);
+    expect(validateProjectShape({ ...base, allowlist: ['/a', '/b'] })).toBe(true);
+    expect(validateProjectShape({ ...base, allowlist: 'not-array' })).toBe(false);
+    expect(validateProjectShape({ ...base, allowlist: Array.from({ length: 21 }, () => '/x') })).toBe(false);
   });
 
   it('validates executionEngine enum on member and nested in model', () => {

@@ -37,10 +37,10 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
     }
   }, [visible, hierarchy.rootCeo.workspacePath]);
 
-  const handleBrowseFolder = async () => {
+  const handleBrowseFolder = async (defaultPath?: string) => {
     try {
       setLoading(true);
-      const res = await ipcBridge.org.pickMasterRoot();
+      const res = await ipcBridge.org.pickMasterRoot(defaultPath);
       if (res.cancelled) {
         return;
       }
@@ -62,8 +62,8 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
   };
 
   const handleConfirm = async () => {
-    if (!selectedPath) {
-      await handleBrowseFolder();
+    if (!selectedPath || selectedPath !== currentMaster) {
+      await handleBrowseFolder(selectedPath || undefined);
       return;
     }
     onClose();
@@ -135,18 +135,22 @@ export const OrgMasterFolderModal: React.FC<OrgMasterFolderModalProps> = ({ visi
             <span className='text-11px font-mono text-t-tertiary uppercase tracking-wider'>Recent Directories</span>
             <div className='flex flex-col gap-4px max-h-120px overflow-y-auto pr-4px'>
               {recentWorkspaces.slice(0, 4).map((recent) => (
-                <button
+                <Button
                   key={recent}
-                  type='button'
-                  onClick={() => setSelectedPath(recent)}
-                  className={`text-left text-11px font-mono p-8px rounded-6px border transition-colors cursor-pointer truncate ${
+                  type='text'
+                  size='small'
+                  onClick={() => {
+                    setSelectedPath(recent);
+                    void handleBrowseFolder(recent);
+                  }}
+                  className={`!justify-start !text-left !text-11px !font-mono !p-8px !h-auto rounded-6px border transition-colors truncate ${
                     selectedPath === recent
-                      ? 'bg-primary-light-1 border-primary text-primary font-medium'
-                      : 'bg-fill-1 border-[var(--color-border-2)] text-t-secondary hover:bg-fill-2'
+                      ? '!bg-primary-light-1 !border-primary !text-primary font-medium'
+                      : '!bg-fill-1 !border-[var(--color-border-2)] !text-t-secondary hover:!bg-fill-2'
                   }`}
                 >
                   {recent}
-                </button>
+                </Button>
               ))}
             </div>
           </div>

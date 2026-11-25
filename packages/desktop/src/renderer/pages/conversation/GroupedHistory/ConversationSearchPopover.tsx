@@ -16,12 +16,13 @@ import { resolveConversationLeadingMark } from '@/renderer/pages/conversation/ut
 import { blockMobileInputFocus, blurActiveElement } from '@/renderer/utils/ui/focus';
 import { isPrimaryApplicationShortcut } from '@/renderer/utils/ui/keyboardShortcuts';
 import { Empty, Spin, Tag, Typography } from '@arco-design/web-react';
-import { Close, MessageOne, Robot, Search } from '@icon-park/react';
+import { Close, FolderClose, MessageOne, NetworkTree, Peoples, Robot, Search, SettingTwo } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { preloadRouteForPath } from '@/renderer/utils/navigation';
 import './ConversationSearchPopover.css';
 
 const PAGE_SIZE = 20;
@@ -130,6 +131,180 @@ const ConversationAgentMark: React.FC<{ conversation: IMessageSearchItem['conver
   return <MessageOne theme='outline' size='18' className='line-height-0 flex-shrink-0 text-t-secondary' />;
 };
 
+type QuickJumpKind = 'view' | 'team' | 'project' | 'settings';
+
+type QuickJumpTarget = {
+  id: string;
+  kind: QuickJumpKind;
+  label: string;
+  subtitle: string;
+  path: string;
+  keywords: string;
+};
+
+const STATIC_QUICK_JUMP_TARGETS: QuickJumpTarget[] = [
+  {
+    id: 'view:workplace',
+    kind: 'view',
+    label: 'Workplace',
+    subtitle: 'Home & conversations',
+    path: '/guid',
+    keywords: 'workplace home guid chat conversations',
+  },
+  {
+    id: 'view:organization',
+    kind: 'view',
+    label: 'Organization',
+    subtitle: 'Org chart canvas & departments',
+    path: '/organization',
+    keywords: 'organization org chart canvas departments ceo',
+  },
+  {
+    id: 'view:approvals',
+    kind: 'view',
+    label: 'Approvals',
+    subtitle: 'Pending approvals inbox',
+    path: '/approvals',
+    keywords: 'approvals notifications inbox',
+  },
+  {
+    id: 'view:assistants',
+    kind: 'view',
+    label: 'Assistants',
+    subtitle: 'Preset assistants',
+    path: '/assistants',
+    keywords: 'assistants presets',
+  },
+  {
+    id: 'view:scheduled',
+    kind: 'view',
+    label: 'Scheduled Tasks',
+    subtitle: 'Cron jobs & automations',
+    path: '/scheduled',
+    keywords: 'scheduled cron tasks automations',
+  },
+  {
+    id: 'view:today',
+    kind: 'view',
+    label: 'Today',
+    subtitle: 'Daily overview',
+    path: '/today',
+    keywords: 'today daily overview',
+  },
+  {
+    id: 'view:costs',
+    kind: 'view',
+    label: 'Costs',
+    subtitle: 'Token & spend analytics',
+    path: '/costs',
+    keywords: 'costs spend usage billing',
+  },
+  {
+    id: 'settings:agent',
+    kind: 'settings',
+    label: 'Settings: Agents',
+    subtitle: 'Configure agents & runtimes',
+    path: '/settings/agent',
+    keywords: 'settings agents preferences',
+  },
+  {
+    id: 'settings:model',
+    kind: 'settings',
+    label: 'Settings: Model',
+    subtitle: 'Default models & providers',
+    path: '/settings/model',
+    keywords: 'settings model llm provider',
+  },
+  {
+    id: 'settings:gateway',
+    kind: 'settings',
+    label: 'Settings: Model Provider Hub',
+    subtitle: 'API keys & gateways',
+    path: '/settings/gateway',
+    keywords: 'settings gateway model provider hub api keys',
+  },
+  {
+    id: 'settings:skills',
+    kind: 'settings',
+    label: 'Settings: Skills',
+    subtitle: 'Manage skills hub',
+    path: '/settings/skills',
+    keywords: 'settings skills hub',
+  },
+  {
+    id: 'settings:tools',
+    kind: 'settings',
+    label: 'Settings: Tools',
+    subtitle: 'MCP & tool integrations',
+    path: '/settings/tools',
+    keywords: 'settings tools mcp',
+  },
+  {
+    id: 'settings:rules',
+    kind: 'settings',
+    label: 'Settings: Rules',
+    subtitle: 'Remembered rules',
+    path: '/settings/rules',
+    keywords: 'settings rules memory',
+  },
+  {
+    id: 'settings:appearance',
+    kind: 'settings',
+    label: 'Settings: Appearance',
+    subtitle: 'Theme, font & layout',
+    path: '/settings/appearance',
+    keywords: 'settings appearance theme dark light',
+  },
+  {
+    id: 'settings:webui',
+    kind: 'settings',
+    label: 'Settings: WebUI',
+    subtitle: 'Web server & remote access',
+    path: '/settings/webui',
+    keywords: 'settings webui server',
+  },
+  {
+    id: 'settings:system',
+    kind: 'settings',
+    label: 'Settings: System',
+    subtitle: 'System & runtime diagnostics',
+    path: '/settings/system',
+    keywords: 'settings system diagnostics',
+  },
+  {
+    id: 'settings:archived',
+    kind: 'settings',
+    label: 'Settings: Archived',
+    subtitle: 'Restore archived chats & teams',
+    path: '/settings/archived',
+    keywords: 'settings archived restore',
+  },
+  {
+    id: 'settings:about',
+    kind: 'settings',
+    label: 'Settings: About',
+    subtitle: 'Version & updates',
+    path: '/settings/about',
+    keywords: 'settings about version update',
+  },
+];
+
+const renderQuickJumpIcon = (kind: QuickJumpKind, path: string) => {
+  if (kind === 'team') {
+    return <Peoples theme='outline' size='16' className='shrink-0 text-t-secondary' />;
+  }
+  if (kind === 'project') {
+    return <FolderClose theme='outline' size='16' className='shrink-0 text-t-secondary' />;
+  }
+  if (kind === 'settings') {
+    return <SettingTwo theme='outline' size='16' className='shrink-0 text-t-secondary' />;
+  }
+  if (path.startsWith('/organization')) {
+    return <NetworkTree theme='outline' size='16' className='shrink-0 text-t-secondary' />;
+  }
+  return <MessageOne theme='outline' size='16' className='shrink-0 text-t-secondary' />;
+};
+
 const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
   onSessionClick,
   onConversationSelect,
@@ -152,6 +327,8 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
   const [recentKeywords, setRecentKeywords] = useState<string[]>([]);
   const [platformFilter, setPlatformFilter] = useState<'all' | 'aionrs' | 'acp' | 'codex'>('all');
   const [dateFilter, setDateFilter] = useState<'all' | '1d' | '7d' | '30d'>('all');
+  const [dynamicTargets, setDynamicTargets] = useState<QuickJumpTarget[]>([]);
+  const [activeQuickIndex, setActiveQuickIndex] = useState(0);
 
   const handleOpen = useCallback(() => {
     if (!disabled) {
@@ -345,6 +522,135 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
 
   const triggerAriaLabel = t('conversation.historySearch.tooltip');
 
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+
+    const loadQuickTargets = async () => {
+      const collected: QuickJumpTarget[] = [];
+
+      try {
+        const teams = await ipcBridge.team?.list?.invoke?.({ user_id: 'system_default_user' });
+        if (Array.isArray(teams)) {
+          for (const team of teams) {
+            if (team?.id && team?.name) {
+              collected.push({
+                id: `team:${team.id}`,
+                kind: 'team',
+                label: team.name,
+                subtitle: 'Team',
+                path: `/team/${team.id}`,
+                keywords: `team ${team.name}`,
+              });
+            }
+          }
+        }
+      } catch {
+        // Ignore when team IPC is unavailable in isolated tests
+      }
+
+      try {
+        const convResult = await ipcBridge.database?.getUserConversations?.invoke?.({ limit: 100 });
+        const list = convResult?.items;
+        if (Array.isArray(list)) {
+          const seenWorkspaces = new Set<string>();
+          for (const conv of list) {
+            const workspace = (conv?.extra as { workspace?: string } | undefined)?.workspace;
+            if (!workspace || seenWorkspaces.has(workspace)) continue;
+            seenWorkspaces.add(workspace);
+            const folderName = workspace.split(/[\\/]/).filter(Boolean).pop() || workspace;
+            collected.push({
+              id: `project:${workspace}`,
+              kind: 'project',
+              label: folderName,
+              subtitle: workspace,
+              path: `/conversation/${conv.id}`,
+              keywords: `project workspace ${folderName} ${workspace}`,
+            });
+          }
+        }
+      } catch {
+        // Ignore when conversation list IPC is unavailable
+      }
+
+      if (!cancelled) {
+        setDynamicTargets(collected);
+      }
+    };
+
+    void loadQuickTargets();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  const quickJumpResults = useMemo(() => {
+    const allTargets = [...dynamicTargets, ...STATIC_QUICK_JUMP_TARGETS];
+    const query = keyword.trim().toLowerCase();
+    if (!query) {
+      // Show top destinations immediately when opened
+      const priorityIds = new Set([
+        'view:workplace',
+        'view:organization',
+        'settings:agent',
+        'settings:model',
+        'view:approvals',
+        'view:scheduled',
+      ]);
+      const teamsAndProjects = dynamicTargets.slice(0, 4);
+      const priorityViews = STATIC_QUICK_JUMP_TARGETS.filter((item) => priorityIds.has(item.id));
+      return [...teamsAndProjects, ...priorityViews];
+    }
+
+    return allTargets
+      .filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          item.subtitle.toLowerCase().includes(query) ||
+          item.keywords.toLowerCase().includes(query)
+      )
+      .slice(0, 8);
+  }, [dynamicTargets, keyword]);
+
+  useEffect(() => {
+    setActiveQuickIndex(0);
+  }, [keyword, visible]);
+
+  const handleQuickJumpClick = useCallback(
+    (target: QuickJumpTarget) => {
+      blockMobileInputFocus();
+      blurActiveElement();
+      preloadRouteForPath(target.path);
+      flushSync(() => {
+        resetSearchState();
+      });
+      void navigate(target.path);
+      onSessionClick?.();
+    },
+    [navigate, onSessionClick, resetSearchState]
+  );
+
+  useEffect(() => {
+    if (!visible || quickJumpResults.length === 0) return;
+    const handleKeyNav = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveQuickIndex((prev) => (prev + 1) % quickJumpResults.length);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveQuickIndex((prev) => (prev - 1 + quickJumpResults.length) % quickJumpResults.length);
+      } else if (event.key === 'Enter') {
+        const selected = quickJumpResults[activeQuickIndex];
+        if (selected && keyword.trim().length > 0) {
+          event.preventDefault();
+          handleQuickJumpClick(selected);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyNav);
+    return () => window.removeEventListener('keydown', handleKeyNav);
+  }, [activeQuickIndex, handleQuickJumpClick, keyword, quickJumpResults, visible]);
+
   const displayedItems = useMemo(() => {
     return items.filter((item) => {
       if (platformFilter !== 'all') {
@@ -366,25 +672,62 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
   }, [items, platformFilter, dateFilter]);
 
   const resultContent = useMemo(() => {
+    const quickJumpSection =
+      quickJumpResults.length > 0 ? (
+        <div className='mb-12px'>
+          <div className='text-11px font-semibold uppercase tracking-wider text-t-tertiary px-6px mb-6px'>
+            {t('conversation.historySearch.quickJump', { defaultValue: 'Quick Jump' })}
+          </div>
+          <div className='grid grid-cols-2 gap-6px'>
+            {quickJumpResults.map((target, index) => (
+              <button
+                key={target.id}
+                type='button'
+                onMouseEnter={() => {
+                  setActiveQuickIndex(index);
+                  preloadRouteForPath(target.path);
+                }}
+                onClick={() => handleQuickJumpClick(target)}
+                className={classNames(
+                  'flex items-center gap-8px px-10px py-8px rounded-8px text-start cursor-pointer transition-colors border border-solid',
+                  index === activeQuickIndex
+                    ? 'bg-fill-3 border-[rgba(var(--primary-6),0.35)]'
+                    : 'bg-fill-1/60 border-[var(--color-border-2)] hover:bg-fill-2'
+                )}
+              >
+                {renderQuickJumpIcon(target.kind, target.path)}
+                <div className='min-w-0 flex-1'>
+                  <div className='text-13px font-medium text-t-primary truncate'>{target.label}</div>
+                  <div className='text-11px text-t-tertiary truncate'>{target.subtitle}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null;
+
     if (!debouncedKeyword) {
       return (
-        <div className='conversation-search-modal__state'>
-          <div className='conversation-search-modal__state-content'>
-            <span className='text-13px'>{t('conversation.historySearch.idle')}</span>
-            {recentKeywords.length > 0 ? (
-              <div className='conversation-search-modal__recent-wrap'>
-                {recentKeywords.map((item) => (
-                  <button
-                    key={item}
-                    type='button'
-                    className='conversation-search-modal__recent-chip'
-                    onClick={() => setKeyword(item)}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+        <div className='flex flex-col gap-8px'>
+          {quickJumpSection}
+          <div className='conversation-search-modal__state'>
+            <div className='conversation-search-modal__state-content'>
+              <span className='text-13px'>{t('conversation.historySearch.idle')}</span>
+              {recentKeywords.length > 0 ? (
+                <div className='conversation-search-modal__recent-wrap'>
+                  {recentKeywords.map((item) => (
+                    <button
+                      key={item}
+                      type='button'
+                      className='conversation-search-modal__recent-chip'
+                      onClick={() => setKeyword(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       );
@@ -392,16 +735,22 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
 
     if (loading && items.length === 0) {
       return (
-        <div className='h-120px flex items-center justify-center'>
-          <Spin size={20} />
+        <div className='flex flex-col gap-8px'>
+          {quickJumpSection}
+          <div className='h-120px flex items-center justify-center'>
+            <Spin size={20} />
+          </div>
         </div>
       );
     }
 
     if (displayedItems.length === 0) {
       return (
-        <div className='conversation-search-modal__state'>
-          <Empty className='py-2px' description={t('conversation.historySearch.empty')} />
+        <div className='flex flex-col gap-8px'>
+          {quickJumpSection}
+          <div className='conversation-search-modal__state'>
+            <Empty className='py-2px' description={t('conversation.historySearch.empty')} />
+          </div>
         </div>
       );
     }
@@ -416,6 +765,7 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
           }
         }}
       >
+        {quickJumpSection}
         <div className='conversation-search-modal__results flex flex-col'>
           {displayedItems.map((item) => {
             const snippet = buildSnippet(item.preview_text, debouncedKeyword);
@@ -441,7 +791,7 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
                     </div>
                   </div>
                   <span className='shrink-0 text-11px text-t-secondary'>
-                    {formatTime(item.message_created_at, i18n.language)}
+                    {formatTime(item.message_created_at, i18n?.language ?? 'en-US')}
                   </span>
                 </div>
                 <div className='conversation-search-modal__snippet text-13px leading-22px text-t-primary/92 break-words'>
@@ -460,7 +810,23 @@ const ConversationSearchPopover: React.FC<ConversationSearchPopoverProps> = ({
         </div>
       </div>
     );
-  }, [debouncedKeyword, handleLoadMore, handleResultClick, items, loading, loadingMore, recentKeywords, t]);
+  }, [
+    activeQuickIndex,
+    dateFilter,
+    debouncedKeyword,
+    displayedItems,
+    handleLoadMore,
+    handleQuickJumpClick,
+    handleResultClick,
+    i18n?.language,
+    items.length,
+    loading,
+    loadingMore,
+    platformFilter,
+    quickJumpResults,
+    recentKeywords,
+    t,
+  ]);
 
   const hasSearchResults = items.length > 0;
   const useCompactHeight = !debouncedKeyword || (!loading && !hasSearchResults);

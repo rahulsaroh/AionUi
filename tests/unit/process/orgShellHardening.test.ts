@@ -190,7 +190,7 @@ describe('Phase 3: Shell Hardening, Sandboxing, and Main Process Approval', () =
       // Command that produces > 1 MB of text
       const cmd =
         process.platform === 'win32'
-          ? 'powershell -NoProfile -Command "1..25000 | ForEach-Object { Write-Output \'01234567890123456789012345678901234567890123456789\' }"'
+          ? 'powershell -NoProfile -Command "Write-Output (\'A\' * 1500000)"'
           : 'python3 -c "print(\'A\' * 1500000)" 2>/dev/null || node -e "console.log(\'A\'.repeat(1500000))"';
 
       const res = await OrgFolderTools.runShell(cmd, workspaceDir, workspaceDir, { timeoutMs: 15000 });

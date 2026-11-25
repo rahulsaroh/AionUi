@@ -40,6 +40,7 @@ import { isElectronDesktop } from '@renderer/utils/platform';
 import { IS_DISCONTINUED_BUILD } from '@/renderer/utils/discontinuedBuild';
 import UpdateMigrationDialog from '@/renderer/components/settings/UpdateMigrationDialog';
 import { KeyboardShortcutMapModal } from '@renderer/components/layout/KeyboardShortcutMapModal';
+import { DesktopControlApprovalModal } from '@renderer/components/desktopControl';
 import '@renderer/styles/layout.css';
 
 const SidebarIcon: React.FC<{ size?: number; strokeWidth?: number }> = ({ size = 18, strokeWidth = 4 }) => (
@@ -567,6 +568,7 @@ const Layout: React.FC<{
           </ArcoLayout>
         </div>
         <KeyboardShortcutMapModal />
+        <DesktopControlApprovalModal />
       </NavigationHistoryProvider>
     </LayoutContext.Provider>
   );

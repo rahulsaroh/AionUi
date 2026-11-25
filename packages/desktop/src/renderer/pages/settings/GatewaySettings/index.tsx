@@ -6,8 +6,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, Message, Tabs, Tag } from '@arco-design/web-react';
-import { CheckOne, Connection, Dashboard, Lightning, List, Switch as SwitchIcon } from '@icon-park/react';
+import { Badge, Tabs, Tag } from '@arco-design/web-react';
+import { CheckOne, Connection, Dashboard, List, Switch as SwitchIcon } from '@icon-park/react';
 import SettingsPageWrapper from '../components/SettingsPageWrapper';
 import { AccountsTab } from './AccountsTab';
 import { CombosTab } from './CombosTab';
@@ -21,8 +21,6 @@ const GatewaySettings: React.FC = () => {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [accounts, setAccounts] = useState<GatewayAccount[]>([]);
   const [combos, setCombos] = useState<GatewayCombo[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [omniRouteOnline, setOmniRouteOnline] = useState<boolean | null>(null);
 
   const loadData = async () => {
     if (!window.electronAPI) return;
@@ -53,15 +51,6 @@ const GatewaySettings: React.FC = () => {
         console.error('[GatewaySettings] Failed to fetch combos:', err);
       }
     }
-
-    if (window.electronAPI.gatewayCheckOmniRouteStatus) {
-      try {
-        const res = await window.electronAPI.gatewayCheckOmniRouteStatus();
-        setOmniRouteOnline(Boolean(res.isRunning));
-      } catch {
-        setOmniRouteOnline(false);
-      }
-    }
   };
 
   useEffect(() => {
@@ -78,31 +67,6 @@ const GatewaySettings: React.FC = () => {
     }
     return undefined;
   }, []);
-
-  const handleSyncLocalOmniRoute = async () => {
-    if (!window.electronAPI?.gatewaySyncLocalOmniRoute) {
-      Message.warning('Sync is only available in desktop application mode');
-      return;
-    }
-    setIsSyncing(true);
-    try {
-      const res = await window.electronAPI.gatewaySyncLocalOmniRoute();
-      if (res.success && res.data) {
-        Message.success(
-          res.data.message ||
-            `Synced ${res.data.importedAccounts} accounts and ${res.data.importedCombos} combos successfully!`
-        );
-        loadData();
-      } else {
-        Message.error(res.error || 'Failed to sync local accounts');
-      }
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      Message.error(`Sync error: ${errorMsg}`);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   const handleSaveAccount = async (account: GatewayAccount) => {
     if (window.electronAPI?.gatewaySaveAccount) {
@@ -145,32 +109,13 @@ const GatewaySettings: React.FC = () => {
               <Tag color='arcoblue' size='small' className='font-600'>
                 Multi-Provider Gateway
               </Tag>
-              {omniRouteOnline ? (
-                <Tag color='green' size='small' className='flex items-center gap-4px'>
-                  <span className='w-6px h-6px rounded-full bg-success inline-block animate-pulse' />
-                  Local Daemon Online · :20128
-                </Tag>
-              ) : omniRouteOnline === false ? (
-                <Tag color='gold' size='small'>
-                  Local Daemon Standby
-                </Tag>
-              ) : null}
             </div>
             <div className='text-13px text-t-secondary max-w-720px'>
-              Connect multiple accounts per provider (Google Antigravity, Claude, OpenAI, Cursor, DeepSeek), build smart
-              auto-failover combos, and balance token loads across sessions.
+              Connect multiple API key accounts per provider (Google Gemini, Anthropic Claude, OpenAI, DeepSeek, Groq,
+              OpenRouter), build smart auto-failover combos, and balance token loads across sessions.
             </div>
           </div>
           <div className='flex items-center gap-10px'>
-            <Button
-              type='primary'
-              icon={<Lightning />}
-              loading={isSyncing}
-              onClick={handleSyncLocalOmniRoute}
-              className='bg-primary font-500 shadow-sm'
-            >
-              ⚡ Sync Local Accounts
-            </Button>
             <Tag color='arcoblue' icon={<CheckOne />} className='px-10px py-6px text-12px font-medium'>
               Router Port: {status?.port || 13408}
             </Tag>
@@ -193,8 +138,6 @@ const GatewaySettings: React.FC = () => {
               onRefresh={loadData}
               onSaveAccount={handleSaveAccount}
               onDeleteAccount={handleDeleteAccount}
-              onSyncLocal={handleSyncLocalOmniRoute}
-              isSyncing={isSyncing}
             />
           </Tabs.TabPane>
 

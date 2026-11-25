@@ -117,7 +117,8 @@
     "moveToProjectSuccess": "Erfolgreich in Projekt verschoben",
     "moveToProjectFailed": "Fehler beim Verschieben in Projekt",
     "noFolderSelected": "Bitte Projektordner auswählen oder eingeben",
-    "sameFolderWarning": "Zielprojekt entspricht bereits dem aktuellen Arbeitsbereich"
+    "sameFolderWarning": "Zielprojekt entspricht bereits dem aktuellen Arbeitsbereich",
+    "moveProjectToOrg": "In Organisation verschieben"
   },
   "historySearch": {
     "tooltip": "Nachrichten durchsuchen",

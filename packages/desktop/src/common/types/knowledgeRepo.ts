@@ -66,6 +66,7 @@ export type KnowledgeRepoManifest = {
   onDemandSkills: KnowledgeSkillItem[];
   setupFiles: KnowledgeSetupFile[];
   envExampleVars?: string[];
+  repoMap?: string;
   summary?: string;
   estimatedTokens: number;
 };

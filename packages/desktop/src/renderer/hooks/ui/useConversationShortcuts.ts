@@ -101,6 +101,77 @@ export const useConversationShortcuts = ({
         return;
       }
 
+      if (isPrimaryApplicationShortcut(event, { key: ',', targetGuard: 'embedded-editor' })) {
+        event.preventDefault();
+        if (location.pathname.startsWith('/settings')) {
+          let target = '/guid';
+          try {
+            const stored = sessionStorage.getItem('aion:last-non-settings-path');
+            if (stored && !stored.startsWith('/settings')) {
+              target = stored;
+            }
+          } catch {
+            // ignore
+          }
+          void navigate(target);
+        } else {
+          void navigate('/settings/agent');
+        }
+        return;
+      }
+
+      if (isPrimaryApplicationShortcut(event, { key: 'w', shiftKey: true, targetGuard: 'embedded-editor' })) {
+        event.preventDefault();
+        if (location.pathname.startsWith('/organization')) {
+          let target = '/guid';
+          try {
+            const stored = sessionStorage.getItem('aion:last-workplace-path');
+            if (stored && !stored.startsWith('/organization') && !stored.startsWith('/settings')) {
+              target = stored;
+            }
+          } catch {
+            // ignore
+          }
+          void navigate(target);
+        } else {
+          void navigate('/organization');
+        }
+        return;
+      }
+
+      if (isPrimaryApplicationShortcut(event, { key: '1', targetGuard: 'embedded-editor' })) {
+        event.preventDefault();
+        let lastTeamId: string | null = null;
+        try {
+          lastTeamId = localStorage.getItem('team:last-active-id');
+        } catch {
+          // ignore
+        }
+        void navigate(lastTeamId ? `/team/${lastTeamId}` : '/guid');
+        return;
+      }
+
+      if (isPrimaryApplicationShortcut(event, { key: '3', targetGuard: 'embedded-editor' })) {
+        event.preventDefault();
+        let target = '/guid';
+        try {
+          const stored = sessionStorage.getItem('aion:last-workplace-path');
+          if (stored && !stored.startsWith('/organization') && !stored.startsWith('/settings')) {
+            target = stored;
+          }
+        } catch {
+          // ignore
+        }
+        void navigate(target);
+        return;
+      }
+
+      if (isPrimaryApplicationShortcut(event, { key: '5', targetGuard: 'embedded-editor' })) {
+        event.preventDefault();
+        void navigate('/approvals');
+        return;
+      }
+
       if (
         isPrimaryApplicationShortcut(event, { key: 'd', shiftKey: true, targetGuard: 'embedded-editor' }) ||
         isPrimaryApplicationShortcut(event, { key: 't', shiftKey: true, targetGuard: 'embedded-editor' })

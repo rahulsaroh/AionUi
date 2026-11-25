@@ -175,6 +175,51 @@ export class KnowledgeRepoGitService {
   }
 
   /**
+   * Resolve the remote repository's default branch via `git ls-remote --symref <url> HEAD`.
+   */
+  async resolveDefaultBranch(gitUrl: string, authToken?: string): Promise<string> {
+    try {
+      const { stdout } = await this.runGit(['ls-remote', '--symref', gitUrl, 'HEAD'], undefined, authToken);
+      const symrefMatch = stdout.match(/^ref:\s+refs\/heads\/([^\s]+)\s+HEAD$/m);
+      if (symrefMatch?.[1]) {
+        return sanitizeGitRef(symrefMatch[1]);
+      }
+    } catch {
+      // Fall through to heads check or default
+    }
+
+    try {
+      const { stdout } = await this.runGit(['ls-remote', '--heads', gitUrl], undefined, authToken);
+      const branches = stdout
+        .split('\n')
+        .map((line) => {
+          const m = line.match(/refs\/heads\/([^\s]+)$/);
+          return m?.[1];
+        })
+        .filter((b): b is string => Boolean(b));
+      if (branches.includes('main')) return 'main';
+      if (branches.includes('master')) return 'master';
+      if (branches.length > 0) return sanitizeGitRef(branches[0]);
+    } catch {
+      // Ignore fallback error
+    }
+
+    return 'main';
+  }
+
+  /**
+   * Get the checked-out branch name for a local repository, or 'HEAD' if detached.
+   */
+  async getCurrentBranch(repoDir: string): Promise<string> {
+    try {
+      const { stdout } = await this.runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoDir);
+      return stdout || 'main';
+    } catch {
+      return 'main';
+    }
+  }
+
+  /**
    * Clone a repo shallowly to the target directory with real-time progress.
    */
   async shallowClone(
@@ -193,7 +238,9 @@ export class KnowledgeRepoGitService {
         throw new Error(`Invalid HTTPS git URL: ${gitUrl}`);
       }
     }
-    const safeRef = sanitizeGitRef(ref || 'main');
+    const rawRef = (ref || '').trim();
+    const isAutoRef = !rawRef || rawRef.toLowerCase() === 'auto';
+    const safeRef = isAutoRef ? '' : sanitizeGitRef(rawRef);
     await fs.mkdir(path.dirname(targetDir), { recursive: true });
 
     // Ensure targetDir does not exist or is empty
@@ -214,7 +261,11 @@ export class KnowledgeRepoGitService {
       env.GIT_CONFIG_VALUE_1 = `Authorization: Bearer ${authToken}`;
     }
 
-    const cloneArgs = ['clone', '--progress', '--depth', '1', '--branch', safeRef, '--no-tags', gitUrl, targetDir];
+    const cloneArgs = ['clone', '--progress', '--depth', '1'];
+    if (safeRef) {
+      cloneArgs.push('--branch', safeRef);
+    }
+    cloneArgs.push('--no-tags', gitUrl, targetDir);
 
     onProgress?.(2, 'Connecting to remote repository...');
 
