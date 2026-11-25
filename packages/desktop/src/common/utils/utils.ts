@@ -83,3 +83,42 @@ export const resolveLocaleKey = (
   if (normalized.startsWith('fa')) return 'fa-IR';
   return 'en-US';
 };
+
+/**
+ * Push-based async queue so producers can stream events live while awaiting async completion.
+ */
+export function createAsyncEventQueue<T>() {
+  const buffer: T[] = [];
+  let closed = false;
+  let notify: (() => void) | null = null;
+
+  const wake = () => {
+    const fn = notify;
+    notify = null;
+    fn?.();
+  };
+
+  return {
+    push(item: T) {
+      if (closed) return;
+      buffer.push(item);
+      wake();
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      wake();
+    },
+    async *iterate(): AsyncGenerator<T> {
+      while (true) {
+        while (buffer.length > 0) {
+          yield buffer.shift() as T;
+        }
+        if (closed) return;
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+    },
+  };
+}

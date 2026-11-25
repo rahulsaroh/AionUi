@@ -5,7 +5,11 @@
  */
 
 import { ipcBridge } from '@/common';
+import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import { knowledgeRepo, memberHandbook } from '@/common/adapter/ipcBridge';
+import { composeMessage, transformMessage, type TMessage } from '@/common/chat/chatLib';
+import type { ToolMessage } from '@/common/chat/normalizeToolCall';
+import { enforceTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
 import { loadKnowledgeRepoMaps, resolveEntityKnowledgeInstructions } from '@/renderer/components/knowledge';
 import { buildOrgDirectory, getOrgDirectoryPrompt } from './orgDirectory';
 import {
@@ -50,6 +54,7 @@ export interface DelegationExecutionResult {
   updatedDepartment?: { departmentId: string; patch: Partial<OrgDepartmentNode> };
   updatedRootCeoWorkspace?: string;
   backendConversationId?: string;
+  toolMessages?: ToolMessage[];
 }
 
 export interface OrgActionPayload {
@@ -670,6 +675,7 @@ export interface AgentExecutionOptions {
   userDirective: string;
   workspacePath: string;
   onStreamUpdate: (text: string) => void;
+  onToolUpdate?: (messages: ToolMessage[]) => void;
   conversationId?: string;
   /** True when the workspace path was explicitly requested for this step (not inherited/fallback). */
   workspaceExplicit?: boolean;
@@ -687,11 +693,13 @@ export class OrgDelegationEngine {
   private hierarchy: OrgHierarchy;
   private onStepCallback?: (log: DelegationStepLog) => void;
   private onAgentStream?: (text: string) => void;
+  private onToolActivity?: (messages: ToolMessage[]) => void;
   private updateNodeStatus?: UpdateNodeStatus;
   private simulationMode: boolean;
   private projects: OrgProject[] = [];
   private autoApprovePermissions?: boolean | AutoApprovePermissionsMode;
   public lastBackendConversationId?: string;
+  public lastToolMessages: ToolMessage[] = [];
 
   constructor(
     hierarchy: OrgHierarchy,
@@ -702,11 +710,13 @@ export class OrgDelegationEngine {
       simulationMode?: boolean;
       projects?: OrgProject[];
       autoApprovePermissions?: boolean | AutoApprovePermissionsMode;
+      onToolActivity?: (messages: ToolMessage[]) => void;
     }
   ) {
     this.hierarchy = hierarchy;
     this.onStepCallback = onStepCallback;
     this.onAgentStream = onAgentStream;
+    this.onToolActivity = options?.onToolActivity;
     this.updateNodeStatus = updateNodeStatus;
     this.simulationMode = options?.simulationMode ?? true;
     this.projects = options?.projects ?? [];
@@ -803,6 +813,7 @@ export class OrgDelegationEngine {
     }
 
     const collectedText: string[] = [];
+    let stepToolMessages: ToolMessage[] = [];
     let finished = false;
     let contentCount = 0;
     let lastNoticeChunk = '';
@@ -816,6 +827,25 @@ export class OrgDelegationEngine {
     let unsubLiveStep: (() => void) | undefined;
     let runError: string | null = null;
     let activeKnowledgeRepoIds: string[] = [];
+
+    const pushToolFrame = (frame: IResponseMessage) => {
+      const transformed = transformMessage(frame);
+      if (
+        !transformed ||
+        (transformed.type !== 'tool_group' && transformed.type !== 'acp_tool_call' && transformed.type !== 'tool_call')
+      ) {
+        return;
+      }
+      const nextList = composeMessage(transformed, stepToolMessages as unknown as TMessage[]);
+      stepToolMessages = nextList.filter(
+        (item): item is ToolMessage =>
+          item.type === 'tool_group' || item.type === 'acp_tool_call' || item.type === 'tool_call'
+      );
+      const snapshot = [...stepToolMessages];
+      this.lastToolMessages = snapshot;
+      opts.onToolUpdate?.(snapshot);
+      this.onToolActivity?.(snapshot);
+    };
 
     const pushNotice = (notice: string) => {
       if (!notice || notice === lastNoticeChunk) return;
@@ -1363,6 +1393,18 @@ export class OrgDelegationEngine {
           return;
         }
 
+        // Capture structured tool activity frames for the Antigravity/Claude activity view.
+        if (m.type === 'tool_group' || m.type === 'acp_tool_call' || m.type === 'tool_call') {
+          pushToolFrame({
+            type: m.type,
+            conversation_id: convId,
+            msg_id: m.msg_id || `tool-${Date.now()}`,
+            data: m.data,
+          });
+          lastActivity = Date.now();
+          return;
+        }
+
         // 1. Only collect reply text when m.type is 'content' or 'text' (NOT 'user_content'). Ignore every other type for collectedText/onStreamUpdate.
         if (m.type === 'content' || m.type === 'text') {
           const text =
@@ -1440,9 +1482,10 @@ export class OrgDelegationEngine {
           .catch((): void => undefined);
       }
 
+      const directiveWithBreakdown = enforceTaskBreakdownPrompt(opts.userDirective);
       const promptToSend = opts.conversationId
-        ? `${directoryPrefix}${handbookPrefix}${knowledgePrefix}${opts.userDirective}`
-        : `${directoryPrefix}${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+        ? `${directoryPrefix}${handbookPrefix}${knowledgePrefix}${directiveWithBreakdown}`
+        : `${directoryPrefix}${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${directiveWithBreakdown}`;
 
       try {
         await ipcBridge.conversation.sendMessage.invoke({
@@ -1477,7 +1520,7 @@ export class OrgDelegationEngine {
           if (freshConv?.id) {
             convId = freshConv.id;
             this.lastBackendConversationId = convId;
-            const fullPrompt = `${directoryPrefix}${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${opts.userDirective}`;
+            const fullPrompt = `${directoryPrefix}${handbookPrefix}${knowledgePrefix}[Role Persona: You are ${opts.agent.name}, acting as "${opts.agent.role}" (${opts.agent.title || 'Team Member'}). Assigned Model: ${resolvedModel?.use_model || opts.agent.model?.modelId || 'default'}. Instructions: ${opts.systemPrompt || opts.agent.systemPrompt || 'Coordinate and answer directly as this organizational member.'}]\n\n${directiveWithBreakdown}`;
             await ipcBridge.conversation.sendMessage.invoke({
               conversation_id: convId,
               input: fullPrompt,
@@ -1654,6 +1697,7 @@ export class OrgDelegationEngine {
     const rawPath = workspacePath || agent.workspacePath || this.hierarchy.rootCeo.workspacePath;
     const resolvedPath = rawPath && rawPath !== 'workspace' ? rawPath : '';
 
+    this.lastToolMessages = [];
     this.updateNodeStatus?.(agent.id, 'working');
     try {
       const response = await this.runOrgAgentStep({
@@ -1665,6 +1709,10 @@ export class OrgDelegationEngine {
         userDirective: userPrompt,
         workspacePath: resolvedPath,
         onStreamUpdate: (text) => this.onAgentStream?.(text),
+        onToolUpdate: (msgs) => {
+          this.lastToolMessages = msgs;
+          this.onToolActivity?.(msgs);
+        },
         conversationId,
         workspaceExplicit: explicitWorkspace,
         projectId,
@@ -1694,8 +1742,16 @@ export class OrgDelegationEngine {
     conversationId?: string
   ): Promise<DelegationExecutionResult> {
     this.simulationMode = !useRealExecution;
+    this.lastToolMessages = [];
     const directiveId = `dir-${Date.now()}`;
     const logs: DelegationStepLog[] = [];
+    const stepToolMap = new Map<string, ToolMessage[]>();
+    const recordStepTools = (stepKey: string, msgs: ToolMessage[]) => {
+      stepToolMap.set(stepKey, msgs);
+      const aggregated = Array.from(stepToolMap.values()).flat();
+      this.lastToolMessages = aggregated;
+      this.onToolActivity?.(aggregated);
+    };
 
     const rootCeo = this.hierarchy.rootCeo;
     let delegationAborted = false;
@@ -2499,6 +2555,7 @@ export class OrgDelegationEngine {
             userDirective: userPrompt,
             workspacePath: rootCeo.workspacePath || '',
             onStreamUpdate: (text) => this.onAgentStream?.(text),
+            onToolUpdate: (msgs) => recordStepTools('ceo', msgs),
             conversationId,
           });
         } catch {
@@ -2761,6 +2818,7 @@ export class OrgDelegationEngine {
         createdProjects: createdProjects.length > 0 ? createdProjects : undefined,
         createdMembers: createdMembers.length > 0 ? createdMembers : undefined,
         backendConversationId: this.lastBackendConversationId,
+        toolMessages: this.lastToolMessages.length > 0 ? this.lastToolMessages : undefined,
       };
     }
 
@@ -2957,6 +3015,7 @@ RULES:
             onStreamUpdate: (text) => {
               this.onAgentStream?.(text);
             },
+            onToolUpdate: (msgs) => recordStepTools(`lead-${leadAgent.id}`, msgs),
           });
           if (leadOutput) {
             specialistOutputs.push(leadOutput);
@@ -3012,6 +3071,7 @@ RULES:
               onStreamUpdate: (text) => {
                 this.onAgentStream?.(text);
               },
+              onToolUpdate: (msgs) => recordStepTools(`spec-${spec.id}-${i}`, msgs),
             });
             specialistOutputs.push(output);
 
@@ -3070,6 +3130,7 @@ RULES:
       involvedTeamIds: [targetTeam.id],
       createdTeams: newlyCreatedTeams,
       backendConversationId: this.lastBackendConversationId,
+      toolMessages: this.lastToolMessages.length > 0 ? this.lastToolMessages : undefined,
     };
   }
 }

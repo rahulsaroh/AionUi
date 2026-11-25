@@ -53,6 +53,9 @@ describe('BrowserPanel', () => {
     // Partition now comes from BROWSER_SESSION_PARTITION constant
     expect(webview?.getAttribute('partition')).toBe('persist:aionui-browser');
     expect(webview?.getAttribute('src')).toBe('https://example.com');
+    // Webview must use flex/inline-flex (not display:block) so Electron's internal shadow iframe fills the full height
+    expect((webview as HTMLElement)?.style.display).toBe('inline-flex');
+    expect(webview?.className).not.toContain('block');
   });
 
   it('handles address bar input and navigation', async () => {

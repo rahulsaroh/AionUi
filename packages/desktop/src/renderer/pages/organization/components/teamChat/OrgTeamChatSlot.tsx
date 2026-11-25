@@ -9,6 +9,9 @@ import { Input, Button, Tag, Tooltip, Spin } from '@arco-design/web-react';
 import { Send, Square, AllApplication, Robot, Peoples, User, Loading, Edit, BookOne, Copy } from '@icon-park/react';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
+import { stripTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
+import type { ToolMessage } from '@/common/chat/normalizeToolCall';
+import MessageToolGroupSummary from '@/renderer/pages/conversation/Messages/components/MessageToolGroupSummary';
 import { OrgModelSelector } from '../OrgModelSelector';
 import { isRoleDuplicate } from './OrgTeamChatHeader';
 import type {
@@ -29,6 +32,7 @@ export interface OrgTeamChatSlotProps {
   isFullscreen: boolean;
   isExecuting: boolean;
   liveStepText?: string | null;
+  liveToolMessages?: ToolMessage[];
   streamingContent?: string;
   onToggleFullscreen: () => void;
   onSendMessage: (text: string) => Promise<void>;
@@ -47,6 +51,7 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
   isFullscreen,
   isExecuting,
   liveStepText,
+  liveToolMessages,
   streamingContent,
   onToggleFullscreen,
   onSendMessage,
@@ -277,6 +282,7 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
         ) : (
           messages.map((msg) => {
             const isUser = msg.role === 'user';
+            const displayContent = isUser ? stripTaskBreakdownPrompt(msg.content) : msg.content;
             return (
               <div
                 key={msg.id}
@@ -315,12 +321,18 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
                       type='text'
                       size='mini'
                       icon={<Copy size={11} theme='outline' />}
-                      onClick={() => void copyToClipboard(msg.content, msg.id)}
+                      onClick={() => void copyToClipboard(displayContent, msg.id)}
                       aria-label='Copy message'
                       className='!px-2px !h-16px text-t-tertiary hover:text-primary ml-auto'
                     />
                     {copiedId === msg.id && <span className='text-9px text-emerald-400 ml-2px'>Copied</span>}
                   </div>
+
+                  {!isUser && msg.toolMessages && msg.toolMessages.length > 0 && (
+                    <div className='w-full'>
+                      <MessageToolGroupSummary messages={msg.toolMessages} durationMs={msg.durationMs} />
+                    </div>
+                  )}
 
                   <div
                     className={classNames(
@@ -332,7 +344,7 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
                           : 'bg-[var(--color-bg-2)] border-[var(--color-border-2)] text-t-primary rounded-tl-2px'
                     )}
                   >
-                    {msg.content}
+                    {displayContent}
 
                     {msg.createdEntities && msg.createdEntities.length > 0 && (
                       <div className='mt-8px flex flex-wrap gap-4px'>
@@ -370,6 +382,12 @@ export const OrgTeamChatSlot: React.FC<OrgTeamChatSlotProps> = ({
             </div>
 
             <div className='flex flex-col gap-4px min-w-0 max-w-[85%]'>
+              {liveToolMessages && liveToolMessages.length > 0 && (
+                <div className='w-full'>
+                  <MessageToolGroupSummary messages={liveToolMessages} />
+                </div>
+              )}
+
               {liveStepText && (
                 <div className='inline-flex items-center gap-6px px-8px py-3px rounded-full bg-emerald-500/10 border border-emerald-500/20 text-11px text-emerald-400 font-mono self-start'>
                   <Spin loading size={10} icon={<Loading theme='outline' className='animate-spin' />} />

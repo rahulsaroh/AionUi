@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OrgDelegationEngine } from '@/renderer/pages/organization/utils/orgDelegationEngine';
 import { createDefaultOrgHierarchy } from '@/renderer/pages/organization/utils/defaultOrgSeed';
+import { TASK_BREAKDOWN_MARKER } from '@/common/chat/slash/antigravityCommands';
 import { ipcBridge } from '@/common';
 import type { OrgAgentMember } from '@/types/organization';
 
@@ -703,5 +704,97 @@ describe('OrgDelegationEngine responseStream handling', () => {
       expect(createdPayload.model).toEqual({ id: 'openai', use_model: 'gpt-4o', provider_id: 'openai' });
       expect(createdPayload.extra.current_model_id).toBeUndefined();
     });
+  });
+
+  it('enforces task breakdown instructions when dispatching prompt in runOrgAgentStep', async () => {
+    const sendSpy = vi.spyOn(ipcBridge.conversation.sendMessage, 'invoke').mockResolvedValue({} as any);
+
+    const stepPromise = engine.runOrgAgentStep({
+      agent: testAgent,
+      systemPrompt: 'You are a department head',
+      userDirective: 'Audit routes and add tests',
+      workspacePath: '',
+      onStreamUpdate: () => {},
+    });
+
+    for (let i = 0; i < 50 && !streamHandler; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'content',
+      data: { content: 'Completed.' },
+    });
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'finish',
+      status: 'finish',
+    });
+
+    await stepPromise;
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const sentInput = (sendSpy.mock.calls[0]?.[0] as { input?: string })?.input ?? '';
+    expect(sentInput).toContain(TASK_BREAKDOWN_MARKER);
+    expect(sentInput).toContain('one by one in order');
+    expect(sentInput).toContain('Audit routes and add tests');
+  });
+
+  it('captures tool_group and acp_tool_call stream frames for activity rendering', async () => {
+    const onToolActivity = vi.fn();
+    const activityEngine = new OrgDelegationEngine(hierarchy, undefined, undefined, undefined, {
+      simulationMode: false,
+      onToolActivity,
+    });
+
+    const stepPromise = activityEngine.runOrgAgentStep({
+      agent: testAgent,
+      systemPrompt: 'You are an engineer',
+      userDirective: 'Update Router.tsx',
+      workspacePath: '',
+      onStreamUpdate: () => {},
+    });
+
+    for (let i = 0; i < 50 && !streamHandler; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      msg_id: 'msg-tool-1',
+      type: 'tool_group',
+      data: [
+        {
+          call_id: 'call-write-1',
+          name: 'WriteFile',
+          description: 'Edited src/Router.tsx',
+          status: 'Success',
+          renderOutputAsMarkdown: false,
+          confirmationDetails: undefined,
+          result_display: {
+            file_name: 'src/Router.tsx',
+            file_diff: '--- a/src/Router.tsx\n+++ b/src/Router.tsx\n@@ -1 +1,2 @@\n line1\n+line2\n',
+          },
+        },
+      ],
+    });
+
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'content',
+      data: { content: 'Updated Router.tsx.' },
+    });
+    streamHandler!({
+      conversation_id: 'conv-123',
+      type: 'finish',
+      status: 'finish',
+    });
+
+    await stepPromise;
+
+    expect(onToolActivity).toHaveBeenCalled();
+    expect(activityEngine.lastToolMessages).toHaveLength(1);
+    expect(activityEngine.lastToolMessages[0]?.type).toBe('tool_group');
   });
 });

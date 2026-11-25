@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, Message, Popconfirm, Select, Spin, Tag, Tooltip } from '@arco-design/web-react';
 import {
   BrowserChrome,
@@ -38,6 +38,7 @@ export const BrowserPanel: React.FC<BrowserPanelProps> = ({
   const [isActionLogVisible, setIsActionLogVisible] = useState(false);
   const [isManualTakeover, setIsManualTakeover] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const webviewContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!window.electronAPI?.onBrowserToolProgress) return;
@@ -78,6 +79,27 @@ export const BrowserPanel: React.FC<BrowserPanelProps> = ({
       setInputUrl(url);
     }
   }, [url]);
+
+  useEffect(() => {
+    const containerEl = webviewContainerRef.current;
+    const webviewEl = webviewRef.current;
+    if (!containerEl || !webviewEl) return;
+
+    const syncWebviewSize = () => {
+      const rect = containerEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        webviewEl.style.width = `${rect.width}px`;
+        webviewEl.style.height = `${rect.height}px`;
+      }
+    };
+
+    syncWebviewSize();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(syncWebviewSize);
+    observer.observe(containerEl);
+    return () => observer.disconnect();
+  }, [activeProfile.partition, visible, webviewRef]);
 
   const handleNavigate = useCallback(() => {
     const target = inputUrl.trim();
@@ -312,15 +334,15 @@ export const BrowserPanel: React.FC<BrowserPanelProps> = ({
       )}
 
       {/* Webview container with dynamic persistent session partition */}
-      <div className='flex-1 relative w-full h-full bg-[var(--color-bg-1)]'>
+      <div ref={webviewContainerRef} className='flex-1 min-h-0 relative w-full overflow-hidden bg-[var(--color-bg-1)]'>
         <webview
           {...({ allowpopups: 'true' } as object)}
-          className='w-full h-full border-none block'
+          className='w-full h-full border-none absolute inset-0'
           key={activeProfile.partition}
           partition={activeProfile.partition}
           ref={webviewRef}
           src={url}
-          style={{ width: '100%', height: '100%' }}
+          style={{ display: 'inline-flex', width: '100%', height: '100%' }}
         />
       </div>
 

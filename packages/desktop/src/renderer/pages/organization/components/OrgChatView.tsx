@@ -28,6 +28,9 @@ import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ipcBridge } from '@/common';
+import type { ToolMessage } from '@/common/chat/normalizeToolCall';
+import { stripTaskBreakdownPrompt } from '@/common/chat/slash/antigravityCommands';
+import MessageToolGroupSummary from '@/renderer/pages/conversation/Messages/components/MessageToolGroupSummary';
 import { useOrgStore, type AutoApprovePermissionsMode } from '../store/useOrgStore';
 import { OrgModelSelector } from './OrgModelSelector';
 import { runAgentTurn, buildAgentSystemContext, type OrgChatTarget } from '../utils/agentTurn';
@@ -126,6 +129,7 @@ export const OrgChatView: React.FC = () => {
   const [inputPrompt, setInputPrompt] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [liveStepText, setLiveStepText] = useState<string | null>(null);
+  const [liveToolMessages, setLiveToolMessages] = useState<ToolMessage[]>([]);
   const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string>('');
   const [errorState, setErrorState] = useState<{ message: string; threadId: string } | null>(null);
@@ -490,6 +494,7 @@ export const OrgChatView: React.FC = () => {
   const [executingMemberIds, setExecutingMemberIds] = useState<Record<string, boolean>>({});
   const [memberLiveSteps, setMemberLiveSteps] = useState<Record<string, string | null>>({});
   const [memberStreaming, setMemberStreaming] = useState<Record<string, string>>({});
+  const [memberLiveTools, setMemberLiveTools] = useState<Record<string, ToolMessage[]>>({});
 
   const teamScrollContainerRef = useRef<HTMLDivElement>(null);
   const memberSlotRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -692,7 +697,9 @@ export const OrgChatView: React.FC = () => {
         }),
       }));
       setMemberStreaming((prev) => ({ ...prev, [member.id]: '' }));
+      setMemberLiveTools((prev) => ({ ...prev, [member.id]: [] }));
       updateNodeStatus(member.id, 'working');
+      const turnStartedAt = Date.now();
 
       const userMessage: OrgConversationMessage = {
         id: `msg-${Date.now()}-u`,
@@ -744,6 +751,8 @@ export const OrgChatView: React.FC = () => {
 
       let accumulatedText = '';
       let finalSynthesis = '';
+      let capturedToolMessages: ToolMessage[] = [];
+      let capturedDurationMs: number | undefined;
       let lastMemberBackendConvId: string | undefined = conv.backendConversationId;
       const memberTarget: OrgChatTarget = { type: 'member', id: member.id };
       const memberAbortController = new AbortController();
@@ -770,6 +779,12 @@ export const OrgChatView: React.FC = () => {
               if (event.data.step) {
                 const stepStr = `${event.data.step.fromName} -> ${event.data.step.toName}: ${event.data.step.message}`;
                 setMemberLiveSteps((prev) => ({ ...prev, [member.id]: stepStr }));
+              }
+              break;
+            case 'tool-activity':
+              if (event.data.toolMessages) {
+                capturedToolMessages = event.data.toolMessages;
+                setMemberLiveTools((prev) => ({ ...prev, [member.id]: event.data.toolMessages || [] }));
               }
               break;
             case 'text-delta':
@@ -804,6 +819,12 @@ export const OrgChatView: React.FC = () => {
               throw new Error(event.data.error || 'Unknown error');
             case 'done':
               finalSynthesis = event.data.finalSynthesis || accumulatedText;
+              if (event.data.toolMessages?.length) {
+                capturedToolMessages = event.data.toolMessages;
+              }
+              if (typeof event.data.durationMs === 'number') {
+                capturedDurationMs = event.data.durationMs;
+              }
               if (event.data.backendConversationId) {
                 lastMemberBackendConvId = event.data.backendConversationId;
               }
@@ -817,6 +838,8 @@ export const OrgChatView: React.FC = () => {
           role: 'assistant',
           content: finalSynthesis || accumulatedText,
           timestamp: Date.now(),
+          ...(capturedToolMessages.length > 0 ? { toolMessages: capturedToolMessages } : {}),
+          durationMs: capturedDurationMs ?? Date.now() - turnStartedAt,
         };
 
         const finalConversation: OrgConversation = {
@@ -845,6 +868,7 @@ export const OrgChatView: React.FC = () => {
         setExecutingMemberIds((prev) => ({ ...prev, [member.id]: false }));
         setMemberLiveSteps((prev) => ({ ...prev, [member.id]: null }));
         setMemberStreaming((prev) => ({ ...prev, [member.id]: '' }));
+        setMemberLiveTools((prev) => ({ ...prev, [member.id]: [] }));
         updateNodeStatus(member.id, 'recently_finished');
         setTimeout(() => updateNodeStatus(member.id, 'idle'), 3000);
       }
@@ -1030,8 +1054,10 @@ export const OrgChatView: React.FC = () => {
   const executeTurn = useCallback(
     async (prompt: string, existingUserMessage?: OrgConversationMessage) => {
       if (isExecuting) return;
+      const turnStartedAt = Date.now();
       setIsExecuting(true);
       setStreamingContent('');
+      setLiveToolMessages([]);
       setErrorState(null);
       abortControllerRef.current = new AbortController();
       setDraftsByThreadId((prev) => {
@@ -1172,6 +1198,8 @@ export const OrgChatView: React.FC = () => {
 
         let accumulatedText = '';
         let finalSynthesis = '';
+        let capturedToolMessages: ToolMessage[] = [];
+        let capturedDurationMs: number | undefined;
         let createdEntitiesMsg: OrgConversationMessage | null = null;
         let lastBackendConvId: string | undefined = activeConversation?.backendConversationId;
 
@@ -1201,6 +1229,12 @@ export const OrgChatView: React.FC = () => {
             case 'step':
               if (event.data.step) {
                 setLiveStepText(`${event.data.step.fromName} -> ${event.data.step.toName}: ${event.data.step.message}`);
+              }
+              break;
+            case 'tool-activity':
+              if (event.data.toolMessages) {
+                capturedToolMessages = event.data.toolMessages;
+                setLiveToolMessages(event.data.toolMessages);
               }
               break;
             case 'text-delta':
@@ -1289,6 +1323,12 @@ export const OrgChatView: React.FC = () => {
               throw new Error(event.data.error || 'Unknown error');
             case 'done':
               finalSynthesis = event.data.finalSynthesis || accumulatedText;
+              if (event.data.toolMessages?.length) {
+                capturedToolMessages = event.data.toolMessages;
+              }
+              if (typeof event.data.durationMs === 'number') {
+                capturedDurationMs = event.data.durationMs;
+              }
               if (event.data.backendConversationId) {
                 lastBackendConvId = event.data.backendConversationId;
               }
@@ -1306,6 +1346,8 @@ export const OrgChatView: React.FC = () => {
           role: 'assistant',
           content: finalSynthesis || accumulatedText,
           timestamp: Date.now(),
+          ...(capturedToolMessages.length > 0 ? { toolMessages: capturedToolMessages } : {}),
+          durationMs: capturedDurationMs ?? Date.now() - turnStartedAt,
         };
 
         const finalConversation: OrgConversation = {
@@ -1347,6 +1389,7 @@ export const OrgChatView: React.FC = () => {
         setIsExecuting(false);
         setLiveStepText(null);
         setStreamingContent('');
+        setLiveToolMessages([]);
         updateNodeStatus(targetAgent.id, 'recently_finished');
         setTimeout(() => updateNodeStatus(targetAgent.id, 'idle'), 3000);
       }
@@ -1569,6 +1612,7 @@ export const OrgChatView: React.FC = () => {
                       isFullscreen={true}
                       isExecuting={Boolean(executingMemberIds[member.id])}
                       liveStepText={memberLiveSteps[member.id]}
+                      liveToolMessages={memberLiveTools[member.id]}
                       streamingContent={memberStreaming[member.id]}
                       onToggleFullscreen={() => setTeamViewMode('parallel')}
                       onSendMessage={(text) => handleSendMemberMessage(member, text)}
@@ -1648,6 +1692,7 @@ export const OrgChatView: React.FC = () => {
                         isFullscreen={false}
                         isExecuting={Boolean(executingMemberIds[member.id])}
                         liveStepText={memberLiveSteps[member.id]}
+                        liveToolMessages={memberLiveTools[member.id]}
                         streamingContent={memberStreaming[member.id]}
                         onToggleFullscreen={() => {
                           setActiveMemberId(member.id);
@@ -2186,6 +2231,7 @@ export const OrgChatView: React.FC = () => {
           <>
             {messages.map((msg) => {
               const isUser = msg.role === 'user';
+              const displayContent = isUser ? stripTaskBreakdownPrompt(msg.content) : msg.content;
               return (
                 <div
                   key={msg.id}
@@ -2233,12 +2279,18 @@ export const OrgChatView: React.FC = () => {
                         type='text'
                         size='mini'
                         icon={<Copy size={11} theme='outline' />}
-                        onClick={() => void copyToClipboard(msg.content, msg.id)}
+                        onClick={() => void copyToClipboard(displayContent, msg.id)}
                         aria-label='Copy message'
                         className='!px-2px !h-16px text-t-tertiary hover:text-primary ml-auto'
                       />
                       {copiedId === msg.id && <span className='text-9px text-emerald-400 ml-2px'>Copied</span>}
                     </div>
+
+                    {!isUser && msg.toolMessages && msg.toolMessages.length > 0 && (
+                      <div className='w-full'>
+                        <MessageToolGroupSummary messages={msg.toolMessages} durationMs={msg.durationMs} />
+                      </div>
+                    )}
 
                     <div
                       className={classNames(
@@ -2250,7 +2302,7 @@ export const OrgChatView: React.FC = () => {
                             : 'bg-[var(--color-bg-2)] border-[var(--color-border-2)] text-t-primary rounded-tl-2px'
                       )}
                     >
-                      {msg.content}
+                      {displayContent}
                       {msg.createdEntities && msg.createdEntities.length > 0 && (
                         <div className='mt-10px flex flex-wrap gap-6px'>
                           {msg.createdEntities.map((ref) => (
@@ -2471,6 +2523,11 @@ export const OrgChatView: React.FC = () => {
                       : t('team.organization.responding', { defaultValue: 'Responding...' })}
                     )
                   </span>
+                  {liveToolMessages.length > 0 && (
+                    <div className='w-full'>
+                      <MessageToolGroupSummary messages={liveToolMessages} />
+                    </div>
+                  )}
                   <div className='p-12px rounded-14px bg-[var(--color-bg-2)] border border-primary/30 text-t-primary rounded-tl-2px flex items-center gap-10px shadow-sm text-12px font-mono relative group'>
                     <Spin dot size={12} />
                     <span className='text-primary truncate'>

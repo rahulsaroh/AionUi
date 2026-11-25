@@ -194,6 +194,8 @@ export interface OrgStorageBundle {
   activeScope?: OrgScope;
 }
 
+import type { ToolMessage } from '@/common/chat/normalizeToolCall';
+
 export interface OrgCreatedEntityRef {
   type: 'department' | 'team' | 'project' | 'member';
   id: string;
@@ -208,6 +210,10 @@ export interface OrgConversationMessage {
   content: string;
   timestamp: number;
   createdEntities?: OrgCreatedEntityRef[];
+  /** Captured tool calls and file-edit diffs rendered in the Antigravity/Claude activity view. */
+  toolMessages?: ToolMessage[];
+  /** Execution duration in milliseconds for the assistant turn. */
+  durationMs?: number;
 }
 
 export interface OrgConversation {

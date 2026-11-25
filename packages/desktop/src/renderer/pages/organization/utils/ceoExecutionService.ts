@@ -6,6 +6,8 @@
 
 import { OrgDelegationEngine } from './orgDelegationEngine';
 import { ipcBridge } from '@/common';
+import type { ToolMessage } from '@/common/chat/normalizeToolCall';
+import { createAsyncEventQueue } from '@/common/utils';
 import type {
   OrgHierarchy,
   OrgProject,
@@ -18,7 +20,14 @@ import type {
   OrgConversationMessage,
 } from '@/types/organization';
 
-export type CeoEventType = 'text-delta' | 'step' | 'created-entities' | 'approval-request' | 'error' | 'done';
+export type CeoEventType =
+  | 'text-delta'
+  | 'step'
+  | 'tool-activity'
+  | 'created-entities'
+  | 'approval-request'
+  | 'error'
+  | 'done';
 
 export interface CeoEvent {
   type: CeoEventType;
@@ -29,6 +38,8 @@ export interface CeoEvent {
       toName: string;
       message: string;
     };
+    toolMessages?: ToolMessage[];
+    durationMs?: number;
     createdEntities?: {
       departments?: OrgDepartmentNode[];
       teams?: Array<{ departmentId: string; team: OrgTeamNode }>;
@@ -82,6 +93,9 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
 
   // Track active conversation IDs and turn IDs for cancellation
   const activeConversations = new Map<string, string>(); // conversationId -> turnId
+  const queue = createAsyncEventQueue<CeoEvent>();
+  const startedAt = Date.now();
+  let latestToolMessages: ToolMessage[] = [];
 
   const cancel = async () => {
     for (const [conversationId, turnId] of activeConversations) {
@@ -92,6 +106,7 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
       }
     }
     activeConversations.clear();
+    queue.close();
   };
 
   // Listen for abort signal
@@ -105,17 +120,24 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
     );
   }
 
-  const events = (async function* (): AsyncGenerator<CeoEvent> {
+  void (async () => {
     const engine = new OrgDelegationEngine(
       hierarchy,
-      (log) => {
-        // Step events are emitted via the generator
+      (_log) => {
+        // Step events are emitted from finalResult.logs
       },
-      (streamText) => {
-        // Text streaming is handled via yield
+      (_streamText) => {
+        // Text streaming is handled via text-delta
       },
       onNodeStatusUpdate,
-      { simulationMode: !useRealExecution, projects }
+      {
+        simulationMode: !useRealExecution,
+        projects,
+        onToolActivity: (toolMessages) => {
+          latestToolMessages = toolMessages;
+          queue.push({ type: 'tool-activity', data: { toolMessages } });
+        },
+      }
     );
 
     let finalResult: Awaited<ReturnType<typeof engine.executeDirective>> | null = null;
@@ -149,13 +171,9 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
         options.conversationId
       );
 
-      // Collect conversation IDs from the engine if available
-      // Note: The engine stores lastBackendConversationId but we need turn IDs
-      // For now, we track what we can. The engine would need modification to expose turn IDs.
-
-      // Yield step events from logs
+      // Push step events from logs
       for (const log of finalResult.logs) {
-        yield {
+        queue.push({
           type: 'step',
           data: {
             step: {
@@ -164,17 +182,17 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
               message: log.message,
             },
           },
-        };
+        });
       }
 
-      // Yield created entities if any
+      // Push created entities if any
       if (
         finalResult.createdDepartments?.length ||
         finalResult.createdTeams?.length ||
         finalResult.createdProjects?.length ||
         finalResult.createdMembers?.length
       ) {
-        yield {
+        queue.push({
           type: 'created-entities',
           data: {
             createdEntities: {
@@ -184,38 +202,42 @@ export function runCeoTurn(_threadId: string, userText: string, options: RunCeoT
               members: finalResult.createdMembers,
             },
           },
-        };
+        });
       }
 
-      // Yield final synthesis as text-delta (streaming simulation)
+      // Push final synthesis as text-delta
       if (finalResult.finalSynthesis) {
-        yield {
+        queue.push({
           type: 'text-delta',
           data: { text: finalResult.finalSynthesis },
-        };
+        });
       }
 
-      yield {
+      const finalTools = finalResult.toolMessages?.length ? finalResult.toolMessages : latestToolMessages;
+      queue.push({
         type: 'done',
         data: {
           finalSynthesis: finalResult.finalSynthesis,
           involvedDepartmentIds: finalResult.involvedDepartmentIds,
           involvedTeamIds: finalResult.involvedTeamIds,
           backendConversationId: finalResult.backendConversationId || engine.lastBackendConversationId,
+          toolMessages: finalTools.length > 0 ? finalTools : undefined,
+          durationMs: Date.now() - startedAt,
         },
-      };
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      yield {
+      queue.push({
         type: 'error',
         data: { error: errorMessage },
-      };
+      });
     } finally {
       onNodeStatusUpdate?.('root-ceo', 'recently_finished');
+      queue.close();
     }
   })();
 
-  return { events, cancel };
+  return { events: queue.iterate(), cancel };
 }
 
 export function useCeoExecution() {

@@ -10,6 +10,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { OrgTeamChatHeader } from '@/renderer/pages/organization/components/teamChat/OrgTeamChatHeader';
 import { OrgTeamChatSlot } from '@/renderer/pages/organization/components/teamChat/OrgTeamChatSlot';
 import { SiderMemberRow } from '@/renderer/components/layout/Sider/SiderMemberRow';
+import { TASK_BREAKDOWN_MARKER } from '@/common/chat/slash/antigravityCommands';
 import type { OrgTeamNode, OrgAgentMember, OrgConversation } from '@/types/organization';
 
 const mockTranslate = (key: string, opts?: Record<string, unknown>): string => {
@@ -273,6 +274,73 @@ describe('OrgTeamChatSlot', () => {
     fireEvent.click(sendButton);
 
     expect(onSendMessage).toHaveBeenCalledWith('Analyze performance');
+  });
+
+  it('renders tool activity summary for persisted/live edits and strips task breakdown markers in slot messages', () => {
+    const slotConv: OrgConversation = {
+      ...mockConversation,
+      messages: [
+        {
+          id: 'u-slot',
+          sender: 'User',
+          role: 'user',
+          content: `Create helper file\n\n${TASK_BREAKDOWN_MARKER}\nWork one by one.`,
+          timestamp: Date.now(),
+        },
+        {
+          id: 'a-slot',
+          sender: 'Charlie Dev',
+          role: 'assistant',
+          content: 'Created the helper.',
+          timestamp: Date.now(),
+          durationMs: 42000,
+          toolMessages: [
+            {
+              id: 't-slot-1',
+              msg_id: 'm-slot-1',
+              conversation_id: 'conv-1',
+              type: 'tool_group',
+              created_at: 1000,
+              content: [
+                {
+                  call_id: 'call-create-1',
+                  name: 'WriteFile',
+                  description: 'Create helper.ts',
+                  status: 'Success',
+                  renderOutputAsMarkdown: false,
+                  result_display: {
+                    file_name: 'src/helper.ts',
+                    file_diff:
+                      '--- /dev/null\n+++ b/src/helper.ts\n@@ -0,0 +1,2 @@\n+export const x = 1;\n+export const y = 2;\n',
+                  },
+                },
+              ],
+            } as any,
+          ],
+        },
+      ],
+    };
+
+    render(
+      <OrgTeamChatSlot
+        member={mockSpecialist}
+        team={mockTeam}
+        conversation={slotConv}
+        isLeader={false}
+        isHr={false}
+        isFullscreen={false}
+        isExecuting={false}
+        onToggleFullscreen={vi.fn()}
+        onSendMessage={vi.fn()}
+        onSelectModel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Create helper file')).toBeInTheDocument();
+    expect(screen.queryByText(TASK_BREAKDOWN_MARKER)).not.toBeInTheDocument();
+    expect(screen.getByTestId('activity-summary')).toBeInTheDocument();
+    expect(screen.getByText('helper.ts')).toBeInTheDocument();
+    expect(screen.getByText('+2')).toBeInTheDocument();
   });
 });
 

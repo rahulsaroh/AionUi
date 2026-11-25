@@ -7,6 +7,8 @@
 import { OrgDelegationEngine } from './orgDelegationEngine';
 import { runCeoTurn, type CeoEvent } from './ceoExecutionService';
 import { buildOrgDirectory, getOrgDirectoryPrompt } from './orgDirectory';
+import type { ToolMessage } from '@/common/chat/normalizeToolCall';
+import { createAsyncEventQueue } from '@/common/utils';
 import { memberHandbook } from '@/common/adapter/ipcBridge';
 import {
   loadKnowledgeRepoMaps,
@@ -24,13 +26,15 @@ export type OrgChatTarget = {
   createNew?: boolean;
 };
 
-export type AgentTurnEventType = 'text-delta' | 'step' | 'created-entities' | 'error' | 'done';
+export type AgentTurnEventType = 'text-delta' | 'step' | 'tool-activity' | 'created-entities' | 'error' | 'done';
 
 export interface AgentTurnEvent {
   type: AgentTurnEventType;
   data: {
     text?: string;
     step?: { fromName: string; toName: string; message: string };
+    toolMessages?: ToolMessage[];
+    durationMs?: number;
     createdEntities?: CeoEvent['data']['createdEntities'];
     error?: string;
     finalSynthesis?: string;
@@ -128,14 +132,25 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
   }
 
   let cancelled = false;
+  const queue = createAsyncEventQueue<AgentTurnEvent>();
+  const startedAt = Date.now();
+  let latestToolMessages: ToolMessage[] = [];
   const cancel = async () => {
     cancelled = true;
+    queue.close();
   };
 
-  const events = (async function* () {
+  void (async () => {
     onNodeStatusUpdate?.(agent.id, 'working');
     try {
-      const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, onNodeStatusUpdate, { projects });
+      const engine = new OrgDelegationEngine(hierarchy, undefined, undefined, onNodeStatusUpdate, {
+        projects,
+        onToolActivity: (toolMessages) => {
+          if (cancelled) return;
+          latestToolMessages = toolMessages;
+          queue.push({ type: 'tool-activity', data: { toolMessages } });
+        },
+      });
 
       const convIdForKnowledge = conversation?.backendConversationId || conversation?.id;
       const knowledgeMaps = await loadKnowledgeRepoMaps();
@@ -226,27 +241,31 @@ export function runAgentTurn(options: RunAgentTurnOptions): RunAgentTurnResult {
       if (cancelled) return;
 
       if (response) {
-        yield { type: 'text-delta', data: { text: response } } as AgentTurnEvent;
+        queue.push({ type: 'text-delta', data: { text: response } });
       }
-      yield {
+      const finalTools = engine.lastToolMessages?.length ? engine.lastToolMessages : latestToolMessages;
+      queue.push({
         type: 'done',
         data: {
           finalSynthesis: response || '',
           backendConversationId: engine.lastBackendConversationId,
+          toolMessages: finalTools.length > 0 ? finalTools : undefined,
+          durationMs: Date.now() - startedAt,
         },
-      } as AgentTurnEvent;
+      });
     } catch (err) {
       if (cancelled) return;
-      yield {
+      queue.push({
         type: 'error',
         data: { error: err instanceof Error ? err.message : String(err) },
-      } as AgentTurnEvent;
+      });
     } finally {
       onNodeStatusUpdate?.(agent.id, 'recently_finished');
+      queue.close();
     }
   })();
 
-  return { events, cancel };
+  return { events: queue.iterate(), cancel };
 }
 
 export function buildAgentSystemContext(opts: {

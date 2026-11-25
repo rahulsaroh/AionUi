@@ -8,6 +8,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { TASK_BREAKDOWN_MARKER } from '@/common/chat/slash/antigravityCommands';
 import type {
   OrgAgentMember,
   OrgConversation,
@@ -64,7 +65,13 @@ vi.mock('@arco-design/web-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@arco-design/web-react')>();
   return {
     ...actual,
-    Message: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+    Message: {
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+      useMessage: () => [{ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }, null],
+    },
   };
 });
 
@@ -500,6 +507,97 @@ describe('OrgChatView unified agent turn', () => {
         expect.objectContaining({
           id: 'conv-ceo-1',
           backendConversationId: undefined,
+        })
+      );
+    });
+  });
+
+  it('captures streamed tool activity, renders Antigravity file edit summary, and strips task breakdown markers', async () => {
+    const toolMsgs = [
+      {
+        id: 't1',
+        msg_id: 'm-tool',
+        conversation_id: 'conv-ceo-1',
+        type: 'tool_group' as const,
+        created_at: 1000,
+        content: [
+          {
+            call_id: 'call-edit-1',
+            name: 'EditFile',
+            description: 'Edit navigation.ts',
+            status: 'Success' as const,
+            renderOutputAsMarkdown: false,
+            result_display: {
+              file_name: 'src/navigation.ts',
+              file_diff: '--- a/src/navigation.ts\n+++ b/src/navigation.ts\n@@ -1 +1,3 @@\n keep\n+added1\n+added2\n',
+            },
+          },
+        ],
+      },
+    ];
+
+    runAgentTurnMock.mockImplementation(() => ({
+      events: (async function* () {
+        yield { type: 'tool-activity', data: { toolMessages: toolMsgs } };
+        yield { type: 'text-delta', data: { text: 'All mini tasks finished.' } };
+        yield {
+          type: 'done',
+          data: {
+            finalSynthesis: 'All mini tasks finished.',
+            toolMessages: toolMsgs,
+            durationMs: 180000,
+          },
+        };
+      })(),
+      cancel: vi.fn(),
+    }));
+
+    storeState = {
+      ...storeState,
+      conversations: [
+        makeCeoConversation([
+          {
+            id: 'u1',
+            sender: 'User',
+            role: 'user',
+            content: `Clean prompt\n\n${TASK_BREAKDOWN_MARKER}\nBreak this down.`,
+            timestamp: 1,
+          },
+          {
+            id: 'a1',
+            sender: 'CEO',
+            role: 'assistant',
+            content: 'Previous edits complete',
+            timestamp: 2,
+            toolMessages: toolMsgs as any,
+            durationMs: 180000,
+          },
+        ]),
+      ],
+      selectedConversationId: 'conv-ceo-1',
+    };
+
+    renderView();
+
+    expect(screen.getByText('Clean prompt')).toBeInTheDocument();
+    expect(screen.queryByText(TASK_BREAKDOWN_MARKER)).not.toBeInTheDocument();
+    expect(screen.getByTestId('activity-summary')).toBeInTheDocument();
+    expect(screen.getByText('navigation.ts')).toBeInTheDocument();
+    expect(screen.getByText('+2')).toBeInTheDocument();
+
+    await sendPrompt('Run next task');
+
+    await waitFor(() => {
+      expect(storeState.addOrgConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              role: 'assistant',
+              content: 'All mini tasks finished.',
+              toolMessages: toolMsgs,
+              durationMs: 180000,
+            }),
+          ]),
         })
       );
     });

@@ -4,6 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export { uuid, parseError, resolveLocaleKey } from './utils';
+export { createAsyncEventQueue, uuid, parseError, resolveLocaleKey } from './utils';
 export { detectCloudSyncPath } from './cloudSyncDetector';
 export type { CloudSyncDetection, CloudSyncProvider } from './cloudSyncDetector';
